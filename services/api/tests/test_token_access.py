@@ -188,9 +188,7 @@ def test_a_run_token_may_call_a_qapp_as_an_api_but_a_read_token_may_not():
         "course-generate",
     ],
 )
-def test_each_new_run_write_is_allowed_with_run_and_refused_with_only_read(
-    method, template, path
-):
+def test_each_new_run_write_is_allowed_with_run_and_refused_with_only_read(method, template, path):
     """The Bridge lane's ai-ops 362 addition, one entry at a time — named
     explicitly, like `test_a_run_token_may_call_a_qapp_as_an_api_but_a_read_token_
     may_not` above, so dropping ONE of these seven entries from `RUN_WRITES` fails
