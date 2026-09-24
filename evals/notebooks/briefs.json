@@ -1,0 +1,23 @@
+{
+  "about": "Briefs for evals/notebooks/live_generation.py. The first is the brief of the notebook that failed in production on 2026-09-24 01:07Z, with the audience and style it was created with. The rest cover the three audiences the owner named on 2026-09-23: educators, enterprise quantum R&D teams, and researchers.",
+  "briefs": [
+    {
+      "name": "prod-failure-2026-09-24",
+      "brief": "I want to educate a team of engineers how to build circuits with qiskit from scratch. they need to learn the basics of quantum computing and the basics of programming with qiskit before any involved interactive circuit building",
+      "kind": "lesson",
+      "audience": {"level": "newcomer", "assumes": [], "not_assumed": []},
+      "style": {"analogies": true, "analogy_domains": [], "tone": "plain", "math_level": "minimal", "visualizations": true, "code_comments": "light", "language": "en"}
+    },
+    {"name": "educator-superposition", "brief": "A first class on superposition and measurement for undergraduates who know some linear algebra: the Bloch sphere, the Hadamard gate, and why measuring twice gives the same answer.", "kind": "lesson", "audience": {"level": "student", "assumes": [], "not_assumed": []}},
+    {"name": "educator-entanglement-lab", "brief": "A hands-on lab where students build a Bell pair, measure it in two bases, and check the correlations against the prediction.", "kind": "lab", "audience": {"level": "student", "assumes": [], "not_assumed": []}},
+    {"name": "educator-quiz-gates", "brief": "A short quiz on single-qubit gates: X, Z, H, S and T, what each does to |0> and |+>.", "kind": "quiz", "audience": {"level": "newcomer", "assumes": [], "not_assumed": []}},
+    {"name": "educator-challenge-grover", "brief": "A challenge: implement Grover search for one marked item among 8 and show the success probability after the right number of iterations.", "kind": "challenge", "audience": {"level": "student", "assumes": [], "not_assumed": []}},
+    {"name": "rnd-vqe-h2", "brief": "Walk an engineering team through a VQE for the H2 molecule at bond length 0.735 angstrom with a hardware-efficient ansatz and compare to the exact ground-state energy.", "kind": "walkthrough", "audience": {"level": "engineer", "assumes": [], "not_assumed": []}},
+    {"name": "rnd-transpile-noise", "brief": "Show how transpiling a 5-qubit GHZ circuit to a fake backend changes its depth and two-qubit gate count at optimisation levels 0 to 3.", "kind": "lab", "audience": {"level": "engineer", "assumes": [], "not_assumed": []}},
+    {"name": "rnd-qaoa-maxcut", "brief": "QAOA for max-cut on a 6-node ring graph with p=1 and p=2, optimise the angles classically, and report the approximation ratio.", "kind": "walkthrough", "audience": {"level": "engineer", "assumes": [], "not_assumed": []}},
+    {"name": "research-qpe", "brief": "Quantum phase estimation of a single-qubit phase gate with 4 counting qubits; show how the estimate's error falls with more counting qubits.", "kind": "walkthrough", "audience": {"level": "researcher", "assumes": [], "not_assumed": []}},
+    {"name": "research-error-mitigation", "brief": "Zero-noise extrapolation by gate folding on a noisy simulator for a 3-qubit circuit, compared with the noiseless value.", "kind": "lab", "audience": {"level": "researcher", "assumes": [], "not_assumed": []}},
+    {"name": "research-qft", "brief": "Build the quantum Fourier transform on 4 qubits from gates, check it against QFTGate, and apply it to a periodic state.", "kind": "lesson", "audience": {"level": "researcher", "assumes": [], "not_assumed": []}},
+    {"name": "ja-teleportation", "brief": "量子テレポーテーションを初心者向けに説明し、Qiskit で回路を作って結果を確認するノートブック。", "kind": "lesson", "locale": "ja", "audience": {"level": "newcomer", "assumes": [], "not_assumed": []}}
+  ]
+}
