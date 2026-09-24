@@ -801,6 +801,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     runAgainFailed: string;
     versionFailedHeadline: string;
     versionFailedHint: string;
+    versionFailedNoCellsHeadline: string;
+    versionFailedNoCellsHint: string;
 
     reviewLabel: string;
     reviewVerdict: Record<NotebookReviewVerdict, string>;
@@ -1968,8 +1970,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     runAgain: "Run again",
     running: "Running…",
     runAgainFailed: "The notebook could not be re-run.",
-    versionFailedHeadline: "This version did not finish generating.",
-    versionFailedHint: "Ask Nala below to fix it, or run it again.",
+    versionFailedHeadline: "Not every cell in this version ran.",
+    versionFailedHint: "The cell that raised is marked below. Ask Nala to fix it, or edit it yourself and run it again.",
+    versionFailedNoCellsHeadline: "Nala could not build this notebook.",
+    versionFailedNoCellsHint: "Nothing was written yet, so there is nothing to fix. Start a new notebook with a shorter or more specific brief.",
 
     reviewLabel: "Nala's review",
     reviewVerdict: { ready: "Ready", "needs-attention": "Needs attention" },
@@ -3163,8 +3167,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     runAgain: "再実行",
     running: "実行中…",
     runAgainFailed: "ノートブックを再実行できませんでした。",
-    versionFailedHeadline: "このバージョンの生成は完了しませんでした。",
-    versionFailedHint: "下のNalaに修正を依頼するか、もう一度実行してください。",
+    versionFailedHeadline: "このバージョンには実行できなかったセルがあります。",
+    versionFailedHint: "例外が出たセルに印が付いています。Nala に修正を頼むか、自分で編集してもう一度実行してください。",
+    versionFailedNoCellsHeadline: "Nala はこのノートブックを作成できませんでした。",
+    versionFailedNoCellsHint: "まだ何も書かれていないため、修正するものがありません。より短く具体的な説明で新しいノートブックを作成してください。",
 
     reviewLabel: "Nalaのレビュー",
     reviewVerdict: { ready: "準備完了", "needs-attention": "要確認" },

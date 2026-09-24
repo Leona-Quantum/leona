@@ -1,0 +1,43 @@
+{
+  "about": "Shared cases for the notebook linter. The Python rules (leona_notebooks.lint) and the browser rules (apps/web/lib/notebook-lint.ts) are both tested against this file, so the two cannot drift apart silently. A case marked python_only needs something the browser does not have (the sandbox guard's import list, a real Python parser) and is skipped by the TypeScript test. `preceding` is the source of earlier code cells, in order; `source` is the cell being checked. Lines are 1-based within `source`.",
+  "codes": {
+    "gate-returns-instructions": "warning",
+    "removed-qiskit-api": "error",
+    "measured-circuit-has-no-statevector": "error",
+    "forbidden-import": "error",
+    "syntax-error": "error"
+  },
+  "cases": [
+    {"name": "chained gate assigned", "source": "qc = QuantumCircuit(1).h(0)\n", "expect": [{"code": "gate-returns-instructions", "line": 1}]},
+    {"name": "today's production failure", "source": "from qiskit.quantum_info import Statevector\nfrom qiskit import QuantumCircuit\n\nstates = {\n    \"H|0>\": Statevector.from_label(\"0\").evolve(QuantumCircuit(1).h(0)),\n}\n", "expect": [{"code": "gate-returns-instructions", "line": 5}]},
+    {"name": "gates as statements are fine", "source": "qc = QuantumCircuit(2)\nqc.h(0)\nqc.cx(0, 1)\nqc.measure_all()\n", "expect": []},
+    {"name": "gate result bound to a name", "source": "qc = QuantumCircuit(2)\nbell = qc.h(0)\n", "expect": [{"code": "gate-returns-instructions", "line": 2}]},
+    {"name": "circuit defined in an earlier cell", "preceding": ["from qiskit import QuantumCircuit\nqc = QuantumCircuit(3)\n"], "source": "result = qc.cx(0, 1)\n", "expect": [{"code": "gate-returns-instructions", "line": 1}]},
+    {"name": "gate inside a list", "source": "circuits = [QuantumCircuit(1).x(0)]\n", "expect": [{"code": "gate-returns-instructions", "line": 1}]},
+    {"name": "measure_all returns None", "source": "qc = QuantumCircuit(1)\njob = sampler.run([qc.measure_all()])\n", "expect": [{"code": "gate-returns-instructions", "line": 2}]},
+    {"name": "not a circuit receiver", "source": "import numpy as np\ntimer = make_timer()\nvalue = timer.reset()\n", "expect": []},
+    {"name": "commented out", "source": "# qc = QuantumCircuit(1).h(0)\n", "expect": []},
+    {"name": "inside a string", "source": "s = \"from qiskit import execute\"\nt = 'QuantumCircuit(1).h(0)'\n", "expect": []},
+    {"name": "qiskit.execute removed", "source": "from qiskit import execute\n", "expect": [{"code": "removed-qiskit-api", "line": 1}]},
+    {"name": "Aer from qiskit removed", "source": "from qiskit import QuantumCircuit, Aer\n", "expect": [{"code": "removed-qiskit-api", "line": 1}]},
+    {"name": "BasicAer removed", "source": "from qiskit import BasicAer\n", "expect": [{"code": "removed-qiskit-api", "line": 1}]},
+    {"name": "V1 Sampler removed", "source": "from qiskit.primitives import Sampler\n", "expect": [{"code": "removed-qiskit-api", "line": 1}]},
+    {"name": "V1 Estimator among V2 names", "source": "from qiskit.primitives import StatevectorSampler, Estimator\n", "expect": [{"code": "removed-qiskit-api", "line": 1}]},
+    {"name": "V2 primitives are fine", "source": "from qiskit.primitives import StatevectorSampler, StatevectorEstimator\n", "expect": []},
+    {"name": "qiskit_aer is fine", "source": "from qiskit_aer import AerSimulator\n", "expect": []},
+    {"name": "bind_parameters removed", "source": "bound = qc.bind_parameters({theta: 0.5})\n", "expect": [{"code": "removed-qiskit-api", "line": 1}]},
+    {"name": "QuantumCircuit.qasm removed", "source": "print(qc.qasm())\n", "expect": [{"code": "removed-qiskit-api", "line": 1}]},
+    {"name": "qasm3.dumps is fine", "source": "from qiskit import qasm3\nprint(qasm3.dumps(qc))\n", "expect": []},
+    {"name": "opflow removed", "source": "from qiskit.opflow import X, Z\n", "expect": [{"code": "removed-qiskit-api", "line": 1}]},
+    {"name": "qiskit.algorithms removed", "source": "import qiskit.algorithms\n", "expect": [{"code": "removed-qiskit-api", "line": 1}]},
+    {"name": "statevector of a measured circuit", "source": "qc = QuantumCircuit(1)\nqc.h(0)\nqc.measure_all()\nsv = Statevector(qc)\n", "expect": [{"code": "measured-circuit-has-no-statevector", "line": 4}]},
+    {"name": "from_instruction after measure", "source": "qc = QuantumCircuit(1, 1)\nqc.h(0)\nqc.measure(0, 0)\nsv = Statevector.from_instruction(qc)\n", "expect": [{"code": "measured-circuit-has-no-statevector", "line": 4}]},
+    {"name": "measured in an earlier cell", "preceding": ["qc = QuantumCircuit(2)\nqc.h(0)\nqc.cx(0, 1)\nqc.measure_all()\n"], "source": "sv = Statevector(qc)\n", "expect": [{"code": "measured-circuit-has-no-statevector", "line": 1}]},
+    {"name": "statevector before the measurement is fine", "source": "qc = QuantumCircuit(1)\nqc.h(0)\nsv = Statevector(qc)\nqc.measure_all()\n", "expect": []},
+    {"name": "measured copy, unmeasured original", "source": "qc = QuantumCircuit(1)\nqc.h(0)\nmeasured = qc.measure_all(inplace=False)\nsv = Statevector(qc)\n", "expect": []},
+    {"name": "forbidden import", "python_only": true, "source": "import os\n", "expect": [{"code": "forbidden-import", "line": 1}]},
+    {"name": "forbidden from-import", "python_only": true, "source": "from subprocess import run\n", "expect": [{"code": "forbidden-import", "line": 1}]},
+    {"name": "allowed imports", "python_only": true, "source": "import numpy as np\nfrom qiskit import QuantumCircuit\nimport matplotlib.pyplot as plt\n", "expect": []},
+    {"name": "syntax error", "python_only": true, "source": "def f(:\n    pass\n", "expect": [{"code": "syntax-error", "line": 1}]}
+  ]
+}

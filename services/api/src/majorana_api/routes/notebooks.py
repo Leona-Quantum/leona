@@ -149,6 +149,36 @@ async def _latest_and_current(
     return latest, current
 
 
+def _working_base(
+    latest: NotebookVersionRow, current: NotebookVersionRow | None
+) -> NotebookVersionRow:
+    """The version a chat turn or a re-run starts from, or a 409 when there is none.
+
+    The current (ready) version when there is one. Otherwise the newest version, if it
+    FAILED but still carries a spec: a notebook whose only build failed is still a
+    notebook the reader can see, talk to and fix, and refusing every request on it left
+    the reader of the 2026-09-24 production failure with a chat that answered 409 to each
+    message (plan 10-notebook-ide, rule 2). The pipeline now keeps such builds `ready`
+    anyway, so this is for the versions saved `failed` before that, and for any build
+    that failed after its cells ran for a reason the pipeline still counts as failure.
+
+    A version still in flight is `_assert_not_in_flight`'s business and is checked after
+    this; a failed version with no spec (the draft never parsed, the sandbox never ran)
+    has nothing to start from, and says so.
+    """
+    if current is not None:
+        return current
+    if latest.status == contracts.NotebookVersionStatus.FAILED.value and latest.spec is not None:
+        return latest
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "error": "This notebook has no version to work from yet.",
+            "reason": "notebook_not_ready",
+        },
+    )
+
+
 def _to_resource_exact(
     notebook: NotebookRow, latest: NotebookVersionRow, current
 ) -> contracts.Notebook:
@@ -579,14 +609,7 @@ async def create_notebook_turn(
 ) -> contracts.CreateNotebookTurnResponse:
     notebook = await notebooks_repo.get_notebook(scope, session, notebook_id)
     latest, current = await _latest_and_current(scope, session, notebook)
-    if current is None:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "error": "This notebook has no ready version yet.",
-                "reason": "notebook_not_ready",
-            },
-        )
+    base = _working_base(latest, current)
     _assert_not_in_flight(notebook, latest)
 
     await _gate_notebook_run(body.message, scope, session, identity, settings)
@@ -630,7 +653,7 @@ async def create_notebook_turn(
             "workspace_id": str(scope.workspace_id),
             "kind": "revise",
             "request": {"message": body.message},
-            "base_version_id": str(current.id),
+            "base_version_id": str(base.id),
             "response_locale": notebook.language,
         },
         run_id=run.id,
@@ -884,14 +907,7 @@ async def rerun_notebook(
 ) -> contracts.RerunNotebookResponse:
     notebook = await notebooks_repo.get_notebook(scope, session, notebook_id)
     latest, current = await _latest_and_current(scope, session, notebook)
-    if current is None:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "error": "This notebook has no ready version yet.",
-                "reason": "notebook_not_ready",
-            },
-        )
+    base = _working_base(latest, current)
     _assert_not_in_flight(notebook, latest)
 
     await _gate_notebook_run(f"Re-run notebook {notebook.slug}", scope, session, identity, settings)
@@ -926,7 +942,7 @@ async def rerun_notebook(
             "workspace_id": str(scope.workspace_id),
             "kind": "rerun",
             "request": {},
-            "base_version_id": str(current.id),
+            "base_version_id": str(base.id),
             "response_locale": notebook.language,
         },
         run_id=run.id,
