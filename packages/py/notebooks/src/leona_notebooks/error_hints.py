@@ -34,7 +34,7 @@ _HINTS: tuple[tuple[re.Pattern[str], str], ...] = (
         re.compile(r"'DataBin' object has no attribute"),
         "Sampler results are read by classical register NAME. `measure_all()` creates a register "
         "called `meas` (`.data.meas.get_counts()`); a register created as "
-        "`ClassicalRegister(n, \"c\")` is read as `.data.c.get_counts()`.",
+        '`ClassicalRegister(n, "c")` is read as `.data.c.get_counts()`.',
     ),
     (
         re.compile(r"'NoneType' object has no attribute"),
@@ -42,15 +42,17 @@ _HINTS: tuple[tuple[re.Pattern[str], str], ...] = (
         "`qc.measure_all()`, which returns None, being used as though it were the circuit.",
     ),
     (
-        re.compile(r"cannot import name '(execute|Aer|BasicAer|IBMQ)' from 'qiskit'|"
-                   r"module 'qiskit' has no attribute '(execute|Aer|BasicAer)'"),
+        re.compile(
+            r"cannot import name '(execute|Aer|BasicAer|IBMQ)' from 'qiskit'|"
+            r"module 'qiskit' has no attribute '(execute|Aer|BasicAer)'"
+        ),
         "That name was removed from Qiskit. Run circuits with `StatevectorSampler` from "
         "`qiskit.primitives`, or `AerSimulator` from `qiskit_aer`.",
     ),
     (
         re.compile(r"MissingOptionalLibraryError"),
-        "An optional plotting library is missing. `qc.draw(\"text\")` always works; use it "
-        "instead of `qc.draw(\"mpl\")` unless the figure is the point of the cell.",
+        'An optional plotting library is missing. `qc.draw("text")` always works; use it '
+        'instead of `qc.draw("mpl")` unless the figure is the point of the cell.',
     ),
 )
 

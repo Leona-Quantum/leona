@@ -65,27 +65,50 @@ class DockerSandbox:
             name = f"leona-eval-{os.getpid()}-{int(started * 1000)}"
             memory = max(spec.memory_mb, 512)
             proc = await asyncio.create_subprocess_exec(
-                "docker", "run", "--rm", "--name", name,
-                "--platform", self._platform,
-                "--network", "none",
+                "docker",
+                "run",
+                "--rm",
+                "--name",
+                name,
+                "--platform",
+                self._platform,
+                "--network",
+                "none",
                 "--read-only",
-                "--memory", f"{memory}m", "--memory-swap", f"{memory}m",
-                "--cpus", "2", "--pids-limit", "256",
+                "--memory",
+                f"{memory}m",
+                "--memory-swap",
+                f"{memory}m",
+                "--cpus",
+                "2",
+                "--pids-limit",
+                "256",
                 # The image runs as root under plain Docker (Vercel supplies its own
                 # user), so the eval drops to nobody with no capabilities.
-                "--user", "65534:65534", "--cap-drop", "ALL",
-                "--security-opt", "no-new-privileges",
-                "-e", "PYTHONUNBUFFERED=1",
-                "-v", f"{host_tmp}:/tmp",
-                "-w", "/tmp",
+                "--user",
+                "65534:65534",
+                "--cap-drop",
+                "ALL",
+                "--security-opt",
+                "no-new-privileges",
+                "-e",
+                "PYTHONUNBUFFERED=1",
+                "-v",
+                f"{host_tmp}:/tmp",
+                "-w",
+                "/tmp",
                 self._image,
-                "python", "-I", "/tmp/main.py",
+                "python",
+                "-I",
+                "/tmp/main.py",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
             timed_out = False
             try:
-                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=spec.timeout_s + 30)
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(), timeout=spec.timeout_s + 30
+                )
             except TimeoutError:
                 timed_out = True
                 killer = await asyncio.create_subprocess_exec("docker", "kill", name)
@@ -230,8 +253,16 @@ async def main() -> int:
             results.append(result)
             print(
                 f"{result['name']}: {result['status']}"
-                + (f" ran {result.get('ran')}/{result.get('code_cells')}" if "ran" in result else "")
-                + (f" raised {[r['id'] for r in result.get('raised', [])]}" if result.get("raised") else "")
+                + (
+                    f" ran {result.get('ran')}/{result.get('code_cells')}"
+                    if "ran" in result
+                    else ""
+                )
+                + (
+                    f" raised {[r['id'] for r in result.get('raised', [])]}"
+                    if result.get("raised")
+                    else ""
+                )
                 + f" repairs {result.get('repairs', '-')}",
                 flush=True,
             )

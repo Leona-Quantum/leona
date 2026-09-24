@@ -372,7 +372,9 @@ def render_repair_user_prompt(context: RepairContext, framework: str = "qiskit")
         else ""
     )
     hints = (
-        "WHAT THIS ERROR USUALLY MEANS:\n" + "\n".join(f"- {hint}" for hint in context.hints) + "\n\n"
+        "WHAT THIS ERROR USUALLY MEANS:\n"
+        + "\n".join(f"- {hint}" for hint in context.hints)
+        + "\n\n"
         if context.hints
         else ""
     )

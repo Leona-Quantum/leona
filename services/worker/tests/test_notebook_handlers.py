@@ -654,7 +654,9 @@ async def test_a_cell_that_still_raises_after_repair_is_kept_ready_and_named(
 
     await nh.handle_notebook_generate(
         session,
-        _payload(run_id=run_id, notebook_id=notebook_id, version_id=version_id, request={"brief": "b"}),
+        _payload(
+            run_id=run_id, notebook_id=notebook_id, version_id=version_id, request={"brief": "b"}
+        ),
         llm=QueueLLM([OUTLINE_JSON, LESSON, same_cell, same_cell, same_cell]),
         sandbox=FakeSandbox(fail_cell_id="c05"),
         store=store,
@@ -722,7 +724,9 @@ async def test_a_guard_violating_draft_that_the_repair_fixes_runs(_fake_run_plum
 
     await nh.handle_notebook_generate(
         session,
-        _payload(run_id=run_id, notebook_id=notebook_id, version_id=version_id, request={"brief": "b"}),
+        _payload(
+            run_id=run_id, notebook_id=notebook_id, version_id=version_id, request={"brief": "b"}
+        ),
         llm=QueueLLM([OUTLINE_JSON, GUARD_VIOLATING_DRAFT, SAFE_REPAIR]),
         sandbox=FakeSandbox(),
         store=store,

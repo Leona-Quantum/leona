@@ -49,12 +49,20 @@ async def test_a_summed_float_duration_is_accepted_and_replays_idempotently(scop
     assert repr(seconds) == "28.366999999999997"  # the input really is past 15 digits
     event_id = uuid.uuid4()
     first = await usage_repo.record_usage(
-        scope, session, kind=UsageKind.SANDBOX_SECONDS, quantity=seconds,
-        meta={"lane": "notebook"}, event_id=event_id,
+        scope,
+        session,
+        kind=UsageKind.SANDBOX_SECONDS,
+        quantity=seconds,
+        meta={"lane": "notebook"},
+        event_id=event_id,
     )
     again = await usage_repo.record_usage(
-        scope, session, kind=UsageKind.SANDBOX_SECONDS, quantity=seconds,
-        meta={"lane": "notebook"}, event_id=event_id,
+        scope,
+        session,
+        kind=UsageKind.SANDBOX_SECONDS,
+        quantity=seconds,
+        meta={"lane": "notebook"},
+        event_id=event_id,
     )
     assert first.id == again.id == event_id
     assert abs(float(again.quantity) - seconds) < 1e-6
