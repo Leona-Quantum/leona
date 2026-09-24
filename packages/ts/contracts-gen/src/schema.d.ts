@@ -2757,6 +2757,115 @@ export interface components {
              */
             workspace_id: string;
         };
+        /**
+         * NotebookCells
+         * @description Every code cell's result after one sandbox dispatch — the initial run and each
+         *     repair's rerun alike, so "attempt" counts dispatches of `NotebookPorts.run_notebook`
+         *     for this run, not repairs specifically (a repair attempt and an execute attempt are
+         *     different counters watching the same loop).
+         */
+        NotebookCells: {
+            /** Attempt */
+            attempt: number;
+            /** Cells */
+            cells?: components["schemas"]["NotebookLiveCellResult"][];
+            /** Ok */
+            ok: boolean;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "notebook.cells";
+        };
+        /**
+         * NotebookDraftDelta
+         * @description A streamed fragment of the notebook lane's own model output — Nala writing a
+         *     notebook cell by cell (plan 10-notebook-ide, "Live" lane), not `llm.call`'s wrapper
+         *     (`MeteredAgentLLM`, `services/worker/agent_llm.py`), which the notebook lane's
+         *     `ProductionNotebookPorts._complete` does not go through.
+         *
+         *     **Pre-redacted, not raw.** The run's event stream is workspace-scoped, not
+         *     author-scoped (`services/api/.../repos/runs.py` `get_run` filters on
+         *     `Run.workspace_id` alone), the same gap `NotebookSpec.for_learner()` closes for a
+         *     finished notebook (ai-ops#260) applies to every character streamed live. A cell
+         *     whose header (`# %%` line) marks it `role=solution`/`role=answer` or carries
+         *     `check=`/`answer=` is withheld from this stream entirely by
+         *     `leona_notebooks.live_draft.LiveDraftGuard` before a chunk ever reaches here — a
+         *     later, correctly redacted `notebook.draft.parsed` cannot un-send a byte that
+         *     already went out on the wire.
+         */
+        NotebookDraftDelta: {
+            /** Attempt */
+            attempt: number;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /** Text */
+            text: string;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "notebook.draft.delta";
+        };
+        /**
+         * NotebookDraftParsed
+         * @description The draft's cells, once the streamed text parses as notebook source — the live
+         *     view's replacement for the incremental parse it does itself from raw
+         *     `notebook.draft.delta` text, with the roles and structure the incremental parse
+         *     cannot see (a partial cell has no closing marker yet).
+         */
+        NotebookDraftParsed: {
+            /** Cells */
+            cells?: components["schemas"]["NotebookLiveCell"][];
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "notebook.draft.parsed";
+        };
         /** NotebookFramework */
         NotebookFramework: {
             /**
@@ -2884,6 +2993,122 @@ export interface components {
              * @default null
              */
             next_cursor: string | null;
+        };
+        /**
+         * NotebookLiveCell
+         * @description One cell as parsed so far from a streaming draft — already redacted the way
+         *     `NotebookSpec.for_learner()` redacts a finished one (same reason as
+         *     `NotebookDraftDelta`).
+         */
+        NotebookLiveCell: {
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "markdown" | "code";
+            /**
+             * Role
+             * @default null
+             */
+            role: string | null;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+        };
+        /**
+         * NotebookLiveCellResult
+         * @description One cell's execution outcome, status and error name/value only — no stdout, no
+         *     outputs, no figures. What raised is often exactly what a graded cell's assertion
+         *     was checking, so even this is not risk-free for a non-author viewer; see the
+         *     "Live" lane's report for the residual flag this carries forward rather than
+         *     resolves.
+         */
+        NotebookLiveCellResult: {
+            /**
+             * Duration Ms
+             * @default 0
+             */
+            duration_ms: number;
+            /**
+             * Ename
+             * @default null
+             */
+            ename: string | null;
+            /**
+             * Evalue
+             * @default null
+             */
+            evalue: string | null;
+            /** Id */
+            id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "error" | "skipped" | "not_run";
+        };
+        /**
+         * NotebookRepair
+         * @description A repair's own lifecycle, cell-scoped: distinct from the generic
+         *     `stage.started`/`stage.finished(stage=GENERATE)` pair `ProductionNotebookPorts.observe`
+         *     already emits for `notebook.repair`, which names no cell. `source` (the repaired
+         *     cell's new text) is carried only on `status="finished"`, and only when that cell is
+         *     not graded/solution-only — the same redaction `NotebookDraftDelta` applies, reused
+         *     rather than re-derived because a cell being repaired is read from the SAME spec
+         *     `for_learner()` would redact.
+         */
+        NotebookRepair: {
+            /** Attempt */
+            attempt: number;
+            /**
+             * Before Running
+             * @default false
+             */
+            before_running: boolean;
+            /** Cell Id */
+            cell_id: string;
+            /**
+             * Error
+             * @default null
+             */
+            error: string | null;
+            /** Of */
+            of: number;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /**
+             * Source
+             * @default null
+             */
+            source: string | null;
+            /**
+             * Status
+             * @default started
+             * @enum {string}
+             */
+            status: "started" | "finished" | "failed";
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "notebook.repair";
         };
         /**
          * NotebookReview
@@ -4755,7 +4980,7 @@ export interface components {
          * RunEvent
          * @description Discriminated union of all run event types (class name sets the schema id).
          */
-        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["RunModeResolved"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["ChatDelta"] | components["schemas"]["ChatCompleted"] | components["schemas"]["ChatError"] | components["schemas"]["ConversationTitled"] | components["schemas"]["QappGenerated"] | components["schemas"]["NotebookGrades"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["SynthesisResultEvent"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["SemanticReviewRecorded"] | components["schemas"]["StrictVerificationRecorded"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunBestEffort"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
+        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["RunModeResolved"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["ChatDelta"] | components["schemas"]["ChatCompleted"] | components["schemas"]["ChatError"] | components["schemas"]["ConversationTitled"] | components["schemas"]["QappGenerated"] | components["schemas"]["NotebookGrades"] | components["schemas"]["NotebookDraftDelta"] | components["schemas"]["NotebookDraftParsed"] | components["schemas"]["NotebookCells"] | components["schemas"]["NotebookRepair"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["SynthesisResultEvent"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["SemanticReviewRecorded"] | components["schemas"]["StrictVerificationRecorded"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunBestEffort"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
         /** RunFinished */
         RunFinished: {
             /** @default null */
