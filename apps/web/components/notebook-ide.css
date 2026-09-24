@@ -90,7 +90,11 @@
 
 .mj-code-editor-line {
   position: relative;
-  padding-left: var(--mj-code-editor-gutter);
+  /* The same left inset as the <pre> (--sp-2 past the gutter) and the <textarea>
+     (left: gutter, padding-left: --sp-2). Without the --sp-2 this layer's text started
+     8px left of the highlighted text, so underlines missed their characters and long
+     lines wrapped at a different width. */
+  padding-left: calc(var(--sp-2) + var(--mj-code-editor-gutter));
   min-height: 1lh;
 }
 
@@ -104,8 +108,11 @@
   user-select: none;
 }
 
+/* Invisible, like the rest of this layer: it exists so an underline has characters
+   to sit under. The visible text is the <pre> beneath. A visible colour here drew
+   every line twice. */
 .mj-code-editor-line-content {
-  color: var(--text-0);
+  color: transparent;
 }
 
 /* A lint finding's underline. Wavy so it reads as "something is wrong here" rather
@@ -131,7 +138,9 @@
    (see .mj-code-editor-lines above) so it can be hovered or tabbed to. */
 .mj-code-editor-gutter-mark {
   position: absolute;
-  left: calc(var(--mj-code-editor-gutter) - var(--sp-2));
+  /* In the gap between the line number (which ends at gutter - --sp-1) and the code
+     (which starts at gutter + --sp-2), so it never covers the number. */
+  left: calc(var(--mj-code-editor-gutter) - var(--sp-1) + 2px);
   top: 0.5em;
   width: 6px;
   height: 6px;
@@ -203,6 +212,20 @@
   background: transparent;
   color: transparent;
   caret-color: var(--text-0);
+}
+
+/* The workspace shell sets every textarea to the UI font with a (0,1,1) selector,
+   `.mj-shell--workspace :is(button, input, select, textarea)`, which outranks
+   `.mj-code-editor-metrics` (0,1,0). That left this textarea in the sans-serif UI font
+   under a monospace <pre>: the caret and every click landed by sans-serif character
+   widths while the reader saw monospace text, drifting further along each line, and
+   the gutter (sized in `ch`) came out 1.6px wider here than on the <pre>. (0,2,1)
+   wins, and every metric the three layers must share is restated here. */
+.mj-code-editor textarea.mj-code-editor-input {
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.6;
+  letter-spacing: normal;
 }
 
 .mj-code-editor-input::selection {
@@ -335,6 +358,19 @@ li[data-current="true"] .mj-code-editor-problem {
   font-size: var(--fs-12);
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
+}
+
+/* A cell that raised carries a dozen actions. Wrap them onto another row rather than
+   let flex squeeze each into a narrow column ("Duplic/ate"): the shared
+   `.mj-library-row-actions` row this reuses never wraps. */
+.mj-notebook-ide-toolbar {
+  flex-wrap: wrap;
+  row-gap: var(--sp-1);
+}
+
+.mj-notebook-ide-toolbar > * {
+  flex: none;
+  white-space: nowrap;
 }
 
 .mj-notebook-ide-toolbar button.mj-notebook-ide-run-to-here {

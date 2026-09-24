@@ -198,11 +198,14 @@ export function NotebookCodeView({
   copy: NotebookIdeCopy;
 }) {
   const problemsId = useId();
+  // A cell's source ends with a newline, which in a read-only view is only an empty,
+  // numbered last line. The editor keeps it: there the caret can sit on that line.
+  const shown = value.endsWith("\n") ? value.slice(0, -1) : value;
   return (
     <div className="mj-code-editor mj-code-editor--view">
-      <div className="mj-code-editor-surface" style={gutterStyle(value)}>
+      <div className="mj-code-editor-surface" style={gutterStyle(shown)}>
         <div className="mj-code-editor-code">
-          <CodeLayers value={value} language={language} highlight diagnostics={diagnostics} preHidden={false} />
+          <CodeLayers value={shown} language={language} highlight diagnostics={diagnostics} preHidden={false} />
         </div>
       </div>
       {diagnostics.length > 0 ? (
