@@ -204,6 +204,110 @@ class NotebookGrades(_EventBase):
     note: str = ""
 
 
+class NotebookDraftDelta(_EventBase):
+    """A streamed fragment of the notebook lane's own model output — Nala writing a
+    notebook cell by cell (plan 10-notebook-ide, "Live" lane), not `llm.call`'s wrapper
+    (`MeteredAgentLLM`, `services/worker/agent_llm.py`), which the notebook lane's
+    `ProductionNotebookPorts._complete` does not go through.
+
+    **Pre-redacted, not raw.** The run's event stream is workspace-scoped, not
+    author-scoped (`services/api/.../repos/runs.py` `get_run` filters on
+    `Run.workspace_id` alone), the same gap `NotebookSpec.for_learner()` closes for a
+    finished notebook (ai-ops#260) applies to every character streamed live. A cell
+    whose header (`# %%` line) marks it `role=solution`/`role=answer` or carries
+    `check=`/`answer=` is withheld from this stream entirely by
+    `leona_notebooks.live_draft.LiveDraftGuard` before a chunk ever reaches here — a
+    later, correctly redacted `notebook.draft.parsed` cannot un-send a byte that
+    already went out on the wire.
+    """
+
+    type: Literal["notebook.draft.delta"] = "notebook.draft.delta"
+    text: str = Field(min_length=1)
+    #: Which draft/repair completion this fragment belongs to — a single counter on
+    #: the port, incremented once per streaming LLM call for this run (draft's own
+    #: retry-on-bad-structure loop and each repair call share it), so a client can
+    #: tell "this is a fresh attempt" from "more of the one already showing" without
+    #: threading stage/role through every delta.
+    attempt: int = Field(ge=1)
+
+
+class NotebookLiveCell(BaseModel):
+    """One cell as parsed so far from a streaming draft — already redacted the way
+    `NotebookSpec.for_learner()` redacts a finished one (same reason as
+    `NotebookDraftDelta`)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    kind: Literal["markdown", "code"]
+    role: str | None = None
+    source: str = ""
+
+
+class NotebookDraftParsed(_EventBase):
+    """The draft's cells, once the streamed text parses as notebook source — the live
+    view's replacement for the incremental parse it does itself from raw
+    `notebook.draft.delta` text, with the roles and structure the incremental parse
+    cannot see (a partial cell has no closing marker yet)."""
+
+    type: Literal["notebook.draft.parsed"] = "notebook.draft.parsed"
+    cells: list[NotebookLiveCell] = Field(default_factory=list)
+
+
+class NotebookLiveCellResult(BaseModel):
+    """One cell's execution outcome, status and error name/value only — no stdout, no
+    outputs, no figures. What raised is often exactly what a graded cell's assertion
+    was checking, so even this is not risk-free for a non-author viewer; see the
+    "Live" lane's report for the residual flag this carries forward rather than
+    resolves."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    status: Literal["ok", "error", "skipped", "not_run"]
+    ename: str | None = None
+    evalue: str | None = None
+    duration_ms: int = Field(default=0, ge=0)
+
+
+class NotebookCells(_EventBase):
+    """Every code cell's result after one sandbox dispatch — the initial run and each
+    repair's rerun alike, so "attempt" counts dispatches of `NotebookPorts.run_notebook`
+    for this run, not repairs specifically (a repair attempt and an execute attempt are
+    different counters watching the same loop)."""
+
+    type: Literal["notebook.cells"] = "notebook.cells"
+    attempt: int = Field(ge=1)
+    ok: bool
+    cells: list[NotebookLiveCellResult] = Field(default_factory=list)
+
+
+class NotebookRepair(_EventBase):
+    """A repair's own lifecycle, cell-scoped: distinct from the generic
+    `stage.started`/`stage.finished(stage=GENERATE)` pair `ProductionNotebookPorts.observe`
+    already emits for `notebook.repair`, which names no cell. `source` (the repaired
+    cell's new text) is carried only on `status="finished"`, and only when that cell is
+    not graded/solution-only — the same redaction `NotebookDraftDelta` applies, reused
+    rather than re-derived because a cell being repaired is read from the SAME spec
+    `for_learner()` would redact."""
+
+    type: Literal["notebook.repair"] = "notebook.repair"
+    cell_id: str
+    status: Literal["started", "finished", "failed"] = "started"
+    #: "<ename>: <evalue>" of the error this repair addresses (started/finished), or
+    #: the provider failure's own message when the repair's LLM call itself failed
+    #: (failed) — two different failures sharing one field because a client shows
+    #: exactly one error string per repair regardless of which kind it is.
+    error: str | None = None
+    attempt: int = Field(ge=1)
+    of: int = Field(ge=1)
+    #: `True` when the linter proved this cell would fail before any sandbox time was
+    #: spent on it (`leona_notebooks.pipeline._first_definite_finding`), mirroring
+    #: `RepairContext.before_running`.
+    before_running: bool = False
+    source: str | None = None
+
+
 class CodeGenerated(_EventBase):
     type: Literal["code.generated"] = "code.generated"
     language: str
@@ -509,6 +613,10 @@ RunEvent = Annotated[
     | ConversationTitled
     | QappGenerated
     | NotebookGrades
+    | NotebookDraftDelta
+    | NotebookDraftParsed
+    | NotebookCells
+    | NotebookRepair
     | CodeGenerated
     | ScreenResult
     | ResourceEstimateResult

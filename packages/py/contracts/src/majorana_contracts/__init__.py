@@ -522,7 +522,15 @@ from .lifecycle import (
 # report stored before it still parses). Additive: one new model, one new field
 # with a default. The caps are module constants in `notebooks.py` rather than
 # exports, because only the sandbox program and its tests read them.
-CONTRACTS_VERSION = "2.35.0"
+# 2.36.0: plan 10-notebook-ide, "Live" lane — a notebook developing in real time. New
+# RunEvent members: NotebookDraftDelta (notebook.draft.delta), NotebookDraftParsed
+# (notebook.draft.parsed, carries NotebookLiveCell), NotebookCells (notebook.cells,
+# carries NotebookLiveCellResult) and NotebookRepair (notebook.repair) — emitted by
+# `ProductionNotebookPorts` (services/worker/notebook_handlers.py), no route changes.
+# Additive: new names only, no existing model changes. Not re-exported from this
+# module's `__all__`, matching `NotebookGrades` — a member of `RunEvent` validates and
+# emits through `run_event_adapter` without a top-level import.
+CONTRACTS_VERSION = "2.36.0"
 
 __all__ = [
     "PresenceHeartbeatRequest",

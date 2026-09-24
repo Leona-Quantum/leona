@@ -35,6 +35,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from typing import Any, Literal, Protocol
 
 from pydantic import ValidationError
@@ -62,9 +63,11 @@ from leona_notebooks.execution import CellResult, ExecutionReport
 from leona_notebooks.grading import GradedAttempt, grades_from_report, spec_with_graders
 from leona_notebooks.authoring import advisory_structure, spec_from_author_request
 from leona_notebooks.ipynb import to_ipynb
+from leona_notebooks.live_draft import LiveDraftGuard
 from leona_notebooks.pipeline import (
     GenerationRequest,
     NotebookPorts,
+    PipelineBudget,
     PipelineOutcome,
     RevisionRequest,
     describe_failure,
@@ -95,8 +98,16 @@ from leona_notebooks.sandbox_program import (
     compose_notebook_program,
     report_from_sandbox_result,
 )
-from leona_notebooks.source import render_source
-from leona_notebooks.spec import Audience, CellRole, Framework, NotebookKind, NotebookSpec, Style
+from leona_notebooks.source import SourceParseError, parse_source, render_source
+from leona_notebooks.spec import (
+    SOLUTION_ONLY_ROLES,
+    Audience,
+    CellRole,
+    Framework,
+    NotebookKind,
+    NotebookSpec,
+    Style,
+)
 
 from majorana_api.catalog_authority import CatalogAuthority
 from majorana_api.db import AsyncSession
@@ -104,6 +115,12 @@ from majorana_api.orm import User
 from majorana_api.repos import catalog as catalog_repo
 from majorana_api.repos import usage as usage_repo
 from majorana_api.tiers import EnvTierSources, limits_for, tier_of
+
+# The SAME live-delta chunk size the circuit Run lane's own streaming uses
+# (`MeteredAgentLLM`, `agent_llm.py`) — reused rather than re-picked so the two
+# streaming lanes buffer on the same cadence for the same reason (one `run_events`
+# row, and one `session.commit()`, per chunk — see `RepoEventSink.emit`).
+from majorana_worker.agent_llm import _LIVE_DELTA_CHARS
 
 log = logging.getLogger("majorana_worker.notebook_handlers")
 
@@ -320,6 +337,62 @@ class RepoNotebookStore:
 # --------------------------------------------------------------------------- ports
 
 
+class _DraftDeltaStreamer:
+    """One draft/repair completion's `on_delta` handler: redact, buffer, emit.
+
+    `LiveDraftGuard` decides what is SAFE to release as the raw text streams in;
+    this wraps it with the same fixed-size chunking `agent_llm.py`'s circuit-run
+    streaming uses (`_LIVE_DELTA_CHARS`), so a `notebook.draft.delta` event goes
+    out roughly every 160 characters of SAFE text rather than once per provider
+    token — each event is one `run_events` row and one commit
+    (`RepoEventSink.emit`), and per-token would be a write storm.
+
+    One instance per streamed call (construct fresh for each `_complete()`); it is
+    not reusable across draft attempts or repairs, because `LiveDraftGuard` tracks
+    one cell's-worth of state at a time and a new completion starts a new stream.
+    """
+
+    def __init__(self, sink: Any, attempt: int) -> None:
+        self._sink = sink
+        self._attempt = attempt
+        self._guard = LiveDraftGuard()
+        self._buffer = ""
+
+    async def on_delta(self, text: str, kind: str) -> None:
+        # The reasoning channel is the model's scratch space, never notebook text —
+        # `agent_llm.py`'s own circuit-run streaming draws the same line.
+        if kind != "output" or not text:
+            return
+        safe = self._guard.feed(text)
+        if not safe:
+            return
+        self._buffer += safe
+        while len(self._buffer) >= _LIVE_DELTA_CHARS:
+            chunk, self._buffer = (
+                self._buffer[:_LIVE_DELTA_CHARS],
+                self._buffer[_LIVE_DELTA_CHARS:],
+            )
+            await self._emit(chunk)
+
+    async def flush(self) -> None:
+        """Call once after the streamed call returns OR raises — the provider may
+        disconnect mid-cell, and whatever the guard can still prove safe (the tail of
+        an already-classified-safe cell) should still reach the reader rather than
+        being lost with the connection."""
+        tail = self._guard.flush()
+        if tail:
+            self._buffer += tail
+        if self._buffer:
+            await self._emit(self._buffer)
+            self._buffer = ""
+
+    async def _emit(self, text: str) -> None:
+        try:
+            await self._sink.emit("notebook.draft.delta", {"text": text, "attempt": self._attempt})
+        except Exception:
+            log.exception("notebook draft delta emit failed (attempt=%s)", self._attempt)
+
+
 class ProductionNotebookPorts(NotebookPorts):
     """`NotebookPorts` backed by real LLM calls and the real sandbox."""
 
@@ -331,6 +404,7 @@ class ProductionNotebookPorts(NotebookPorts):
         sink: Any,
         response_locale: str,
         sandbox_memory_mb: int = DEFAULT_MEMORY_MB,
+        max_repairs: int = PipelineBudget().max_repairs,
     ) -> None:
         self._llm = llm
         self._sandbox = sandbox
@@ -343,6 +417,27 @@ class ProductionNotebookPorts(NotebookPorts):
         #: here so the handler records ONE `SANDBOX_SECONDS` usage event per
         #: run rather than one per cell execution.
         self.sandbox_seconds_used: float = 0.0
+        #: The repair budget `notebook.repair`'s "of" field reports. No caller passes
+        #: a custom `PipelineBudget` into `generate()`/`revise()` today (see
+        #: `handle_notebook_generate`/`handle_notebook_revise`), so the default here
+        #: is read from the SAME `PipelineBudget` the pipeline itself defaults to
+        #: (`budget or PipelineBudget()`), rather than a second, independently-typed
+        #: constant that could drift from it.
+        self._max_repairs = max_repairs
+        #: One counter per streamed completion (draft's retry loop, each repair) —
+        #: shared across both roles because a client tells them apart from OTHER
+        #: events on the stream (`stage.started`, `notebook.repair`), not from this
+        #: field; it only needs to distinguish "a fresh completion" from "more of the
+        #: one already showing".
+        self._stream_attempt = 0
+        #: Counts every `run_notebook()` dispatch (the initial run and each repair's
+        #: rerun) — `notebook.cells`' own "attempt", independent of `_stream_attempt`
+        #: and of the pipeline's own repair counter (an execute is not a repair).
+        self._execution_attempt = 0
+        #: Counts every `repair()` call — mirrors the pipeline's own `repairs` local
+        #: in `_execute_and_repair` exactly, because both increment once per call to
+        #: this port's `repair()`, in the same order, starting from the same zero.
+        self._repair_attempt = 0
 
     async def _complete(
         self,
@@ -353,7 +448,20 @@ class ProductionNotebookPorts(NotebookPorts):
         temperature: float,
         schema: dict[str, Any] | None = None,
         schema_name: str | None = None,
+        on_delta: Callable[[str, str], Awaitable[None]] | None = None,
     ):
+        # `ProductionNotebookPorts` calls `self._llm.complete()` directly — `default_llm()`
+        # (`RetryingLLM` wrapping `OpenAICompatibleLLM`/`AnthropicLLM`) — never through
+        # `MeteredAgentLLM` (`agent_llm.py`), which is the circuit-run lane's own metering
+        # wrapper and the one place in this codebase that can replay a STORED response
+        # (`agent_repo.get_llm_call`) without ever calling `on_delta`. Verified by reading
+        # every `MeteredAgentLLM(...)` construction site (`services/worker/handlers.py`):
+        # none of them wraps the LLM client this port receives. So there is no
+        # stored-response-replay path here to special-case — every call below either
+        # streams for real or (on a cache miss that never happens today) returns whole,
+        # in which case `on_delta` is simply never invoked and the streamer's `flush()`
+        # still fires (its `finally`), emitting nothing, which is correct: nothing was
+        # ever withheld from a delta that did not arrive.
         return await self._llm.complete(
             LLMRequest(
                 model=model_for(role),
@@ -362,7 +470,8 @@ class ProductionNotebookPorts(NotebookPorts):
                 response_schema=schema,
                 schema_name=schema_name or role,
                 temperature=temperature,
-            )
+            ),
+            on_delta=on_delta,
         )
 
     # -- LLM stages -----------------------------------------------------
@@ -415,22 +524,139 @@ class ProductionNotebookPorts(NotebookPorts):
                 f"{feedback}\n"
                 "Fix it and return the full corrected notebook source."
             )
-        response = await self._complete(
-            role=_ROLE_DRAFT,
-            system=DRAFT_SYSTEM_PROMPT,
-            user=user,
-            temperature=0.0 if feedback is None else 0.4,
-        )
-        return _strip_fences(response.text)
+        self._stream_attempt += 1
+        streamer = _DraftDeltaStreamer(self._sink, self._stream_attempt)
+        try:
+            response = await self._complete(
+                role=_ROLE_DRAFT,
+                system=DRAFT_SYSTEM_PROMPT,
+                user=user,
+                temperature=0.0 if feedback is None else 0.4,
+                on_delta=streamer.on_delta,
+            )
+        finally:
+            # Fires whether the call returned or raised (a provider disconnect mid-draft
+            # still owes the reader whatever the guard could already prove safe).
+            await streamer.flush()
+        text = _strip_fences(response.text)
+        await self._emit_draft_parsed(text, request.slug)
+        return text
+
+    async def _emit_draft_parsed(self, text: str, slug: str | None) -> None:
+        """`notebook.draft.parsed`: the SAME redaction `notebook.draft.delta` already
+        applied live, reapplied to the finished draft this attempt produced —
+        `for_learner()`, not a second redaction rule, so the two can never disagree
+        about which cell is safe. Silent on anything that is not this attempt's
+        concern: a draft that fails to parse here is exactly what the pipeline's own
+        retry-on-bad-structure loop exists for, and every failure mode of `for_learner()`
+        itself (none known, but `observe()`'s own rule applies) must not take the run
+        down over an event that is advisory to begin with."""
+        try:
+            candidate = parse_source(text, slug=slug)
+        except (SourceParseError, ValueError):
+            return
+        try:
+            learner = candidate.for_learner()
+            cells = [
+                {
+                    "id": cell.id,
+                    "kind": cell.kind,
+                    "role": cell.role.value if cell.role is not None else None,
+                    "source": cell.source,
+                }
+                for cell in learner.cells
+            ]
+            await self._sink.emit("notebook.draft.parsed", {"cells": cells})
+        except Exception:
+            log.exception("notebook draft.parsed emit failed")
 
     async def repair(self, spec: NotebookSpec, context: RepairContext) -> str:
-        response = await self._complete(
-            role=_ROLE_REPAIR,
-            system=REPAIR_SYSTEM_PROMPT,
-            user=render_repair_user_prompt(context, framework=spec.framework.name),
-            temperature=0.4,
+        self._repair_attempt += 1
+        attempt = self._repair_attempt
+        origin_error = (
+            f"{context.error_name}: {context.error_value}" if context.error_name else None
         )
-        return _strip_fences(response.text)
+        await self._emit_repair(
+            cell_id=context.cell_id,
+            status="started",
+            error=origin_error,
+            attempt=attempt,
+            before_running=context.before_running,
+        )
+        self._stream_attempt += 1
+        streamer = _DraftDeltaStreamer(self._sink, self._stream_attempt)
+        try:
+            response = await self._complete(
+                role=_ROLE_REPAIR,
+                system=REPAIR_SYSTEM_PROMPT,
+                user=render_repair_user_prompt(context, framework=spec.framework.name),
+                temperature=0.4,
+                on_delta=streamer.on_delta,
+            )
+        except Exception as exc:
+            await streamer.flush()
+            await self._emit_repair(
+                cell_id=context.cell_id,
+                status="failed",
+                error=str(exc)[:2000],
+                attempt=attempt,
+                before_running=context.before_running,
+            )
+            raise
+        await streamer.flush()
+        text = _strip_fences(response.text)
+        await self._emit_repair(
+            cell_id=context.cell_id,
+            status="finished",
+            error=origin_error,
+            attempt=attempt,
+            before_running=context.before_running,
+            source=self._redact_repair_source(spec, context.cell_id, text),
+        )
+        return text
+
+    def _redact_repair_source(self, spec: NotebookSpec, cell_id: str, text: str) -> str | None:
+        """The same rule `NotebookSpec.for_learner()` applies, read off the cell BEING
+        repaired (the pre-repair spec still names its role/check/answer — a repair
+        replaces a cell's SOURCE, not what makes it graded) rather than re-deriving a
+        second rule from the repaired text: a graded or solution-only cell's new
+        source never reaches the wire, whatever the fix turned out to be."""
+        try:
+            target = spec.cell_by_id(cell_id)
+        except KeyError:
+            return None  # unknown cell id: nothing proven safe, so nothing is sent
+        sensitive = (
+            target.check is not None
+            or target.answer is not None
+            or target.role in SOLUTION_ONLY_ROLES
+        )
+        return None if sensitive else text
+
+    async def _emit_repair(
+        self,
+        *,
+        cell_id: str,
+        status: Literal["started", "finished", "failed"],
+        error: str | None,
+        attempt: int,
+        before_running: bool,
+        source: str | None = None,
+    ) -> None:
+        try:
+            await self._sink.emit(
+                "notebook.repair",
+                {
+                    "cell_id": cell_id,
+                    "status": status,
+                    "error": error,
+                    "attempt": attempt,
+                    "of": self._max_repairs,
+                    "before_running": before_running,
+                    "source": source,
+                },
+            )
+        except Exception:
+            log.exception("notebook.repair emit failed for cell=%s status=%s", cell_id, status)
 
     async def revise(self, request: RevisionRequest) -> RevisionPlan:
         response = await self._complete(
@@ -472,10 +698,12 @@ class ProductionNotebookPorts(NotebookPorts):
         """`run_until` is the editor's "Run to here": cells after that id are left out
         of the program and come back `not_run`. Optional with a default so this still
         satisfies `NotebookPorts.run_notebook(spec)`, which every other caller uses."""
+        self._execution_attempt += 1
+        attempt = self._execution_attempt
         try:
             program = compose_notebook_program(spec, run_until=run_until)
         except NotebookGuardError as exc:
-            return ExecutionReport(
+            report = ExecutionReport(
                 notebook_slug=spec.slug,
                 ok=False,
                 runner="sandbox",
@@ -486,6 +714,8 @@ class ProductionNotebookPorts(NotebookPorts):
                 ],
                 note=str(exc),
             )
+            await self._emit_cells(report, attempt)
+            return report
         exec_spec = build_execution_spec(
             program,
             timeout_s=120,
@@ -496,7 +726,44 @@ class ProductionNotebookPorts(NotebookPorts):
         self.sandbox_seconds_used += max(
             float(getattr(result, "duration_ms", 0) or 0) / 1000.0, 0.0
         )
-        return report_from_sandbox_result(result, spec, program)
+        report = report_from_sandbox_result(result, spec, program)
+        await self._emit_cells(report, attempt)
+        return report
+
+    async def _emit_cells(self, report: ExecutionReport, attempt: int) -> None:
+        """`notebook.cells`: status and error NAME/VALUE only, per cell — no stdout, no
+        outputs, no figures (plan 10-notebook-ide, "Live" lane). Fired on every
+        dispatch this port makes (the initial run, every repair's rerun, a reader's own
+        edit via `_handle_author`, a plain rerun, and a grading pass), all through this
+        one method, so "attempt" counts DISPATCHES rather than needing a caller-specific
+        variant.
+
+        Not fully redaction-proof: `evalue` comes from executing the cell's REAL,
+        unredacted source (a failing grader's assertion can echo the expected value in
+        its message). The brief's event shape asks for ename/evalue verbatim and this
+        follows it; flagged in the Live lane's report as a residual finding for the
+        owner rather than silently narrowed here.
+        """
+        try:
+            await self._sink.emit(
+                "notebook.cells",
+                {
+                    "attempt": attempt,
+                    "ok": report.ok,
+                    "cells": [
+                        {
+                            "id": cell.id,
+                            "status": cell.status,
+                            "ename": cell.error.ename if cell.error is not None else None,
+                            "evalue": cell.error.evalue if cell.error is not None else None,
+                            "duration_ms": cell.duration_ms,
+                        }
+                        for cell in report.cells
+                    ],
+                },
+            )
+        except Exception:
+            log.exception("notebook.cells emit failed (attempt=%s)", attempt)
 
     # -- observe: live, on the handler's session -----------------------------
 

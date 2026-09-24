@@ -44,6 +44,8 @@ import {
   type NotebookProgressEvent,
   type NotebookProgressStage,
 } from "../../../../lib/notebook-progress";
+import { liveNotebookFromEvents, type LiveNotebookEvent } from "../../../../lib/notebook-live";
+import { NotebookLiveView } from "../../../../components/notebook-live-view";
 import type { PublicLocale } from "../../../../lib/public-locale";
 import { useRunProgress } from "../../../../lib/use-run-progress";
 import { authoredPinAfterRun, type AuthoredVersion } from "../../../../lib/run-stream-outcome";
@@ -1086,6 +1088,11 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   const isGenerating = RUNNING_STATUSES.has(notebook.latest_status);
   const cells = notebookCellViews(version?.spec?.cells, version?.report);
   const stages = notebookProgressFromEvents(progressEvents as NotebookProgressEvent[]);
+  // Same `progressEvents` `useRunProgress` already collects — no second SSE
+  // subscription. See `lib/notebook-live.ts` for why this reducer needs no
+  // redaction of its own: the worker withholds a graded/solution-only cell's real
+  // text before any event carrying it reaches this array.
+  const liveState = liveNotebookFromEvents(progressEvents as LiveNotebookEvent[]);
   const mastery = notebookMastery(version?.spec?.cells, version?.report);
   const diff =
     compareMode && version?.spec && compareVersion?.spec
@@ -1253,6 +1260,16 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
         <section className="mj-notebook-progress" aria-label={copy.progressLabel}>
           <StageRail stages={stages.map((stage) => toRailStage(stage, copy.runAgainFailed))} />
         </section>
+      ) : null}
+
+      {/* The notebook developing in real time (plan 10-notebook-ide, "Live" lane):
+          cell by cell as Nala writes it, then each cell's result, errors and
+          repairs as they land. Placed once, right above the version body — for a
+          fresh build there is no version yet to show, so this fills that gap; for
+          a revise/rerun it sits above the CURRENT (still valid) version so the
+          reader keeps seeing what they already had while the new one is written. */}
+      {isGenerating ? (
+        <NotebookLiveView state={liveState} locale={locale} framework={notebook.framework?.name ?? "qiskit"} />
       ) : null}
 
       <div className="mj-notebook-workspace-body">
