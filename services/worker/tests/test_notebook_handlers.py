@@ -213,17 +213,29 @@ class FakeRunStore:
 
 
 class QueueLLM:
-    """From `test_simple_ports.py`: pops canned response texts in order."""
+    """From `test_simple_ports.py`: pops canned response texts in order.
 
-    def __init__(self, texts):
+    When a caller passes `on_delta` (the "Live" lane's `ProductionNotebookPorts.draft`/
+    `repair` do, unconditionally, now), the response is handed back in fixed-size
+    fragments first — the same shape a real streaming provider client presents — so the
+    delta-emitting path is exercised by a scripted double instead of a live model, per
+    the lane brief. `chunk_chars` defaults small (7) so a fixture's cell headers
+    (`# %% role=solution ...`) are near-certain to land split across more than one
+    fragment, which is exactly the adversarial case `LiveDraftGuard` has to survive.
+    """
+
+    def __init__(self, texts, *, chunk_chars: int = 7):
         self.texts = list(texts)
         self.requests = []
+        self._chunk_chars = chunk_chars
 
     async def complete(self, request, *, on_delta=None):
         self.requests.append(request)
-        return LLMResponse(
-            text=self.texts.pop(0), model=request.model, input_tokens=1, output_tokens=1
-        )
+        text = self.texts.pop(0)
+        if on_delta is not None:
+            for i in range(0, len(text), self._chunk_chars):
+                await on_delta(text[i : i + self._chunk_chars], "output")
+        return LLMResponse(text=text, model=request.model, input_tokens=1, output_tokens=1)
 
 
 class RaisingLLM:
@@ -654,7 +666,9 @@ async def test_a_cell_that_still_raises_after_repair_is_kept_ready_and_named(
 
     await nh.handle_notebook_generate(
         session,
-        _payload(run_id=run_id, notebook_id=notebook_id, version_id=version_id, request={"brief": "b"}),
+        _payload(
+            run_id=run_id, notebook_id=notebook_id, version_id=version_id, request={"brief": "b"}
+        ),
         llm=QueueLLM([OUTLINE_JSON, LESSON, same_cell, same_cell, same_cell]),
         sandbox=FakeSandbox(fail_cell_id="c05"),
         store=store,
@@ -680,7 +694,9 @@ async def test_a_guard_violating_draft_that_the_repair_fixes_runs(_fake_run_plum
 
     await nh.handle_notebook_generate(
         session,
-        _payload(run_id=run_id, notebook_id=notebook_id, version_id=version_id, request={"brief": "b"}),
+        _payload(
+            run_id=run_id, notebook_id=notebook_id, version_id=version_id, request={"brief": "b"}
+        ),
         llm=QueueLLM([OUTLINE_JSON, GUARD_VIOLATING_DRAFT, SAFE_REPAIR]),
         sandbox=FakeSandbox(),
         store=store,
@@ -807,6 +823,276 @@ async def test_notebook_seed_with_a_foreign_or_missing_id_fails_the_run_with_see
     assert "not found" in version.error
     assert captured.get("reason_code") == "seed_not_found"
     assert store.turns and "couldn't finish" in store.turns[0].content
+
+
+# --------------------------------------------------------------------------- live streaming & redaction
+#
+# Plan 10-notebook-ide, "Live" lane: `ProductionNotebookPorts` streams the draft/repair
+# text live (`notebook.draft.delta`), the parsed cells once a draft parses
+# (`notebook.draft.parsed`), every execution's per-cell result (`notebook.cells`) and a
+# repair's own lifecycle (`notebook.repair`). All four are new `RunEvent` members
+# (`packages/py/contracts/src/majorana_contracts/events.py`), and the run's event
+# stream is workspace-scoped, not author-scoped (`services/api/.../repos/runs.py`
+# `get_run` — `Run.workspace_id == scope.workspace_id`, no `owner_user_id` check) — the
+# same gap `for_learner()` closes for a finished notebook (ai-ops#260). So a graded
+# cell's check/answer/solution must never appear in ANY of these events, not only in
+# `notebook.draft.parsed`; the tests below build a draft that carries all three secret
+# shapes (a hidden `check=` assertion, a `role=solution` body, a `role=answer` prose
+# cell) and grep the WHOLE emitted event log for them, not just the field that is
+# supposed to carry the redaction.
+
+#: Adds a graded solution cell and a prose answer cell to `LESSON`, just before its
+#: closing `role=summary` (`_COMMON`'s "ends with summary/references" structure rule
+#: is enforced by ID/position, so the extra cells have to land before it). The
+#: assertion text and the prose both spell out the same "secret" so one substring
+#: check covers both leak shapes.
+GRADED_DRAFT = LESSON.replace(
+    "# %% [markdown] role=summary\n# You built a quantum coin.\n",
+    '# %% id=exsol role=solution stub="def double(x):\\n    ..." '
+    "check=\"assert double(3) == 6, 'THE SECRET ANSWER IS SIX'\"\n"
+    "def double(x):\n"
+    "    return x * 2\n"
+    "\n"
+    "# %% [markdown] role=answer\n"
+    "# THE SECRET ANSWER IS SIX, because doubling three gives six.\n"
+    "\n"
+    "# %% [markdown] role=summary\n# You built a quantum coin.\n",
+)
+assert GRADED_DRAFT != LESSON, "the replace() above must actually match LESSON's tail"
+
+#: A repair response for `exsol` that keeps it graded (role=solution, the same
+#: `check=` AND `stub=` — `_check_needs_a_stub` refuses a check with no stub, so
+#: dropping the stub here would make every repair attempt fail pydantic validation
+#: inside `_apply_repair` while still reporting "finished" from this port, since
+#: this port's own `notebook.repair` event reflects the MODEL call completing, not
+#: the pipeline's later `_apply_repair` succeeding — see the Live lane's report) —
+#: repairing a broken graded cell does not un-grade it, and the redaction this proves
+#: is specifically that a REPAIR of a graded cell still withholds its source, not
+#: only an untouched one.
+GRADED_REPAIR = (
+    '# %% role=solution stub="def double(x):\\n    ..." '
+    "check=\"assert double(3) == 6, 'THE SECRET ANSWER IS SIX'\"\n"
+    "def double(x):\n"
+    "    return x * 2  # repaired\n"
+)
+
+_SECRET_STRINGS = ("THE SECRET ANSWER IS SIX", "double(3) == 6", "return x * 2")
+
+
+def _all_event_text(events: list[tuple[str, dict]]) -> str:
+    """Every string value in every emitted event, concatenated — so a leak check does
+    not depend on guessing which field it would leak through."""
+    import json as _json
+
+    return "\n".join(_json.dumps(payload, default=str) for _kind, payload in events)
+
+
+async def test_a_quiz_answer_never_appears_on_the_stream_during_a_clean_draft(monkeypatch):
+    """No repair needed (the graded cell runs clean): `notebook.draft.delta` and
+    `notebook.draft.parsed` are the only new events in play, and this drives them
+    through the REAL contract validator (`test_the_verdict_event_survives_the_
+    PRODUCTION_sink_validation`'s pattern), not just `FakeEventSink`, which accepts
+    anything and would not show a payload shape the union rejects."""
+    from majorana_contracts.events import run_event_adapter
+
+    sinks: list[FakeEventSink] = []
+
+    class ValidatingSink(FakeEventSink):
+        async def emit(self, type, payload, *, event_id=None):
+            run_event_adapter.validate_python(
+                {
+                    "run_id": uuid.uuid4(),
+                    "seq": 0,
+                    "ts": "1970-01-01T00:00:00Z",
+                    "type": type,
+                    **payload,
+                }
+            )
+            await super().emit(type, payload, event_id=event_id)
+
+    class Recording(ValidatingSink):
+        def __init__(self, scope, session, run_id):
+            super().__init__(scope, session, run_id)
+            sinks.append(self)
+
+    monkeypatch.setattr(handlers, "RepoEventSink", Recording)
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    store = MemoryNotebookStore()
+    store.seed_version(notebook_id, version_id)
+
+    await nh.handle_notebook_generate(
+        Session(),
+        _payload(
+            run_id=run_id, notebook_id=notebook_id, version_id=version_id, request={"brief": "b"}
+        ),
+        llm=QueueLLM([OUTLINE_JSON, GRADED_DRAFT, REVIEW_JSON]),
+        sandbox=FakeSandbox(),  # nothing fails: exsol runs clean, no repair
+        store=store,
+    )
+
+    assert store.versions[version_id].status == "ready", store.versions[version_id].error
+    events = sinks[0].events
+    kinds = [kind for kind, _ in events]
+    assert "notebook.draft.delta" in kinds
+    assert "notebook.draft.parsed" in kinds
+
+    haystack = _all_event_text(events)
+    for secret in _SECRET_STRINGS:
+        assert secret not in haystack, f"{secret!r} leaked onto the run event stream"
+
+    # And the redaction is not just "nothing showed up" — the safe cells actually did,
+    # so a blanket bug that drops everything would not pass this file either.
+    assert "What you will build" in haystack
+
+    # The parsed event names the redacted cell by its stub, not its real body, and
+    # relabels it `exercise` — exactly what `for_learner()` does.
+    parsed = next(payload for kind, payload in events if kind == "notebook.draft.parsed")
+    redacted_cell = next(c for c in parsed["cells"] if c["id"] == "exsol")
+    assert redacted_cell["role"] == "exercise"
+    assert redacted_cell["source"] == "def double(x):\n    ..."
+    # role=answer is dropped outright (no stub half to redact into).
+    assert not any(c["role"] == "answer" for c in parsed["cells"])
+
+
+async def test_a_quiz_answer_never_appears_on_the_stream_across_repairs(monkeypatch):
+    """`exsol` fails every run (`FakeSandbox(fail_cell_id="exsol")` fails it
+    unconditionally, so it stays broken through all 3 repairs and the notebook is kept
+    `ready` with that cell marked — plan 10-notebook-ide rule 1). Proves the repair
+    lane's OWN redaction: `notebook.repair`'s `source` field is never the real body,
+    on every attempt, even though the repair genuinely "fixed" the code each time."""
+    sinks: list[FakeEventSink] = []
+
+    class Recording(FakeEventSink):
+        def __init__(self, scope, session, run_id):
+            super().__init__(scope, session, run_id)
+            sinks.append(self)
+
+    monkeypatch.setattr(handlers, "RepoEventSink", Recording)
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    store = MemoryNotebookStore()
+    store.seed_version(notebook_id, version_id)
+
+    await nh.handle_notebook_generate(
+        Session(),
+        _payload(
+            run_id=run_id, notebook_id=notebook_id, version_id=version_id, request={"brief": "b"}
+        ),
+        llm=QueueLLM([OUTLINE_JSON, GRADED_DRAFT, GRADED_REPAIR, GRADED_REPAIR, GRADED_REPAIR]),
+        sandbox=FakeSandbox(fail_cell_id="exsol"),
+        store=store,
+    )
+
+    version = store.versions[version_id]
+    assert version.status == "ready", version.error
+
+    events = sinks[0].events
+    haystack = _all_event_text(events)
+    for secret in _SECRET_STRINGS:
+        assert secret not in haystack, f"{secret!r} leaked onto the run event stream"
+
+    repairs = [payload for kind, payload in events if kind == "notebook.repair"]
+    assert repairs, "expected notebook.repair events"
+    finishes = [p for p in repairs if p["status"] == "finished" and p["cell_id"] == "exsol"]
+    assert len(finishes) == 3, finishes
+    for finish in finishes:
+        assert finish["source"] is None, "a graded cell's repaired source must be redacted"
+    # attempt/of/before_running: a real post-execution repair (not the pre-run lint
+    # finding path), counted 1..3 against the pipeline's own default budget of 3.
+    assert sorted(f["attempt"] for f in finishes) == [1, 2, 3]
+    assert {f["of"] for f in finishes} == {3}
+    assert {f["before_running"] for f in finishes} == {False}
+    starts = [p for p in repairs if p["status"] == "started" and p["cell_id"] == "exsol"]
+    assert len(starts) == 3
+    for start in starts:
+        assert start["error"] is not None and "NameError" in start["error"]
+
+
+async def test_notebook_cells_attempt_counts_every_execution_dispatch(
+    _fake_run_plumbing, monkeypatch
+):
+    """One `notebook.cells` event per `run_notebook()` dispatch: the initial run plus
+    each of the three repair reruns in the existing "kept ready" fixture — reusing
+    `same_cell`/`c05` from `test_a_cell_that_still_raises_after_repair_is_kept_ready_
+    and_named` rather than inventing a second fixture for the same shape."""
+    sinks: list[FakeEventSink] = []
+
+    class Recording(FakeEventSink):
+        def __init__(self, scope, session, run_id):
+            super().__init__(scope, session, run_id)
+            sinks.append(self)
+
+    monkeypatch.setattr(handlers, "RepoEventSink", Recording)
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    store = MemoryNotebookStore()
+    store.seed_version(notebook_id, version_id)
+    same_cell = "# %% id=c05 role=run\nprint('still broken')\n"
+
+    await nh.handle_notebook_generate(
+        Session(),
+        _payload(
+            run_id=run_id, notebook_id=notebook_id, version_id=version_id, request={"brief": "b"}
+        ),
+        llm=QueueLLM([OUTLINE_JSON, LESSON, same_cell, same_cell, same_cell]),
+        sandbox=FakeSandbox(fail_cell_id="c05"),
+        store=store,
+    )
+
+    cells_events = [payload for kind, payload in sinks[0].events if kind == "notebook.cells"]
+    assert [e["attempt"] for e in cells_events] == [1, 2, 3, 4]
+    assert [e["ok"] for e in cells_events] == [False, False, False, False]
+    for event in cells_events:
+        by_id = {c["id"]: c for c in event["cells"]}
+        assert by_id["c05"]["status"] == "error"
+        assert by_id["c05"]["ename"] == "NameError"
+        # No outputs/stdout/figures on this event — only status and error name/value.
+        assert set(by_id["c05"]) == {"id", "status", "ename", "evalue", "duration_ms"}
+
+
+async def test_revise_does_not_stream_draft_deltas(_fake_run_plumbing, monkeypatch):
+    """Deliberate scope cut, not an oversight: `revise()`'s response is a structured
+    `RevisionPlan` (JSON), not `.nb.py` percent text, so `LiveDraftGuard`'s line-based
+    cell-boundary redaction cannot safely apply to it (a JSON string's embedded
+    `\\n` is two characters, not a newline, so a `# %%` boundary inside an escaped
+    `cells_source` value would not be found before the whole blob had already streamed
+    unredacted). `ProductionNotebookPorts.revise` does not pass `on_delta` to
+    `_complete()` at all, so no `notebook.draft.delta` reaches the stream from a
+    revise turn — see the Live lane's report for this as an explicit open item."""
+    sinks: list[FakeEventSink] = []
+
+    class Recording(FakeEventSink):
+        def __init__(self, scope, session, run_id):
+            super().__init__(scope, session, run_id)
+            sinks.append(self)
+
+    monkeypatch.setattr(handlers, "RepoEventSink", Recording)
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    base_version_id = uuid.uuid4()
+    store = MemoryNotebookStore()
+    store.seed_version(notebook_id, base_version_id, status="ready")
+    store.versions[base_version_id].spec = NotebookSpec.model_validate(
+        parse_source(LESSON).model_dump(mode="json")
+    ).model_dump(mode="json")
+    store.versions[base_version_id].source = LESSON
+    store.seed_version(notebook_id, version_id)
+
+    revise_json = json.dumps({"reply": "done", "summary": "", "ops": []})
+
+    await nh.handle_notebook_revise(
+        Session(),
+        _payload(
+            run_id=run_id,
+            notebook_id=notebook_id,
+            version_id=version_id,
+            kind="revise",
+            request={"message": "say hi"},
+            base_version_id=base_version_id,
+        ),
+        llm=QueueLLM([revise_json]),
+        sandbox=FakeSandbox(),
+        store=store,
+    )
+
+    assert not any(kind == "notebook.draft.delta" for kind, _ in sinks[0].events)
 
 
 # --------------------------------------------------------------------------- revise
