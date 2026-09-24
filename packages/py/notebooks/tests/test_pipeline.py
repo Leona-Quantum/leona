@@ -210,6 +210,70 @@ async def test_a_certain_lint_error_is_repaired_before_any_sandbox_run() -> None
     assert "has not run yet" in render_repair_user_prompt(context)
 
 
+async def test_c_if_is_repaired_before_any_sandbox_run() -> None:
+    # The teleportation trap (ai-ops notebook-ide lane "Qiskit 2 traps"): `.c_if(...)` is
+    # `certain` to raise on Qiskit 2 (`InstructionSet` no longer has it), so the pipeline
+    # must catch and repair it BEFORE ever dispatching the cell to the sandbox — exactly
+    # the `_first_definite_finding` path `test_a_certain_lint_error_is_repaired_before_any_sandbox_run`
+    # above proves for `removed-qiskit-api` via an import; this proves the same path for
+    # the `.c_if(` shape specifically, which `_REMOVED_METHODS` also folds into
+    # `removed-qiskit-api`.
+    uses_c_if = LESSON.replace(
+        "qc.h(0)\nqc.measure_all()\n",
+        "qc.h(0)\nqc.measure_all()\nqc.x(0).c_if(0, 1)\n",
+    )
+    fixed = (
+        "# %% id=c05 role=run\nfrom qiskit import QuantumCircuit\nqc = QuantumCircuit(1)\nqc.h(0)\n"
+        "qc.measure_all()\n"
+    )
+    ports = ScriptedPorts(drafts=[uses_c_if], repairs=[fixed])
+    outcome = await generate(ports, GenerationRequest(brief="b"))
+    assert outcome.status == "ready" and outcome.report.ok
+    assert ports.calls[:4] == ["outline", "draft(feedback=no)", "repair(c05)", "execute"]
+    [context] = ports.contexts
+    assert context.before_running and context.traceback == ""
+    assert any("c_if" in note for note in context.lint_notes)
+    assert any("if_test" in hint and "AerSimulator" in hint for hint in context.hints)
+
+
+async def test_databin_meas_without_measure_all_is_repaired_before_any_sandbox_run() -> None:
+    # The whole-notebook rule (`data-meas-without-measure-all`) is the one `_first_definite_finding`
+    # can only see by calling `lint_spec` over every cell, not by re-deriving `preceding`
+    # cell by cell -- this proves the pipeline wiring (`pipeline._first_definite_finding`)
+    # actually calls it that way, not just that `lint_spec` itself is correct (already
+    # covered in `test_lint.py`).
+    # LESSON's "modify" cell ALSO calls `qc2.measure_all()` — left alone, the notebook
+    # WOULD create a "meas" register somewhere, and the whole-notebook rule must correctly
+    # stand down for that reason (proven separately in test_lint.py). Neutralising it here
+    # too is what makes THIS notebook satisfy the rule's precondition (no cell anywhere
+    # creates one) so the pipeline wiring under test actually has something to catch.
+    reads_meas_without_measure_all = (
+        LESSON.replace(
+            "qc.measure_all()\ncounts = StatevectorSampler(seed=7).run([qc], shots=1000).result()[0].data.meas.get_counts()\n",
+            "qc.measure(0, 0)\ncounts = StatevectorSampler(seed=7).run([qc], shots=1000).result()[0].data.meas.get_counts()\n",
+        )
+        .replace("qc = QuantumCircuit(1)\n", "qc = QuantumCircuit(1, 1)\n")
+        .replace("qc2.measure_all()\n", "qc2.measure(0, 0)\n")
+        .replace("qc2 = QuantumCircuit(1)\n", "qc2 = QuantumCircuit(1, 1)\n")
+    )
+    fixed = (
+        "# %% id=c05 role=run\nfrom qiskit import QuantumCircuit\n"
+        "from qiskit.primitives import StatevectorSampler\nqc = QuantumCircuit(1, 1)\nqc.h(0)\n"
+        "qc.measure(0, 0)\n"
+        "counts = StatevectorSampler(seed=7).run([qc], shots=1000).result()[0].data.c.get_counts()\ncounts\n"
+    )
+    ports = ScriptedPorts(drafts=[reads_meas_without_measure_all], repairs=[fixed])
+    outcome = await generate(ports, GenerationRequest(brief="b"))
+    assert outcome.status == "ready" and outcome.report.ok
+    assert ports.calls[:4] == ["outline", "draft(feedback=no)", "repair(c05)", "execute"]
+    [context] = ports.contexts
+    assert context.before_running and context.traceback == ""
+    assert any(
+        "data-meas-without-measure-all" in note or "meas" in note for note in context.lint_notes
+    )
+    assert "has not run yet" in render_repair_user_prompt(context)
+
+
 # --- a cell the sandbox's own guard refuses, not the linter (ai-ops#375 round 1) ------
 #
 # `rnd-vqe-h2-a` in the 2026-09-24 real-model eval: a repair, chasing a genuine runtime
@@ -1129,3 +1193,29 @@ def test_what_a_repair_leaves_out_is_taken_from_the_cell_it_replaces() -> None:
     explicit = Cell(id="c09", kind="code", role="run", source="x\n")
     kept = _with_omitted_from(spec, explicit)
     assert kept.role.value == "run"  # what the repair SET is kept (and refused elsewhere)
+
+
+async def test_a_cell_the_sandbox_guard_refuses_is_repaired_before_anything_runs() -> None:
+    # Measured 2026-09-24: two of 24 real notebooks were lost to
+    # `print(__import__("qiskit").__version__)`. The guard refuses the `__import__` token,
+    # so the whole notebook came back skipped; no lint rule covers it, so nothing repaired
+    # it. The pipeline now asks the guard itself before the first run.
+    draft = LESSON.replace(
+        "# %% role=run\nfrom qiskit import QuantumCircuit\n"
+        "from qiskit.primitives import StatevectorSampler\nqc = QuantumCircuit(1)\nqc.h(0)\n"
+        "qc.measure_all()\n"
+        "counts = StatevectorSampler(seed=7).run([qc], shots=1000).result()[0].data.meas.get_counts()\n"
+        "counts\n",
+        '# %% id=c05 role=run\nprint("Qiskit version:", __import__("qiskit").__version__)\n',
+    )
+    fixed = '# %%\nimport qiskit\nprint("Qiskit version:", qiskit.__version__)\n'
+    ports = GuardAwarePorts(drafts=[draft], repairs=[fixed])
+    outcome = await generate(ports, GenerationRequest(brief="b"))
+    assert outcome.status == "ready", outcome.error
+    assert "__import__" not in outcome.spec.cell_by_id("c05").source
+    [context] = ports.contexts
+    assert context.before_running and context.error_name == "SandboxGuardRefusal"
+    assert "denied_token:__import__" in context.error_value
+    assert any("qiskit.__version__" in hint for hint in context.hints)
+    # The guard-refused draft never reached the sandbox: the repair came first.
+    assert ports.calls.index("repair(c05)") < ports.calls.index("execute")

@@ -40,12 +40,15 @@ export type LintCode =
   | "forbidden-import"
   | "syntax-error"
   | "assert-always-true"
-  | "assertion-swallowed";
+  | "assertion-swallowed"
+  | "data-meas-without-measure-all"
+  | "instructionset-has-no-attribute";
 
 export type LintSeverity = "error" | "warning";
 
 /** Mirrors `_SEVERITY` in lint.py, and the `codes` table of the shared case file (a test
- * asserts all three agree). The last two codes are never produced in the browser. */
+ * asserts all three agree). `assert-always-true` and `assertion-swallowed` are never
+ * produced in the browser. */
 export const LINT_SEVERITY: Record<LintCode, LintSeverity> = {
   "gate-returns-instructions": "warning",
   "removed-qiskit-api": "error",
@@ -54,6 +57,8 @@ export const LINT_SEVERITY: Record<LintCode, LintSeverity> = {
   "syntax-error": "error",
   "assert-always-true": "error",
   "assertion-swallowed": "error",
+  "data-meas-without-measure-all": "error",
+  "instructionset-has-no-attribute": "error",
 };
 
 /** Which removed API a `removed-qiskit-api` finding is about, so its message can say what
@@ -73,12 +78,16 @@ export type RemovedApiKey =
   | "qiskit.test"
   | "qiskit.tools"
   | "bind_parameters"
-  | "qasm";
+  | "qasm"
+  | "c_if";
 
 export type LintDetail =
   | { kind: "gate"; method: string; shown: string }
   | { kind: "removed"; api: RemovedApiKey }
-  | { kind: "measured"; name: string };
+  | { kind: "measured"; name: string }
+  | { kind: "qftKeyword"; keyword: string }
+  | { kind: "meas" }
+  | { kind: "instructionAttr"; attr: string; method: string; shown: string };
 
 export interface LintFinding {
   code: LintCode;
@@ -99,12 +108,20 @@ export interface NotebookLintCopy {
   measureAllReturnsNone: (shown: string) => string;
   measuredCircuit: (name: string) => string;
   removedApi: Record<RemovedApiKey, string>;
+  qftGateInvalidKeyword: (keyword: string) => string;
+  databinMeasWithoutMeasureAll: () => string;
+  instructionSetHasNoAttribute: (attr: string, method: string, shown: string) => string;
 }
 
 export function lintMessage(finding: LintFinding, copy: NotebookLintCopy): string {
   const { detail } = finding;
   if (detail.kind === "removed") return copy.removedApi[detail.api];
   if (detail.kind === "measured") return copy.measuredCircuit(detail.name);
+  if (detail.kind === "qftKeyword") return copy.qftGateInvalidKeyword(detail.keyword);
+  if (detail.kind === "meas") return copy.databinMeasWithoutMeasureAll();
+  if (detail.kind === "instructionAttr") {
+    return copy.instructionSetHasNoAttribute(detail.attr, detail.method, detail.shown);
+  }
   return detail.method === "measure_all"
     ? copy.measureAllReturnsNone(detail.shown)
     : copy.gateReturnsInstructions(detail.shown);
@@ -174,6 +191,23 @@ const REMOVED_MODULES: readonly (readonly [string, RemovedApiKey])[] = [
 
 const STATE_BUILDERS: ReadonlySet<string> = new Set(["Statevector", "Operator", "DensityMatrix"]);
 const STATE_METHODS: ReadonlySet<string> = new Set(["from_instruction", "evolve"]);
+
+/** `InstructionSet`'s real public API on qiskit 2.5.2 (`dir(InstructionSet)`): `add`,
+ * `cargs`, `instructions`, `inverse`, `qargs`. `c_if` stays in this allowlist too, even
+ * though Qiskit 2 removed it, so the INNER gate call in `qc.h(0).c_if(...)` is not ALSO
+ * flagged `instructionset-has-no-attribute` — the OUTER `.c_if(...)` call already gets the
+ * specific `removed-qiskit-api` finding with the `if_test` + `AerSimulator` guidance, and
+ * this rule's own "then use `qc.c_if`" advice would be wrong (`QuantumCircuit` has no
+ * `.c_if` either). `_INSTRUCTION_SET_ATTRS` in lint.py, kept in sync by hand (no shared
+ * table for this one — it is a short, stable list from Qiskit's own class, not something
+ * either side computes).*/
+const INSTRUCTION_SET_ATTRS: ReadonlySet<string> = new Set([
+  "add", "cargs", "instructions", "inverse", "qargs", "c_if",
+]);
+
+/** `QFTGate.__init__` takes only `num_qubits` on qiskit 2.5.2. `_QFTGATE_VALID_KEYWORDS`
+ * in lint.py. */
+const QFTGATE_VALID_KEYWORDS: ReadonlySet<string> = new Set(["num_qubits"]);
 
 // ------------------------------------------------------------------ syntax tree
 //
@@ -735,6 +769,11 @@ interface CheckerState {
   circuits: Map<string, boolean>;
   found: LintFinding[];
   source: string;
+  /** True only when NO code cell in the whole notebook could ever create a classical
+   * register named "meas" (`neverCreatesMeasRegister`) — a whole-notebook fact, computed
+   * once by `lintNotebook` and threaded through, never derived from one cell's own source
+   * or its preceding cells alone. Defaults to false (the rule off) everywhere else. */
+  denyMeasDatabin: boolean;
 }
 
 function emit(state: CheckerState, code: LintCode, span: Span, detail: LintDetail) {
@@ -809,14 +848,35 @@ function checkGateValue(call: Extract<Expr, { type: "Call" }>, state: CheckerSta
   // A measured copy: using the value is the point.
   if (func.attr === "measure_all" && keywordIsFalse(call, "inplace")) return;
   const parent = call.parent;
-  // A statement throws the result away, which is correct; `.c_if(...)` and friends use
-  // the InstructionSet on purpose.
-  if (parent && "type" in parent && (parent.type === "Expr" || parent.type === "Attribute")) return;
+  // A statement throws the result away, which is correct.
+  if (parent && "type" in parent && parent.type === "Expr") return;
+  if (parent && "type" in parent && parent.type === "Attribute") {
+    if (INSTRUCTION_SET_ATTRS.has(parent.attr)) return; // a real InstructionSet attribute
+    emit(state, "instructionset-has-no-attribute", parent.span, {
+      kind: "instructionAttr",
+      attr: parent.attr,
+      method: func.attr,
+      shown: shownSource(call.span, state),
+    });
+    return;
+  }
   emit(state, "gate-returns-instructions", call.span, {
     kind: "gate",
     method: func.attr,
     shown: shownSource(call.span, state),
   });
+}
+
+function checkQftGateKeywords(call: Extract<Expr, { type: "Call" }>, state: CheckerState) {
+  const { func } = call;
+  const isQftGate = (func.type === "Name" && func.id === "QFTGate") || (func.type === "Attribute" && func.attr === "QFTGate");
+  if (!isQftGate) return;
+  for (const kw of call.keywords) {
+    if (kw.arg !== null && !QFTGATE_VALID_KEYWORDS.has(kw.arg)) {
+      emit(state, "removed-qiskit-api", call.span, { kind: "qftKeyword", keyword: kw.arg });
+      return;
+    }
+  }
 }
 
 function checkStateOfMeasured(call: Extract<Expr, { type: "Call" }>, state: CheckerState) {
@@ -839,19 +899,33 @@ function visitExpr(node: Expr, state: CheckerState) {
       if (func.type === "Attribute") {
         if (func.attr === "bind_parameters") {
           emit(state, "removed-qiskit-api", node.span, { kind: "removed", api: "bind_parameters" });
+        } else if (func.attr === "c_if") {
+          emit(state, "removed-qiskit-api", node.span, { kind: "removed", api: "c_if" });
         } else if (func.attr === "qasm" && node.args.length === 0 && node.keywords.length === 0) {
           emit(state, "removed-qiskit-api", node.span, { kind: "removed", api: "qasm" });
         } else if (func.attr === "execute" && func.value.type === "Name" && func.value.id === "qiskit") {
           emit(state, "removed-qiskit-api", node.span, { kind: "removed", api: "qiskit.execute" });
         }
       }
+      checkQftGateKeywords(node, state);
       checkStateOfMeasured(node, state);
       visitExpr(func, state);
       for (const arg of node.args) visitExpr(arg, state);
       for (const keyword of node.keywords) visitExpr(keyword.value, state);
       return;
     }
-    case "Attribute":
+    case "Attribute": {
+      if (
+        state.denyMeasDatabin &&
+        node.attr === "meas" &&
+        node.value.type === "Attribute" &&
+        node.value.attr === "data"
+      ) {
+        emit(state, "data-meas-without-measure-all", node.span, { kind: "meas" });
+      }
+      visitExpr(node.value, state);
+      return;
+    }
     case "Starred":
       visitExpr(node.value, state);
       return;
@@ -937,15 +1011,141 @@ function run(source: string, state: CheckerState) {
   for (const stmt of parseCell(source)) visitStmt(stmt, state);
 }
 
+// ------------------------------------------------------------------ whole-notebook prescan
+//
+// `data-meas-without-measure-all` is a fact about the WHOLE notebook (no cell anywhere
+// creates a "meas"-named classical register), not something derivable from one cell and
+// its preceding cells the way every other rule here is — the production shape lived in a
+// helper function defined in one cell and called, with an unmeasured-by-measure_all
+// circuit, from a LATER one. `neverCreatesMeasRegister` answers it once, over every code
+// cell, independent of the per-cell `circuits` tracking. `_never_creates_meas_register`
+// in lint.py.
+
+function walkExprForCalls(node: Expr, visit: (call: Extract<Expr, { type: "Call" }>) => void) {
+  if (node.type === "Call") visit(node);
+  switch (node.type) {
+    case "Call":
+      walkExprForCalls(node.func, visit);
+      for (const arg of node.args) walkExprForCalls(arg, visit);
+      for (const keyword of node.keywords) walkExprForCalls(keyword.value, visit);
+      return;
+    case "Attribute":
+    case "Starred":
+      walkExprForCalls(node.value, visit);
+      return;
+    case "Subscript":
+      walkExprForCalls(node.value, visit);
+      walkExprForCalls(node.slice, visit);
+      return;
+    case "Group":
+      for (const item of node.items) walkExprForCalls(item, visit);
+      return;
+    default:
+      return;
+  }
+}
+
+function walkStmtForCalls(stmt: Stmt, visit: (call: Extract<Expr, { type: "Call" }>) => void) {
+  switch (stmt.type) {
+    case "Expr":
+      walkExprForCalls(stmt.value, visit);
+      return;
+    case "Assign":
+      for (const target of stmt.targets) walkExprForCalls(target, visit);
+      walkExprForCalls(stmt.value, visit);
+      return;
+    case "AnnAssign":
+      walkExprForCalls(stmt.target, visit);
+      if (stmt.value) walkExprForCalls(stmt.value, visit);
+      return;
+    case "Other":
+      for (const expr of stmt.exprs) walkExprForCalls(expr, visit);
+      return;
+    case "Import":
+    case "ImportFrom":
+    case "Unparsed":
+      return;
+  }
+}
+
+/** Whether a `ClassicalRegister(...)` call carries a name at all — a second positional
+ * argument, or a `name=` keyword. The browser's tokenizer does not keep a string literal's
+ * CONTENT anywhere in the parsed tree (every string collapses to `Const{value:"other"}` —
+ * see the module comment on `Expr`), so it cannot tell `ClassicalRegister(n, "meas")` from
+ * `ClassicalRegister(n, "other")` the way `_never_creates_meas_register` in lint.py can.
+ * Treating ANY named register as "might be meas" is the safe direction: the browser rule
+ * can only be a subset of the Python one (it disables itself in more cases), never issue a
+ * finding Python would not. */
+function classicalRegisterCarriesAName(call: Extract<Expr, { type: "Call" }>): boolean {
+  return call.args.length >= 2 || call.keywords.some((keyword) => keyword.arg === "name");
+}
+
+const QASM_LOADERS: ReadonlySet<string> = new Set(["loads", "load", "from_qasm_str", "from_qasm_file"]);
+
+function neverCreatesMeasRegister(sources: readonly string[]): boolean {
+  for (const source of sources) {
+    let mightCreate = false;
+    for (const stmt of parseCell(source)) {
+      if (stmt.type === "Unparsed") {
+        // A line this tolerant parser could not read might hide a `measure_all()` call or
+        // a "meas"-named register; forgetting names is safe for the OTHER rules (a missed
+        // binding just misses a finding), but here it would let a genuine "meas" register
+        // go undetected and turn a real read into a false alarm. Treat "could not read" as
+        // "might create one".
+        mightCreate = true;
+        break;
+      }
+      walkStmtForCalls(stmt, (call) => {
+        const { func } = call;
+        if (func.type === "Attribute" && func.attr === "measure_all") {
+          mightCreate = true;
+          return;
+        }
+        // A circuit read from OpenQASM text carries whatever registers the text declares,
+        // "meas" included (`_QASM_LOADERS` in lint.py; a `json.loads` also stands the rule
+        // down, the safe direction).
+        if (
+          (func.type === "Attribute" && QASM_LOADERS.has(func.attr)) ||
+          (func.type === "Name" && QASM_LOADERS.has(func.id))
+        ) {
+          mightCreate = true;
+          return;
+        }
+        const isClassicalRegister =
+          (func.type === "Name" && func.id === "ClassicalRegister") ||
+          (func.type === "Attribute" && func.attr === "ClassicalRegister");
+        if (isClassicalRegister && classicalRegisterCarriesAName(call)) mightCreate = true;
+      });
+      if (mightCreate) break;
+    }
+    if (mightCreate) return false;
+  }
+  return true;
+}
+
 /**
  * Findings for one code cell, given the code cells that run before it, in order.
  * `lint_cell` in lint.py: earlier cells are read only for the names they bind, and their
  * own mistakes are not reported here.
+ *
+ * `denyMeasDatabin` gates `data-meas-without-measure-all` — see the prescan section above.
+ * It defaults to false (the rule off) for any caller that has not computed it; `lintNotebook`
+ * computes it once and passes it to every call.
  */
-export function lintCell(source: string, preceding: readonly string[] = []): LintFinding[] {
-  const history: CheckerState = { report: false, circuits: new Map(), found: [], source: "" };
+export function lintCell(
+  source: string,
+  preceding: readonly string[] = [],
+  denyMeasDatabin = false,
+): LintFinding[] {
+  const history: CheckerState = { report: false, circuits: new Map(), found: [], source: "", denyMeasDatabin };
   for (const earlier of preceding) run(earlier, history);
-  const state: CheckerState = { report: true, circuits: new Map(history.circuits), found: [], source: "" };
+  const state: CheckerState = {
+    report: true,
+    circuits: new Map(history.circuits),
+    found: [],
+    source: "",
+    denyMeasDatabin,
+  };
   run(source, state);
   return state.found.sort((a, b) => a.line - b.line || a.col - b.col || (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
 }
@@ -966,13 +1166,16 @@ export interface LintableCell {
 export function lintNotebook(cells: readonly LintableCell[]): Record<string, LintFinding[]> {
   const findings: Record<string, LintFinding[]> = {};
   const preceding: string[] = [];
+  const denyMeasDatabin = neverCreatesMeasRegister(
+    cells.filter((cell) => cell.kind === "code").map((cell) => cell.source),
+  );
   for (const cell of cells) {
     if (cell.kind !== "code") continue;
     if (cell.execute === false) {
       preceding.push(cell.source);
       continue;
     }
-    const found = lintCell(cell.source, preceding);
+    const found = lintCell(cell.source, preceding, denyMeasDatabin);
     if (found.length > 0) findings[cell.id] = found;
     preceding.push(cell.source);
   }

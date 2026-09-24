@@ -1,10 +1,13 @@
 """What a Qiskit error message usually means, for the repair prompt and the reader.
 
-Every entry was reproduced on qiskit 2.5.2 on 2026-09-23 (the sandbox image pins 2.5.0,
-the same API) before it was written here, with the message copied from the exception
-rather than remembered. An entry that is not true of the pinned version sends the repair
-model after the wrong cause, which is worse than no hint at all, so an entry changes only
-with a new probe.
+Every entry was reproduced on qiskit 2.5.2 (the sandbox image pins 2.5.0, the same API)
+before it was written here, with the message copied from the exception rather than
+remembered — the entries added 2026-09-23 on 2026-09-23, the `c_if`/`QFTGate`/InstructionSet
+entries added 2026-09-24 on 2026-09-24, in this worktree (`uv run python -c ...`; see each
+entry's own comment where the probe found something a single exception message could not
+carry, such as the `if_test`-then-`StatevectorSampler` trap). An entry that is not true of
+the pinned version sends the repair model after the wrong cause, which is worse than no hint
+at all, so an entry changes only with a new probe.
 
 The table is small on purpose. It exists for the messages whose traceback points
 somewhere other than the mistake: `Invalid input data format for Operator` is raised in
@@ -32,9 +35,71 @@ _HINTS: tuple[tuple[re.Pattern[str], str], ...] = (
     ),
     (
         re.compile(r"'DataBin' object has no attribute"),
-        "Sampler results are read by classical register NAME. `measure_all()` creates a register "
-        "called `meas` (`.data.meas.get_counts()`); a register created as "
-        '`ClassicalRegister(n, "c")` is read as `.data.c.get_counts()`.',
+        "Sampler results are read by classical register NAME, not by a fixed field. "
+        '`measure_all()` creates a register literally called "meas" (`.data.meas.get_counts()`). '
+        "A circuit built as `QuantumCircuit(n, m)` and measured with plain `.measure(...)` gets "
+        'the DEFAULT register instead — verified on qiskit 2.5.2: its name is "c" '
+        "(`.data.c.get_counts()`), whether or not `.measure(...)` is even called explicitly. "
+        "Do not guess the name from the circuit's SHAPE; read it off `qc.cregs[0].name` if "
+        "unsure, or switch to `measure_all()` if a `meas`-named field is what the rest of the "
+        "cell expects.",
+    ),
+    (
+        re.compile(r"'InstructionSet' object has no attribute"),
+        "A circuit method that APPENDS a gate — `.h(...)`, `.x(...)`, `.measure(...)`, and "
+        "every other gate call — returns an `InstructionSet`, not the circuit. Verified public "
+        "API of `InstructionSet` on qiskit 2.5.2 (`dir(InstructionSet)`): only `add`, `cargs`, "
+        "`instructions`, `inverse` and `qargs` — no `.num_qubits`, `.qubits`, `.clbits`, "
+        "`.c_if`, `.compose`, `.draw`, or any other circuit method or attribute. Chaining "
+        "anything else onto a gate call's return value, or passing that return value into a "
+        "function expecting a circuit (`.compose(...)`, `Statevector.evolve(...)`, "
+        "`Operator(...)`), raises this. Build the circuit first (`qc = QuantumCircuit(1)`), "
+        "call the gate on its own line (`qc.h(0)`), then use `qc` — never the gate call's "
+        "own return value — everywhere after.",
+    ),
+    (
+        re.compile(r"has no attribute 'c_if'|StatevectorSampler cannot handle ControlFlowOp"),
+        "`.c_if(clbit, value)` was removed from `InstructionSet` in Qiskit 2 — verified: "
+        "`AttributeError: 'InstructionSet' object has no attribute 'c_if'` on qiskit 2.5.2. "
+        "The replacement is a context manager: `with qc.if_test((clbit, value)): qc.x(target)` "
+        "(a bare `int` clbit index works, exactly like the old `.c_if(index, value)` did). "
+        "But a circuit that uses `if_test` cannot run on `StatevectorSampler` — verified: "
+        "`QiskitError: StatevectorSampler cannot handle ControlFlowOp`. Run it with "
+        "`AerSimulator` instead: `from qiskit_aer import AerSimulator; "
+        "AerSimulator().run(qc, shots=...).result().get_counts()` — verified to run the same "
+        "circuit and return counts. Swapping `.c_if` for `if_test` while still calling "
+        "`StatevectorSampler` only trades one failure for the next one.",
+    ),
+    (
+        re.compile(r"QFTGate\.__init__\(\) got an unexpected keyword argument"),
+        "`QFTGate.__init__` takes only `num_qubits` on qiskit 2.5.2 (verified: "
+        "`inspect.signature(QFTGate.__init__)` is `(self, num_qubits: int)`). For the inverse "
+        "QFT, build it and invert: `QFTGate(n).inverse()` — verified exactly the adjoint of "
+        "`QFTGate(n)` (bit-for-bit, not just equal up to global phase, checked for n = 2 and "
+        "3). `do_swaps`, `approximation_degree` and `inverse` belonged to the OLD "
+        "`qiskit.circuit.library.QFT` class, which still imports in 2.5.2 but is deprecated "
+        "(since 2.1, removed in 3.0) and prints a `DeprecationWarning` on every use — prefer "
+        "`QFTGate`.",
+    ),
+    (
+        re.compile(
+            r"(?:\bQFT\b|controlled[- ]phase angles|final SWAP layer|swap block|"
+            r"swap layer).{0,120}(?:match|equal|differ|Check)|"
+            r"(?:match|equal|differ|Check).{0,120}(?:\bQFT\b|controlled[- ]phase angles|"
+            r"final SWAP layer|swap block|swap layer)"
+        ),
+        "A hand-built QFT meant to equal `QFTGate` must match it EXACTLY, not just be "
+        '"a textbook QFT". Verified on qiskit 2.5.2 by comparing `Operator`s bit-for-bit '
+        "(not just up to global phase) for n = 1..4: `QFTGate(n)` processes qubits from "
+        "n-1 DOWN to 0 — `for j in reversed(range(n)): qc.h(j)`, then for `k` from `j-1` down "
+        "to `0`, `qc.cp(pi / 2**(j - k), j, k)` — and it ALWAYS appends a final swap layer, "
+        "`for i in range(n // 2): qc.swap(i, n - 1 - i)`; `QFTGate.__init__` has no keyword to "
+        "turn the swaps off. A loop that starts from qubit 0 and works upward (the common "
+        '"textbook" order), or that skips the final swaps, produces a circuit that is NOT '
+        "equal to `QFTGate`, even up to global phase — verified by direct comparison. If the "
+        "cell does not need to teach the gate-by-gate construction, build the check from "
+        "`QFTGate(n)` itself (`qc.append(QFTGate(n), range(n))`) instead of re-deriving the "
+        "sequence by hand.",
     ),
     (
         re.compile(r"'NoneType' object has no attribute"),
@@ -103,6 +168,33 @@ _HINTS: tuple[tuple[re.Pattern[str], str], ...] = (
         "calculation to derive a Hamiltonian at request time; write the qubit Hamiltonian "
         "as a `SparsePauliOp` and say in markdown how it was obtained (molecule, bond "
         "length, basis, qubit mapping), never crediting a paper you were not given.",
+    ),
+    # Probed on qiskit 2.5.2 / majorana_sandbox.guard, 2026-09-24:
+    # `print(__import__("qiskit").__version__)` -> denied_token:__import__,
+    # denied_call:__import__; `import qiskit; print(qiskit.__version__)` passes the guard.
+    (
+        re.compile(r"__import__"),
+        "The sandbox's safety guard refuses `__import__(...)` anywhere in a cell, even just to "
+        "print a version, and a refused cell stops the whole notebook before anything runs. "
+        "Import normally and read the attribute: `import qiskit` then `qiskit.__version__`.",
+    ),
+    # Probed: measuring a qubit and then applying a gate to the same qubit makes
+    # StatevectorSampler raise "cannot handle mid-circuit measurements"; AerSimulator runs it.
+    (
+        re.compile(r"StatevectorSampler cannot handle mid-circuit measurements"),
+        "`StatevectorSampler` cannot run a circuit that uses a qubit again after measuring it. "
+        "Run that circuit on the Aer simulator, which is installed: "
+        "`from qiskit_aer import AerSimulator` then "
+        "`AerSimulator().run(qc, shots=1024).result().get_counts()`.",
+    ),
+    # Probed: a circuit with `with qc.if_test((clbit, 1)):` makes StatevectorSampler raise
+    # "cannot handle ControlFlowOp"; AerSimulator runs it and returns counts.
+    (
+        re.compile(r"StatevectorSampler cannot handle ControlFlowOp"),
+        "`StatevectorSampler` cannot run classical control (`if_test`, `while_loop`). Keep the "
+        "`with qc.if_test((clbit, 1)):` block and run the circuit on the Aer simulator instead: "
+        "`from qiskit_aer import AerSimulator` then "
+        "`AerSimulator().run(qc, shots=1024).result().get_counts()`.",
     ),
 )
 

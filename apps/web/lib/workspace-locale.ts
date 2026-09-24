@@ -151,6 +151,23 @@ const NOTEBOOK_IDE_COPY: Record<PublicLocale, NotebookIdeCopy> = {
       measuredCircuit: (name) =>
         `\`${name}\` has measurements, so it has no statevector or operator. Build the state from `
         + `the circuit before measuring it, or pass \`${name}.remove_final_measurements(inplace=False)\`.`,
+      qftGateInvalidKeyword: (keyword) =>
+        `\`QFTGate\` takes only \`num_qubits\` — \`${keyword}\` raises a TypeError. For the inverse `
+        + "QFT use `QFTGate(n).inverse()`. `do_swaps`, `approximation_degree` and `inverse` belonged "
+        + "to the old `qiskit.circuit.library.QFT` class, which is deprecated; prefer `QFTGate`.",
+      databinMeasWithoutMeasureAll: () =>
+        "`.data.meas` only exists when the circuit was measured with `measure_all()`, which creates "
+        + 'a classical register literally named "meas". No cell in this notebook calls `measure_all()` '
+        + 'or creates a register named "meas", so this will raise an AttributeError. Read the result '
+        + 'by the classical register\'s own name instead — `QuantumCircuit(n, m)` creates a register '
+        + 'called "c" by default, read as `.data.c.get_counts()`.',
+      instructionSetHasNoAttribute: (attr, method, shown) =>
+        `\`${shown}.${attr}\` reads \`.${attr}\` off the InstructionSet that \`.${method}(...)\` `
+        + "returns, not the circuit. InstructionSet's real attributes are `add`, `cargs`, "
+        + `\`instructions\`, \`inverse\` and \`qargs\` — nothing named \`${attr}\` — so this is `
+        + "certain to raise an AttributeError. Create the circuit first (for example "
+        + `\`qc = QuantumCircuit(1)\`), apply the gate on its own line (\`qc.${method}(0)\`), then `
+        + `use \`qc.${attr}\`.`,
       removedApi: {
         "qiskit.execute":
           "`qiskit.execute` was removed in Qiskit 1.0. Run circuits with a primitive: `StatevectorSampler().run([qc], shots=1000)`.",
@@ -171,6 +188,11 @@ const NOTEBOOK_IDE_COPY: Record<PublicLocale, NotebookIdeCopy> = {
         "qiskit.tools": "`qiskit.tools` was removed.",
         bind_parameters: "`bind_parameters` was removed in Qiskit 1.0. Use `assign_parameters`.",
         qasm: "`QuantumCircuit.qasm()` was removed in Qiskit 1.0. Use `qasm2.dumps(qc)` or `qasm3.dumps(qc)`.",
+        c_if:
+          "`.c_if(clbit, value)` was removed from `InstructionSet` in Qiskit 2. Use "
+          + "`with qc.if_test((clbit, value)): ...` instead — but a circuit that uses `if_test` "
+          + "cannot run on `StatevectorSampler`; run it with `AerSimulator` "
+          + "(`from qiskit_aer import AerSimulator`) instead.",
       },
     },
   },
@@ -235,6 +257,23 @@ const NOTEBOOK_IDE_COPY: Record<PublicLocale, NotebookIdeCopy> = {
       measuredCircuit: (name) =>
         `\`${name}\` には測定が含まれているため、状態ベクトルも演算子も持ちません。`
         + `測定する前の回路から状態を作るか、\`${name}.remove_final_measurements(inplace=False)\` を渡してください。`,
+      qftGateInvalidKeyword: (keyword) =>
+        `\`QFTGate\` が受け取るのは \`num_qubits\` だけです。\`${keyword}\` を渡すと TypeError になります。`
+        + "逆QFTが必要な場合は `QFTGate(n).inverse()` を使ってください。`do_swaps`、`approximation_degree`、"
+        + "`inverse` は旧 `qiskit.circuit.library.QFT` クラスのものです。このクラスは非推奨なので、"
+        + "`QFTGate` を使ってください。",
+      databinMeasWithoutMeasureAll: () =>
+        "`.data.meas` が存在するのは、回路を `measure_all()` で測定した場合だけです。`measure_all()` は"
+        + '「meas」という名前の古典レジスタを作ります。このノートブックのどのセルも `measure_all()` を呼んでおらず、'
+        + '「meas」という名前のレジスタも作っていないため、ここは AttributeError になります。結果は古典レジスタの'
+        + '名前で読んでください——`QuantumCircuit(n, m)` が既定で作るレジスタの名前は「c」で、`.data.c.get_counts()` '
+        + "のように読みます。",
+      instructionSetHasNoAttribute: (attr, method, shown) =>
+        `\`${shown}.${attr}\` は \`.${method}(...)\` が返す InstructionSet から \`.${attr}\` を読んでいますが、`
+        + `回路そのものではありません。InstructionSet が実際に持つ属性は \`add\`、\`cargs\`、\`instructions\`、`
+        + `\`inverse\`、\`qargs\` だけで、\`${attr}\` という属性はないため、これは必ず AttributeError になります。`
+        + `先に回路を作り（例：\`qc = QuantumCircuit(1)\`）、ゲートは別の行で適用して（\`qc.${method}(0)\`）、`
+        + `そのあとで \`qc.${attr}\` を使ってください。`,
       removedApi: {
         "qiskit.execute":
           "`qiskit.execute` は Qiskit 1.0 で削除されました。回路はプリミティブで実行します：`StatevectorSampler().run([qc], shots=1000)`。",
@@ -254,6 +293,11 @@ const NOTEBOOK_IDE_COPY: Record<PublicLocale, NotebookIdeCopy> = {
         "qiskit.test": "`qiskit.test` は削除されました。",
         "qiskit.tools": "`qiskit.tools` は削除されました。",
         bind_parameters: "`bind_parameters` は Qiskit 1.0 で削除されました。`assign_parameters` を使ってください。",
+        c_if:
+          "`.c_if(clbit, value)` は Qiskit 2 で `InstructionSet` から削除されました。代わりに "
+          + "`with qc.if_test((clbit, value)): ...` を使ってください——ただし `if_test` を使った回路は "
+          + "`StatevectorSampler` では実行できません。`AerSimulator`（`from qiskit_aer import AerSimulator`）"
+          + "を使ってください。",
         qasm: "`QuantumCircuit.qasm()` は Qiskit 1.0 で削除されました。`qasm2.dumps(qc)` か `qasm3.dumps(qc)` を使ってください。",
       },
     },
