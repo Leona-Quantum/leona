@@ -14,9 +14,21 @@ thing to be careful about.
 ```
 visitor -> Cloudflare (DNS, CDN, rate limit on /repository, bot fight mode)
         -> Google external Application Load Balancer (static IP, managed cert)
-        -> Cloud Armor: only Cloudflare's edge may reach the origin
-        -> Cloud Run: majorana-web  (ingress: load balancer only)
+        -> Cloud Armor: only Cloudflare's edge may reach the origin,
+                        and at most 1200 requests a minute per visitor address
+        -> url map:  /repository*  -> Cloud Run: majorana-web-atlas  (max 8, 8 in flight each)
+                     everything else -> Cloud Run: majorana-web      (max 4)
+           both: ingress load balancer only, same image, request logging on
 ```
+
+**Why two services (2026-09-24).** One service capped at four instances was one
+capacity pool for the whole site. A crawler walking the Atlas map's
+`?focus=&open=` permutations (every one a cache miss and ~1 s of CPU) used all of
+it, and Cloud Run answered "429 Rate exceeded." to ~83% of every request — the home
+page and the JavaScript chunks included — for eight hours, until DNS went back to
+Vercel. The Atlas is where the site's unbounded URL space lives, so it gets its own
+instances: a flood there now ends in 429s on Atlas URLs only. The record is
+`ai-ops/desk/leona/plans/incidents/2026-09-24-gcp-web-429.md`.
 
 **Cloud CDN is off, on purpose.** Two rulings put the CDN at Cloudflare: ai-ops
 141 ("Do it now but DNS and CDN only, no WAF rules yet") and ai-ops 318, which
@@ -38,14 +50,18 @@ around the edge protections. That is an origin lock, not a rule set.
 | 1 | `05-runtime-identity.sh` | nothing — the website's own service account, holding no project role |
 | 2 | `06-sign-in-secrets.sh` | step 1; the owner mints the WorkOS key, everything else it finds or makes |
 | 3 | `07-verify-twin.sh` | step 1 — the private twin `deploy-web.yml` smoke-tests |
-| 4 | `10-origin-lock.sh` | nothing — creates the Cloud Armor policy from Cloudflare's published ranges |
+| 4 | `10-origin-lock.sh` | nothing — creates the Cloud Armor policy from Cloudflare's published ranges. **Re-run 15 after it**: the per-visitor rules copy these ranges |
+| 4b | `15-visitor-limits.sh` | step 4. Preview by default; `ENFORCE=1` to enforce |
 | 5 | `20-load-balancer.sh` | step 4 |
+| 5b | `25-atlas-bulkhead.sh` | step 5 and a serving `majorana-web` (it copies that service's spec) |
 | 6 | `31-origin-certificate.sh` | step 5, and a Cloudflare Origin Certificate + key |
 | 7 | `32-rehearsal-hostname.sh` | step 6 — lets any name under the domain be rehearsed through Cloudflare |
 | 8 | `40-serve.sh` | a servable certificate, and the origin lock attached |
 | — | `80-cutover-preflight.sh` | ends in **GO** or **NO-GO**; what stands behind telling the collaborator to move the records |
 | — | *point `leonaqt.com` at the printed IP, **proxied*** | **the collaborator who holds Cloudflare** |
 | — | `90-verify.sh` | reads it all back, including from the TLS handshake |
+| — | `95-monitoring.sh` | alerts on Cloud Run 429/5xx for both services, uptime checks on `gcp-preview` |
+| — | `load/` | the load tests that reproduce 2026-09-24 and check ordinary browsing — `load/README.md` |
 
 `test-gates.sh` drives `40-serve.sh`'s refusals with no cloud behind it; run it after touching
 `common.sh`.
@@ -109,3 +125,31 @@ allows unauthenticated requests, never the other way round. Between those two
 commands in the wrong order, the whole site is a public URL on `run.app` with no
 Cloudflare, no rate limit and no Armor in front of it. The script enforces the
 order; this paragraph exists so nobody helpfully "simplifies" it into one step.
+
+## Rolling back
+
+Two different things can need undoing, and they are undone in different places.
+
+**A bad deploy** (a revision that errors, or renders wrong): shift traffic back to
+the previous revision, per service. It takes seconds and touches no DNS.
+`deploy-web.yml` does this itself when any of its steps fails; by hand:
+
+```
+gcloud run revisions list --service majorana-web --region us-west1 --project majorana-core --limit 5
+gcloud run services update-traffic majorana-web --region us-west1 --project majorana-core --to-revisions <previous>=100
+# and the same for majorana-web-atlas, to the revision built from the same image
+```
+
+Keep the two on one image (`90-verify.sh` fails if they are not): a page rendered by
+one asks the other for chunks by content hash.
+
+**Google itself** (the load balancer, Armor, or capacity refusing people): point
+`leonaqt.com` and `www` back at Vercel in Cloudflare, DNS-only (grey cloud) — as
+they resolve today, read with `dig` on 2026-09-24 after the rollback: `leonaqt.com A
+76.76.21.21` and `www CNAME cname.vercel-dns-0.com`. The collaborator who holds
+Cloudflare does this. Done on 2026-09-24: the last request reached Google at 12:38:41 UTC, so
+the switch takes effect within a minute. Know what it restores: Vercel's Git
+integration was disconnected on 2026-09-21, so Vercel serves its last production
+deployment (`d1c236c9`), not current `dev`. That is a working site but an old one,
+and the API behind it has moved on since. It is a fallback for hours, not days.
+
