@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from majorana_contracts.notebooks import CheckProperty
+
 from leona_notebooks.dependencies import (
     CHECK_ROLE,
     RunPlan,
@@ -331,7 +333,9 @@ def test_check_cell_is_a_barrier_reader_that_defines_nothing() -> None:
     cells = [
         Cell(id="c01", kind="code", source="x = 1\n"),
         Cell(id="c02", kind="code", source="y = 2\n"),
-        _check_cell("chk"),
+        # A real property now that check cells have landed: the contract refuses a
+        # role=check cell without one when the spec is validated.
+        _check_cell("chk", property=CheckProperty(kind="value", subject="x", value=1)),
         Cell(id="c03", kind="code", source="print('after')\n"),
     ]
     spec = _spec_with_cells(cells)

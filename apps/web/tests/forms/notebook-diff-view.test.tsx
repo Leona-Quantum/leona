@@ -18,6 +18,7 @@ function cell(id: string, source: string, overrides: Record<string, unknown> = {
     answer: null,
     answer_prompt: null,
     timeout_s: null,
+    property: null,
     ...overrides,
   };
 }

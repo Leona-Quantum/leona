@@ -164,6 +164,9 @@ from .notebooks import (
     CellOutput,
     CellResult,
     CellRole,
+    CheckProperty,
+    CheckTeeth,
+    CheckVerdict,
     ChoiceAnswer,
     CreateNotebookRequest,
     CreateNotebookResponse,
@@ -556,7 +559,28 @@ from .lifecycle import (
 # live listener watching a replay dispatch sees a reused cell only as the
 # pre-merge `status="not_run"` a fresh dispatch's own emission gives it, no
 # different from a cell that has not run yet. Additive, no existing field changed.
-CONTRACTS_VERSION = "2.37.2"
+# 2.38.0: Phase A, "check cells" (ai-ops 382 option 1; design in
+# ai-ops/desk/leona/plans/platform-vision-20260924/phase-a/DESIGN.md §1-§2). New:
+# `CellRole.CHECK`, `CheckProperty` on the new `Cell.property` (only on role=check cells,
+# and required on them — UNRELATED to `Cell.check`, the hidden exercise grader),
+# `CheckVerdict` and `CheckTeeth` on the new `CellResult.check`, and an optional `check`
+# status on the `notebook.cells` event's `NotebookLiveCellResult`. Additive: one enum
+# value, three models, three optional fields that default to None, so every stored spec,
+# report and event still parses. No route and no migration (spec and report are JSONB).
+# Review round 1 of the same unreleased 2.38.0 (PR 1011): a unitary check stops at 10
+# qubits (`CHECK_UNITARY_MAX_QUBITS`) and a `reference_qasm` may not declare more qubits
+# than its kind judges; `CheckTeeth.could_not_run` (default 0); and `NotebookSpec` gains
+# `carries_secrets()` and `learner_report()`, with `for_learner()` dropping check cells and
+# `leaks_answer_key()` naming them in a notebook with anything secret (ai-ops 260).
+# 2.39.0: the 2.38.0 entry above (check cells, and its review round 1), which never shipped
+# as 2.38.0: it merged into dev after 2.37.2 (dependency-graph replay), so it lands as
+# 2.39.0, above both. Nothing beyond the union of the two: `CellResult` carries `check`
+# AND `cache_key`/`cached_from_seq`; `NotebookLiveCellResult` carries `check` AND
+# `cached_from_seq`. The replay planner hashes a check cell's property, minus `author` and
+# `accepted`, into its cache key, so accepting a check does not force a re-run. The
+# check ceilings, sized for 512 MiB containers, are state 18, distribution 14, unitary 8
+# (replacing the "unitary stops at 10" in the 2.38.0 note above) and energy 10.
+CONTRACTS_VERSION = "2.39.0"
 
 __all__ = [
     "PresenceHeartbeatRequest",
@@ -710,6 +734,9 @@ __all__ = [
     "CellResult",
     "HardwareRequest",
     "CellRole",
+    "CheckProperty",
+    "CheckTeeth",
+    "CheckVerdict",
     "CreateNotebookRequest",
     "CreateNotebookResponse",
     "CreateNotebookTurnRequest",

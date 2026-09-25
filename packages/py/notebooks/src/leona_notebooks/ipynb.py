@@ -181,7 +181,8 @@ def setup_preamble(spec: NotebookSpec) -> dict[str, Any]:
 #: `majorana-sandbox` and `leona-client` as plain dependencies, PyPI has none of them,
 #: and pip fails at dependency resolution before installing anything. Naming every one
 #: as a direct git requirement in the SAME `pip install` lets pip satisfy each dependency
-#: from its URL. All four are light (pydantic, httpx, nbformat, pyyaml, qiskit).
+#: from its URL. All six are light (pydantic, httpx, nbformat, pyyaml, qiskit, and numpy
+#: and scipy, which qiskit already pulls in).
 #: `test_the_bootstrap_installs_every_workspace_dependency` derives the list from the
 #: packages' own pyproject files, so a workspace dependency added later fails a test
 #: instead of breaking every downloaded notebook's first cell.
@@ -193,6 +194,10 @@ NOTEBOOKS_INSTALL_REQUIREMENTS: tuple[str, ...] = tuple(
         ("leona-client", "client"),
         ("majorana-contracts", "contracts"),
         ("majorana-sandbox", "sandbox"),
+        # Check cells (ai-ops 382): `leona_notebooks.checks` judges with the
+        # verification package, which reads OpenQASM through majorana-openqasm.
+        ("majorana-verification", "verification"),
+        ("majorana-openqasm", "openqasm"),
     )
 )
 
@@ -328,6 +333,23 @@ def to_ipynb(
                 }
             )
             continue
+        if cell.property is not None:
+            # A check cell leaves as a comment block stating the check in words, with the
+            # property itself in the cell's metadata, where `from_ipynb` reads it back.
+            # Running it in Jupyter does nothing, which is the truth: the check is judged
+            # on Leona's worker, not in the reader's kernel.
+            metadata["leona"]["property"] = cell.property.model_dump(mode="json", exclude_none=True)
+            cells.append(
+                {
+                    "id": cell.id,
+                    "cell_type": "code",
+                    "metadata": metadata,
+                    "source": check_cell_export_source(cell.property),
+                    "execution_count": None,
+                    "outputs": [],
+                }
+            )
+            continue
         result = results.get(cell.id)
         count: int | None = None
         if result is not None and result.status in {"ok", "error"}:
@@ -376,6 +398,38 @@ def to_ipynb(
     return notebook
 
 
+def check_cell_export_source(prop: Any) -> str:
+    """The source of an exported check cell: the check in words, as comments."""
+    from leona_notebooks.checks import authorship_words, describe_expectation, describe_property
+
+    subject = "value" if prop.kind == "value" else "circuit"
+    lines = [
+        f"# Leona check: {describe_property(prop)}",
+        f"# Checked against: {describe_expectation(prop)}",
+        f"# Tolerance: {prop.tolerance:g}. Written: {authorship_words(prop)}.",
+        f"# Leona judges this on its own worker, using the {subject} that `{prop.subject}`",
+        "# holds at this point. Running this cell here does nothing. The check itself is",
+        "# in this cell's metadata (leona.property).",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _check_property(own: dict[str, Any]) -> dict[str, Any] | None:
+    """The `leona.property` a check cell carried out, if it is one a check can use. A
+    `role=check` cell whose property is missing or no longer valid comes back as an
+    ordinary code cell: its source is only comments, so nothing is lost by running it."""
+    from leona_notebooks.spec import Cell
+
+    raw = own.get("property")
+    if not isinstance(raw, dict):
+        return None
+    try:
+        Cell.model_validate({"id": "probe", "kind": "code", "role": "check", "property": raw})
+    except ValueError:
+        return None
+    return raw
+
+
 def _text(value: Any) -> str:
     if isinstance(value, list):
         return "".join(str(part) for part in value)
@@ -410,16 +464,21 @@ def from_ipynb(notebook: dict[str, Any], *, slug: str | None = None) -> Notebook
                 index += 1
                 cell_id = f"c{index:02d}"
         used.add(cell_id)
-        cells.append(
-            {
-                "id": cell_id,
-                "kind": cell_type,
-                "role": role_name,
-                "source": _text(raw.get("source")),
-                "tags": [tag for tag in tags if tag != role_name],
-                "execute": bool(own.get("execute", True)),
-            }
-        )
+        entry: dict[str, Any] = {
+            "id": cell_id,
+            "kind": cell_type,
+            "role": role_name,
+            "source": _text(raw.get("source")),
+            "tags": [tag for tag in tags if tag != role_name],
+            "execute": bool(own.get("execute", True)),
+        }
+        if role_name == CellRole.CHECK.value:
+            prop = _check_property(own) if cell_type == "code" else None
+            if prop is None:
+                entry["role"] = None
+            else:
+                entry["property"] = prop
+        cells.append(entry)
     title = str(leona_meta.get("title") or _first_heading(cells) or "Imported notebook")
     payload: dict[str, Any] = {
         "slug": slug or leona_meta.get("slug") or _slugify(title),
@@ -433,7 +492,9 @@ def from_ipynb(notebook: dict[str, Any], *, slug: str | None = None) -> Notebook
         payload["framework"] = leona_meta["framework"]
     if leona_meta.get("language") in {"en", "ja"}:
         payload["style"] = {"language": leona_meta["language"]}
-    return NotebookSpec.model_validate(payload)
+    from leona_notebooks.source import _with_check_comments
+
+    return _with_check_comments(NotebookSpec.model_validate(payload))
 
 
 def _first_heading(cells: list[dict[str, Any]]) -> str | None:

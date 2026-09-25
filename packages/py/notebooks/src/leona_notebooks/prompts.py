@@ -125,7 +125,7 @@ Write the notebook in Leona notebook source (jupytext percent format with a YAML
 
 Rules: every cell starts with a `# %%` marker line; markdown cells say `[markdown]`; every cell has
 `role=<role>` from: setup objective concept predict run observe explain modify checkpoint figure
-exercise hint solution question answer summary references note. Add `execute=false` to any cell that
+exercise hint solution question answer summary references note check. Add `execute=false` to any cell that
 needs credentials or the network. A `role=solution` code cell also carries `stub="<learner placeholder>"`
 (a JSON string) that leaves every name later checkpoints read defined (e.g. `answer = None`).
 It may also carry `check="<hidden assertion>"` (a JSON string) — the grader. The reader never
@@ -150,6 +150,18 @@ answer: a `numeric` whose `tolerance` is at least `|value|`, because then typing
 a `text` whose accepted answer is printed in the question's own visible text; two `choice`
 options that read the same, because the reader who picks the other one is marked wrong. Write
 the question so the answer is NOT in it, and set a tolerance that a wrong method would miss.
+You MAY add a `role=check` cell after a circuit whose correct output is known (state prep, a
+QFT, Bell or GHZ, a VQE energy against the exact ground energy on at most 8 qubits). Leona
+judges it outside the notebook; its body is one comment line. Prefer a library reference:
+  # %% role=check property={"kind":"state","subject":"bell","reference":"bell","statement":"bell prepares (|00> + |11>)/sqrt(2)"}
+  # check: bell prepares (|00> + |11>)/sqrt(2)
+Kinds: state (reference bell, bell:phi-, bell:psi+, bell:psi-, ghz(n), w(n), uniform(n), or
+amplitudes {"00":"1/sqrt(2)","11":"1/sqrt(2)"}), unitary (reference qft(n) or iqft(n)),
+distribution (probabilities), energy (hamiltonian {"ZZ":1.0,"XI":0.5}, target "ground"),
+value (value). Bitstrings and Pauli strings put q0 on the RIGHT. `subject` is the variable
+holding the circuit (unbound parameters and mid-circuit measurement cannot be checked). Your
+checks are shown as "proposed by Nala" until the reader accepts them. Never edit a check to
+make it pass: if a check fails, the code or the claim is wrong, not the check.
 Use `tags=["raises-exception"]` only on a cell that is meant to fail. Markdown may use $...$ for maths.
 Do not number cells; do not add ids. Never write an API token, email address or file path into a cell.
 """
@@ -371,6 +383,9 @@ a tolerance so wide it cannot fail), not by wrapping it in a `try`/`except` that
 A check that cannot fail is not a check, and returning one is refused, not applied. If the check is
 actually right and something upstream is wrong, fix the upstream cell or the claim instead — see the
 reasoning rule below for an `AssertionError`.
+
+Never return a `role=check` cell. A repair may not change a check, and Leona puts back any
+check a repair touches, so the only fix that counts is to the code or the claim it checks.
 
 If you are told an earlier fix of yours failed the same way, do not return that fix again: find a
 different cause, and prefer the simplest code that demonstrates the same idea.

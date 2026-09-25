@@ -67,8 +67,12 @@ _CLOSERS = {"[": "]", "{": "}"}
 #: answer key — so the model could not write a gradable question even though everything
 #: that grades one was in place and tested. Same silent shape as the grader gap: nothing
 #: was red, there were simply no question cells in existence to be graded.
+#: `property` is a `role=check` cell's structured `CheckProperty`, one JSON object on the
+#: marker line; the cell's body is only the comment `check_comment` renders from it. It is
+#: here, and rendered below, for the reason `check` is: an attribute that parses but does
+#: not render is deleted by the first revise or repair turn that re-renders the cell.
 _CELL_HEADER_FIELDS = frozenset(
-    {"id", "role", "tags", "execute", "stub", "check", "answer", "timeout_s"}
+    {"id", "role", "tags", "execute", "stub", "check", "answer", "timeout_s", "property"}
 )
 
 
@@ -355,6 +359,7 @@ def parse_source(text: str, *, slug: str | None = None) -> NotebookSpec:
                 "check": attrs.pop("check", None),
                 "answer": attrs.pop("answer", None),
                 "timeout_s": attrs.pop("timeout_s", None),
+                "property": attrs.pop("property", None),
             }
         )
 
@@ -395,7 +400,25 @@ def parse_source(text: str, *, slug: str | None = None) -> NotebookSpec:
         payload["slug"] = slug
     payload.setdefault("slug", _slug_from_title(str(payload.get("title", ""))))
     payload["cells"] = raw_cells
-    return NotebookSpec.model_validate(payload)
+    return _with_check_comments(NotebookSpec.model_validate(payload))
+
+
+def _with_check_comments(spec: NotebookSpec) -> NotebookSpec:
+    """Every check cell's body re-rendered from its property. The body is never executed,
+    so whatever the author wrote under the marker is replaced by what the check actually
+    says — and `render_source` then `parse_source` is an exact round trip."""
+    if not any(cell.property is not None for cell in spec.cells):
+        return spec
+    from leona_notebooks.checks import check_comment
+
+    return spec.with_cells(
+        [
+            cell.model_copy(update={"source": check_comment(cell.property)})
+            if cell.property is not None
+            else cell
+            for cell in spec.cells
+        ]
+    )
 
 
 def _slug_from_title(title: str) -> str:
@@ -472,6 +495,16 @@ def render_source(spec: NotebookSpec, *, include_ids: bool = True) -> str:
             )
         if cell.timeout_s is not None:
             attrs.append(f"timeout_s={cell.timeout_s}")
+        if cell.property is not None:
+            # Defaults left out (they re-fill on parse), `kind` always kept, one line.
+            attrs.append(
+                "property="
+                + json.dumps(
+                    cell.property.model_dump(mode="json", exclude_defaults=True),
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            )
         if attrs:
             marker += " " + " ".join(attrs)
         out.append(marker)

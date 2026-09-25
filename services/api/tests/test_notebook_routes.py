@@ -1595,3 +1595,193 @@ async def test_a_save_that_changes_code_does_not_keep_the_old_outputs(client, au
             assert response.status_code == 201, response.text
             assert author_state["result_kwargs"]["report"] is None, change
             author_state["versions"][:] = [v1]
+
+
+# ------------------------------------------------------------ check-cell authorship
+
+_NALA_CHECK = {
+    "kind": "value",
+    "subject": "x",
+    "value": 1.0,
+    "citation": "arXiv:quant-ph/0000000",
+    "author": "nala",
+    "accepted": False,
+}
+
+
+def _checked_spec(*check_cells: dict) -> dict:
+    return {
+        "schema_version": 1,
+        "slug": "s",
+        "title": "Checked",
+        "kind": "scratch",
+        "cells": [{"id": "c01", "kind": "code", "source": "x = 1\n"}, *check_cells],
+    }
+
+
+def _check(cell_id: str, **prop) -> dict:
+    return {"id": cell_id, "kind": "code", "role": "check", "property": prop}
+
+
+@pytest.mark.parametrize("execute", [True, False])
+async def test_the_author_route_stamps_check_authorship_against_the_current_version(
+    client, author_state, execute
+):
+    """The reader may accept a Nala check (unchanged, accepted flips), may not relabel it
+    `source` without changing it, and owns any check they add or change."""
+    author_state["versions"][0].spec = _checked_spec(_check("k01", **_NALA_CHECK))
+    submitted = _checked_spec(
+        # unchanged property, relabelled source and accepted: the Accept button, plus a
+        # relabel the route must refuse
+        _check("k01", **{**_NALA_CHECK, "author": "source", "accepted": True}),
+        # new, and claiming to be Nala's unaccepted proposal: it is the reader's
+        _check("k02", kind="value", subject="x", value=2.0, author="nala", accepted=False),
+    )
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{author_state['notebook'].id}/versions",
+            json={"spec": submitted, "execute": execute},
+        )
+    assert response.status_code == 201, response.text
+    stored = (
+        author_state["jobs"][0]["payload"]["request"]["spec"]
+        if execute
+        else author_state["result_kwargs"]["spec"]
+    )
+    by_id = {cell["id"]: cell for cell in stored["cells"]}
+    assert (by_id["k01"]["property"]["author"], by_id["k01"]["property"]["accepted"]) == (
+        "nala",
+        True,
+    )
+    assert (by_id["k02"]["property"]["author"], by_id["k02"]["property"]["accepted"]) == (
+        "user",
+        True,
+    )
+    assert by_id["k02"]["source"] == "# check: x equals 2\n"
+
+
+async def test_an_import_honours_only_claims_that_lower_trust(client, monkeypatch):
+    """Review of PR 1011 (S2): a check the file says is Nala's stays Nala's and
+    unaccepted, whatever `accepted` says; a `source` label is not taken from a file; any
+    other check is the reader's own."""
+    from leona_notebooks.ipynb import to_ipynb
+    from leona_notebooks.spec import NotebookSpec as Spec
+
+    spec = Spec.model_validate(
+        _checked_spec(
+            _check("k01", **{**_NALA_CHECK, "accepted": True}),
+            _check("k02", kind="value", subject="x", value=2.0, author="source", citation="PRL"),
+            _check("k03", kind="value", subject="x", value=3.0, author="user"),
+        )
+    )
+    ipynb = to_ipynb(spec)
+    created: dict = {}
+
+    async def fake_create_notebook(_scope, _session, **kwargs):
+        notebook = _notebook_row(slug=kwargs["slug"], title=kwargs["title"], kind=kwargs["kind"])
+        created["notebook"] = notebook
+        created["version"] = _version_row(notebook_id=notebook.id, created_by="user")
+        return notebook, created["version"]
+
+    async def fake_set_version_result(_scope, _session, _version_id, **kwargs):
+        created["result_kwargs"] = kwargs
+        version = created["version"]
+        version.status = kwargs["status"]
+        version.spec = kwargs["spec"]
+        version.ipynb = kwargs["ipynb"]
+        version.source = kwargs["source"]
+        created["notebook"].current_version_id = version.id
+        return version
+
+    async def fake_list_versions(_scope, _session, _notebook_id):
+        return [created["version"]]
+
+    monkeypatch.setattr(notebooks_repo, "create_notebook", fake_create_notebook)
+    monkeypatch.setattr(notebooks_repo, "set_version_result", fake_set_version_result)
+    monkeypatch.setattr(notebooks_repo, "list_versions", fake_list_versions)
+    async with client as c:
+        response = await c.post("/v1/notebooks/import", json={"ipynb": ipynb, "execute": False})
+    assert response.status_code == 201, response.text
+    stamped = {
+        c["id"]: (c["property"]["author"], c["property"]["accepted"])
+        for c in created["result_kwargs"]["spec"]["cells"]
+        if c.get("property")
+    }
+    assert stamped == {"k01": ("nala", False), "k02": ("user", True), "k03": ("user", True)}
+
+
+_CHALLENGE_WITH_A_CHECK = {
+    "schema_version": 1,
+    "slug": "ghz",
+    "title": "GHZ",
+    "kind": "challenge",
+    "cells": [
+        {"id": "c01", "kind": "markdown", "role": "exercise", "source": "Build `qc`."},
+        {
+            "id": "c02",
+            "kind": "code",
+            "role": "solution",
+            "stub": "qc = None\n",
+            "source": "qc = build_ghz(3)\n",
+        },
+        {
+            "id": "k01",
+            "kind": "code",
+            "role": "check",
+            "property": {"kind": "value", "subject": "answer", "value": 0.4375},
+        },
+    ],
+}
+_CHECK_REPORT = {
+    "notebook_slug": "ghz",
+    "ok": True,
+    "runner": "sandbox",
+    "cells": [
+        {"id": "c02", "status": "ok"},
+        {
+            "id": "k01",
+            "status": "ok",
+            "check": {
+                "status": "pass",
+                "basis": "circuit",
+                "checked_against": "the 3-qubit GHZ state",
+                "subject_qasm": "OPENQASM 3.0;\nqubit[3] q;\nh q[0];\ncx q[0], q[1];\n",
+            },
+        },
+    ],
+}
+
+
+async def test_a_member_sees_no_hidden_check_through_any_field(client, monkeypatch):
+    """Review of PR 1011, blocker 2: in a notebook with a solution, a check states the
+    answer (0.4375) and its verdict repeats the solution's circuit. A workspace member who
+    is not the author gets neither, through the spec, the source, the compile or the
+    report. The author still sees all of it."""
+    notebook = _notebook_row(slug="ghz", owner_user_id=uuid_module.uuid4())
+    version = _version_row(
+        notebook_id=notebook.id,
+        seq=1,
+        status="ready",
+        spec=_CHALLENGE_WITH_A_CHECK,
+        source="",
+        report=_CHECK_REPORT,
+    )
+
+    async def fake_get_notebook(_scope, _session, _notebook_id):
+        return notebook
+
+    async def fake_get_version_by_seq(_scope, _session, _notebook_id, _seq):
+        return version
+
+    monkeypatch.setattr(notebooks_repo, "get_notebook", fake_get_notebook)
+    monkeypatch.setattr(notebooks_repo, "get_version_by_seq", fake_get_version_by_seq)
+    async with client as c:
+        response = await c.get(f"/v1/notebooks/{notebook.id}/versions/1")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert "k01" not in [cell["id"] for cell in body["spec"]["cells"]]
+    assert "k01" not in [cell["id"] for cell in body["report"]["cells"]]
+    for field in ("spec", "source", "ipynb", "report"):
+        dumped = json_module.dumps(body[field])
+        assert "0.4375" not in dumped, field
+        assert "cx q[0]" not in dumped, field

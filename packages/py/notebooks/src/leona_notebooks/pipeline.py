@@ -19,6 +19,7 @@ from typing import Literal, Protocol
 
 from leona_notebooks.execution import ExecutionReport
 from leona_notebooks.answer_audit import AnswerAudit, audit_answers, demote_unsound_answers
+from leona_notebooks.checks import enforce_check_authorship, restore_checks
 from leona_notebooks.error_hints import hints_for
 from leona_notebooks.grader_audit import GraderAudit, audit_graders, demote_unsound_graders
 from leona_notebooks.lint import DEFINITE, lint_cell, lint_spec
@@ -381,14 +382,14 @@ def _validate_repair_cells(
 def _with_omitted_from(spec: NotebookSpec, cell: Cell, *, as_id: str | None = None) -> Cell:
     """`cell` with every attribute it left unset taken from the existing cell it replaces
     (`as_id`, or its own id). Only unset values are filled: `role`, `stub`, `check`,
-    `answer` and `timeout_s` when None, `tags` when empty. `kind`, `source` and `execute`
+    `answer`, `timeout_s` and `property` when None, `tags` when empty. `kind`, `source` and `execute`
     are always the repair's own."""
     try:
         original = spec.cell_by_id(as_id or cell.id)
     except KeyError:
         return cell
     update: dict[str, object] = {}
-    for name in ("role", "stub", "check", "answer", "timeout_s"):
+    for name in ("role", "stub", "check", "answer", "timeout_s", "property"):
         if getattr(cell, name) is None and getattr(original, name) is not None:
             update[name] = getattr(original, name)
     if not cell.tags and original.tags:
@@ -458,8 +459,23 @@ def _apply_repair(
     # cell as-is (the assertion was right; the circuit above it was wrong) touches that
     # earlier cell, not the one the model was shown as failing.
     touched_ids = [*(t.id for t in explicit_targets), *([cell_id] if replacement else [])]
-    touched = tuple(dict.fromkeys(touched_ids))
-    return apply_revision(spec, RevisionPlan(reply="", ops=plan_ops)), touched
+    repaired = apply_revision(spec, RevisionPlan(reply="", ops=plan_ops))
+    # A repair may not touch a check (DESIGN §1.4). Whatever it did to one is undone here,
+    # by id, whatever the prompt said and whatever the validation above let through: the
+    # model that wrote both the code and the check would otherwise "fix" a failing check
+    # by weakening it.
+    repaired, restored = restore_checks(spec, repaired)
+    kept = [cell for cell in touched_ids if cell not in restored]
+    if not kept:
+        raise _StageFailed(
+            "notebook.repair",
+            "the repair only changed a check, which a repair may not do; the check was "
+            "put back unchanged",
+        )
+    touched = tuple(
+        dict.fromkeys([*kept, *(f"{cell} (a check, put back unchanged)" for cell in restored)])
+    )
+    return repaired, touched
 
 
 def render_cells(cells: list[Cell], *, include_ids: bool = True) -> str:
@@ -735,6 +751,9 @@ async def generate(
                 }
             )
             candidate = _ensure_seed_run_cell(candidate, request.seed_run_cell)
+            # Every check in a generated notebook is Nala's proposal until a person
+            # accepts it, whatever the draft claimed about its own author.
+            candidate = enforce_check_authorship(candidate, None, "nala")
             problems = check_structure(candidate)
             if problems:
                 feedback = "The draft misses these requirements:\n- " + "\n- ".join(problems)
@@ -820,6 +839,9 @@ async def revise(
         )
     try:
         spec = apply_revision(request.spec, plan)
+        # A check the turn wrote or changed is Nala's again, unaccepted; one it left
+        # alone keeps its author and acceptance.
+        spec = enforce_check_authorship(spec, request.spec, "nala")
     except RevisionError as exc:
         await ports.observe("notebook.revise", "failed", str(exc))
         return PipelineOutcome(

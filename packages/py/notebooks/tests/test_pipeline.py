@@ -1219,3 +1219,119 @@ async def test_a_cell_the_sandbox_guard_refuses_is_repaired_before_anything_runs
     assert any("qiskit.__version__" in hint for hint in context.hints)
     # The guard-refused draft never reached the sandbox: the repair came first.
     assert ports.calls.index("repair(c05)") < ports.calls.index("execute")
+
+
+# --------------------------------------------------------------------------- check cells
+
+_CHECK_MARKER = (
+    '# %% id=k01 role=check property={"kind":"value","subject":"heads","value":0.5,'
+    '"tolerance":0.05,"author":"source","citation":"a fair coin","accepted":true}\n'
+    "# check: heads is about one half\n\n"
+)
+CHECKED_LESSON = BROKEN_LESSON.replace(
+    "# %% [markdown] role=summary", _CHECK_MARKER + "# %% [markdown] role=summary"
+)
+
+
+class FailingCheckPorts(ScriptedPorts):
+    """Scripted ports whose runs also report the check as FAILING, the situation a model
+    that wrote both the code and the check is most tempted to "fix" by weakening it."""
+
+    async def run_notebook(self, spec: NotebookSpec) -> ExecutionReport:
+        from majorana_contracts.notebooks import CheckVerdict
+
+        report = await super().run_notebook(spec)
+        cells = [
+            cell.model_copy(
+                update={"check": CheckVerdict(status="fail", basis="value", detail="0.9, not 0.5")}
+            )
+            if cell.id == "k01"
+            else cell
+            for cell in report.cells
+        ]
+        return report.model_copy(update={"cells": cells})
+
+
+async def test_generated_checks_are_nalas_proposals_whatever_the_draft_claims() -> None:
+    ports = ScriptedPorts(drafts=[CHECKED_LESSON.replace("undefined_name\n", "")])
+    outcome = await generate(ports, GenerationRequest(brief="b"))
+    assert outcome.status == "ready", outcome.error
+    prop = outcome.spec.cell_by_id("k01").property
+    assert prop is not None
+    assert (prop.author, prop.accepted, prop.citation) == ("nala", False, "a fair coin")
+
+
+async def test_a_repair_that_weakens_a_failing_check_gets_the_check_back_unchanged() -> None:
+    weakened = (
+        '# %% id=k01 role=check property={"kind":"value","subject":"heads","value":0.9,'
+        '"tolerance":1000,"author":"user","accepted":true}\n# check: anything\n'
+    )
+    fixed_cell = LESSON.split("# %% role=run\n", 1)[1].split("\n# %% [markdown]", 1)[0]
+    repair = "# %% id=c05 role=run\n" + fixed_cell + "\n\n" + weakened
+    ports = FailingCheckPorts(drafts=[CHECKED_LESSON], repairs=[repair])
+    outcome = await generate(ports, GenerationRequest(brief="b"))
+    assert outcome.status == "ready", outcome.error
+    check = outcome.spec.cell_by_id("k01")
+    assert check.property is not None
+    assert check.property.value == 0.5 and check.property.tolerance == 0.05
+    assert (check.property.author, check.property.accepted) == ("nala", False)
+    # the body is rendered from the (restored) property, never from what either side typed
+    assert check.source == "# check: heads equals 0.5\n"
+    assert "undefined_name" not in outcome.spec.cell_by_id("c05").source  # the real fix kept
+    repairs = [a for a in outcome.attempts if a.stage == "notebook.repair"]
+    assert repairs and "k01 (a check, put back unchanged)" in repairs[0].detail
+
+
+async def test_a_repair_that_only_touches_a_check_is_a_failed_repair() -> None:
+    weakened_only = (
+        '# %% id=k01 role=check property={"kind":"value","subject":"heads","value":0.5,'
+        '"tolerance":1000}\n# check: anything\n'
+    )
+    ports = FailingCheckPorts(
+        drafts=[CHECKED_LESSON], repairs=[weakened_only, weakened_only, weakened_only]
+    )
+    outcome = await generate(ports, GenerationRequest(brief="b"))
+    check = outcome.spec.cell_by_id("k01")
+    assert check.property is not None and check.property.tolerance == 0.05
+    failed = [a for a in outcome.attempts if a.stage == "notebook.repair" and not a.ok]
+    assert failed and all("only changed a check" in a.detail for a in failed)
+
+
+async def test_a_revise_turn_owns_the_checks_it_changes_and_keeps_the_rest() -> None:
+    base = parse_source(CHECKED_LESSON.replace("undefined_name\n", ""))
+    from leona_notebooks.checks import enforce_check_authorship
+
+    # the reader wrote this one, into a version that did not have it
+    without_it = base.with_cells([cell for cell in base.cells if cell.property is None])
+    base = enforce_check_authorship(base, without_it, "user")
+    assert base.cell_by_id("k01").property.author == "source"
+    untouched = RevisionPlan(
+        reply="ok",
+        ops=[
+            RevisionOp(
+                op="replace", cell_id="c10", cells_source="# %% [markdown] role=summary\n# Done.\n"
+            )
+        ],
+    )
+    ports = ScriptedPorts(drafts=[], revision=untouched)
+    kept = await revise(ports, RevisionRequest(spec=base, message="tidy the summary"))
+    prop = kept.spec.cell_by_id("k01").property
+    assert (prop.author, prop.accepted) == ("source", True)
+
+    loosened = RevisionPlan(
+        reply="ok",
+        ops=[
+            RevisionOp(
+                op="replace",
+                cell_id="k01",
+                cells_source=(
+                    '# %% role=check property={"kind":"value","subject":"heads","value":0.5,'
+                    '"tolerance":0.2,"author":"source","citation":"a fair coin","accepted":true}\n'
+                ),
+            )
+        ],
+    )
+    ports = ScriptedPorts(drafts=[], revision=loosened)
+    changed = await revise(ports, RevisionRequest(spec=base, message="loosen the check"))
+    prop = changed.spec.cell_by_id("k01").property
+    assert prop.tolerance == 0.2 and (prop.author, prop.accepted) == ("nala", False)

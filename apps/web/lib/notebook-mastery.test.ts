@@ -9,7 +9,7 @@ type CellRole =
   | "summary" | "references" | "note";
 
 function cell(id: string, role: CellRole | null, kind: "markdown" | "code" = "code") {
-  return { id, kind, role, source: "", tags: [] as string[], execute: true, stub: null as string | null, check: null as string | null, answer: null, answer_prompt: null, timeout_s: null as number | null };
+  return { id, kind, role, source: "", tags: [] as string[], execute: true, stub: null as string | null, check: null as string | null, answer: null, answer_prompt: null, timeout_s: null as number | null, property: null };
 }
 
 function result(id: string, status: "ok" | "error" | "skipped" | "not_run") {
@@ -23,6 +23,7 @@ function result(id: string, status: "ok" | "error" | "skipped" | "not_run") {
     duration_ms: 1,
     execution_count: 1,
     note: "",
+    check: null,
     cache_key: null,
     cached_from_seq: null,
   };
