@@ -1070,6 +1070,20 @@ class CellResult(_Model):
     #: The worker's verdict on a `role=check` cell; `None` for every other cell and in
     #: every report stored before check cells existed, so those still parse unchanged.
     check: CheckVerdict | None = None
+    #: This cell's Merkle cache key (`leona_notebooks.dependencies.cache_keys`) at the
+    #: moment it actually ran. `None` for every report stored before dependency-graph
+    #: replay shipped, and for any cell the sandbox never dispatched (`skipped`,
+    #: `not_run`) — a cell replay never executed has no key to be reused BY, and a
+    #: `None` here is exactly what makes such a report "uncached" rather than a false
+    #: match on an absent key (`leona_notebooks.dependencies.plan_run`).
+    cache_key: str | None = None
+    #: Set when this cell's result was NOT re-run: it is the PARENT version's own
+    #: `CellResult`, copied forward because its cache key still matched. The value is
+    #: the parent version's `seq`, so the page can say "unchanged since version N, not
+    #: re-run". `None` for a cell that actually executed this run (whether or not it
+    #: also happens to carry a `cache_key` — the two fields are independent: an
+    #: executed cell's `cache_key` is ITS OWN fresh key, not a claim about reuse).
+    cached_from_seq: int | None = None
 
 
 class ExecutionReport(_Model):
@@ -1458,6 +1472,15 @@ class AuthorNotebookVersionRequest(_ResourceBase):
     #: A cell id: execute cells up to and including it ("Run to here"), reporting the
     #: rest as `not_run`. `None` runs the whole notebook.
     run_until: str | None = None
+    #: Whether the worker may reuse a cell's result from the parent version instead of
+    #: re-running it, when the dependency graph says nothing that cell reads has
+    #: changed (`leona_notebooks.dependencies.plan_run`). Defaults `True` — replay is
+    #: the normal path, so an existing client that has never heard of this field keeps
+    #: getting the FASTER behaviour rather than silently falling back to a full run.
+    #: `False` forces a full fresh run of every cell up to `run_until`, ignoring any
+    #: cached result — the escape hatch for "I don't trust the cache" or a deliberate
+    #: full re-run through this same route.
+    reuse_results: bool = True
 
     # The exactly-one rule and the `run_until` shape are deliberately NOT enforced by
     # validators here, though both are properties of the request: `services/api` maps a

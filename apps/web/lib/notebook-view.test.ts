@@ -38,7 +38,7 @@ test("cell views join the spec by id, not by array position", () => {
     dropped_bytes: 0,
     note: "",
     cells: [
-      { id: "c01", status: "ok" as const, stdout: "1\n", stderr: "", outputs: [], error: null, duration_ms: 5, execution_count: 1, note: "", check: null },
+      { id: "c01", status: "ok" as const, stdout: "1\n", stderr: "", outputs: [], error: null, duration_ms: 5, execution_count: 1, note: "", cache_key: null, cached_from_seq: null, check: null },
     ],
   };
   const views = notebookCellViews(cells, report);
@@ -85,6 +85,8 @@ test("an error result surfaces ename/evalue verbatim", () => {
         execution_count: 1,
         note: "",
         check: null,
+        cache_key: null,
+        cached_from_seq: null,
       },
     ],
   };
@@ -133,6 +135,8 @@ test("a truncated output marks the cell view truncated", () => {
         execution_count: 1,
         note: "",
         check: null,
+        cache_key: null,
+        cached_from_seq: null,
       },
     ],
   };
@@ -145,6 +149,36 @@ test("notebookStatusPill maps running to generating and passes the rest through"
   assert.equal(notebookStatusPill("queued"), "queued");
   assert.equal(notebookStatusPill("ready"), "ready");
   assert.equal(notebookStatusPill("failed"), "failed");
+});
+
+test("a cell's cached_from_seq flows through to cachedFromSeq; absent means null", () => {
+  const cells = [
+    { id: "c01", kind: "code" as const, role: null, source: "x = 1", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null },
+    { id: "c02", kind: "code" as const, role: null, source: "y = 2", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null },
+  ];
+  const report = {
+    notebook_slug: "s",
+    ok: true,
+    runner: "sandbox" as const,
+    duration_ms: 0,
+    environment: {},
+    dropped_bytes: 0,
+    note: "",
+    cells: [
+      { id: "c01", status: "ok" as const, stdout: "", stderr: "", outputs: [], error: null, duration_ms: 5, execution_count: 1, note: "", cache_key: null, cached_from_seq: 4, check: null },
+      { id: "c02", status: "ok" as const, stdout: "", stderr: "", outputs: [], error: null, duration_ms: 5, execution_count: 1, note: "", cache_key: null, cached_from_seq: null, check: null },
+    ],
+  };
+  const views = notebookCellViews(cells, report);
+  const [c01, c02] = views;
+  assert.equal(c01.cachedFromSeq, 4);
+  assert.equal(c02.cachedFromSeq, null);
+});
+
+test("a cell with no result at all has a null cachedFromSeq", () => {
+  const cells = [{ id: "c01", kind: "code" as const, role: null, source: "x = 1", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null }];
+  const [view] = notebookCellViews(cells, null);
+  assert.equal(view.cachedFromSeq, null);
 });
 
 test("a cell with a hidden check is marked graded; a plain cell is not", () => {
