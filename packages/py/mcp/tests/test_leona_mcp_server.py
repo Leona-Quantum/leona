@@ -47,10 +47,11 @@ async def test_initialize_names_the_server_and_says_what_it_does_not_do(server):
         assert phrase in result.instructions
 
 
-async def test_tools_list_offers_the_three_atlas_tools_read_only_and_five_acting_ones(server, api):
+async def test_tools_list_offers_the_three_atlas_tools_read_only_and_six_acting_ones(server, api):
     async with create_connected_server_and_client_session(server) as session:
         tools = (await session.list_tools()).tools
     assert sorted(t.name for t in tools) == [
+        "check_circuit",
         "estimate_resources",
         "get_method",
         "get_run",
@@ -73,7 +74,8 @@ async def test_tools_list_offers_the_three_atlas_tools_read_only_and_five_acting
     for name in ("run_verified", "run_qapp"):
         assert by_name[name].annotations.readOnlyHint is False
         assert by_name[name].annotations.idempotentHint is False
-    for name in ("get_run", "list_my_runs", "estimate_resources"):
+    # check_circuit stores nothing and answers the same input the same way.
+    for name in ("get_run", "list_my_runs", "estimate_resources", "check_circuit"):
         assert by_name[name].annotations.readOnlyHint is True
     for name in by_name:
         assert by_name[name].annotations.destructiveHint is False
@@ -320,7 +322,7 @@ async def test_run_verified_with_no_token_set_gives_clear_guidance_not_a_crash(m
     assert "Account" in result.content[0].text
 
 
-@pytest.mark.parametrize("tool", ["get_run", "list_my_runs", "estimate_resources"])
+@pytest.mark.parametrize("tool", ["get_run", "list_my_runs", "estimate_resources", "check_circuit"])
 async def test_the_other_acting_tools_also_need_a_token(monkeypatch, tool):
     monkeypatch.delenv("LEONA_API_TOKEN", raising=False)
     server = build_server()
@@ -330,6 +332,7 @@ async def test_the_other_acting_tools_also_need_a_token(monkeypatch, tool):
         "estimate_resources": {
             "points": [{"label": "x", "logical_qubits": 4, "toffoli_count": 100}]
         },
+        "check_circuit": {"qasm": "OPENQASM 3.0;", "kind": "state", "reference": "bell"},
     }[tool]
     async with create_connected_server_and_client_session(server) as session:
         result = await session.call_tool(tool, args)

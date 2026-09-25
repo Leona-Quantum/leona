@@ -6,7 +6,7 @@ Distribution `leona-mcp`, module `leona_mcp`, console script `leona-mcp`.
 
 | Module | Holds |
 |---|---|
-| `server.py` | The seven tools, the server instructions, and `main()`. |
+| `server.py` | The nine tools, the server instructions, and `main()`. `check_circuit`'s answer (`_check_result`) adds `passed`, `summary` and, when no broken copies were tried, `teeth_note` to the API's verdict. |
 
 The Atlas rules (`atlas.py`) and the HTTP client (`catalog.py`/the control-plane
 `Client`) moved to `packages/py/client` (`leona_client`) in Phase D, so `leona-mcp`
@@ -32,6 +32,14 @@ Rules that are load-bearing:
   `status` can be `succeeded` while `verifier_decision` is not `pass`. Every run
   tool's response carries an explicit `verified` boolean (`_run_result`), computed
   from `verifier_decision == "pass"` and nothing else.
+- **`check_circuit` never calls a pass "verified", and teaches the caller not to.**
+  Its verdict is Leona's (`POST /v1/checks/circuit`, judged by the check-cell engine on
+  the API); this server only words it. `passed` is true for `status == "pass"` and
+  nothing else, so an `inconclusive` can never be read as a pass; `summary` is built
+  from the verdict's own fields and says what the circuit was checked against and
+  whether the check could catch broken copies. The tool description carries the
+  bitstring convention (q0 rightmost), the library references and the tolerance
+  defaults, because the calling model has nowhere else to learn them.
 - **Acting calls run off the event loop.** `leona_client.Client` is synchronous
   (shared with `%nala`); `_in_thread` wraps each call in
   `anyio.to_thread.run_sync` so a `run_verified` poll (up to `MAX_WAIT_S` seconds)

@@ -1,9 +1,10 @@
-"""The MCP server: eight tools over the public Atlas and, with a token, runs and Qapps.
+"""The MCP server: nine tools over the public Atlas and, with a token, runs, Qapps, checks.
 
 Run it as `leona-mcp`. It speaks MCP over stdin and stdout, opens no port, and
 makes network calls only through `leona_client` — the anonymous catalog endpoint for
 `search_methods`/`get_method`/`list_problem_areas`, and the authenticated control
-plane for `run_verified`/`get_run`/`list_my_runs`/`estimate_resources`/`run_qapp`.
+plane for `run_verified`/`get_run`/`list_my_runs`/`estimate_resources`/`run_qapp`/
+`check_circuit`.
 Logging goes to stderr, because stdout carries the protocol.
 
 The acting tools (proposal 7 Phase C, ai-ops 349/362) take their token ONLY from the
@@ -18,6 +19,12 @@ their own permission," and `leona_client.Client` has no method that could reach
 the exact same `POST /v1/qapps/{slug}/executions` route the Qapp's own page calls —
 not a second execution path, only a second class of caller reaching the one ADR-0031
 already describes.
+
+`check_circuit` (ai-ops 382 option 1, VISION §5.8) is the connector's reason to exist
+beside IBM's own Qiskit MCP servers: it sends a circuit and a property to
+`POST /v1/checks/circuit` and returns Leona's verdict with its teeth, whether the check
+could tell deliberately broken copies of the circuit from the original. It never calls a
+pass "verified", and neither may the model quoting it.
 """
 
 from __future__ import annotations
@@ -46,6 +53,7 @@ from leona_client.atlas import (
     similar_slugs,
 )
 from leona_client.catalog import CatalogClient
+from majorana_contracts import MAX_CIRCUIT_CHECK_QASM_CHARS, CheckVerdict
 
 from . import __version__
 
@@ -71,7 +79,11 @@ INSTRUCTIONS = (
     "verification_summary, never just status, before telling anyone a result is verified. "
     "run_qapp spends the caller's own Qapp-execution allowance exactly like opening the "
     "Qapp's page and running it would — a private Qapp someone else owns is refused as not "
-    "found, never disclosed as existing. No tool here submits hardware jobs."
+    "found, never disclosed as existing. check_circuit judges an OpenQASM 3 circuit against "
+    "a property (a state, a unitary, a distribution or an energy) with Leona's own trusted "
+    "code, stores nothing, and says whether the check could catch deliberately broken copies "
+    "of the circuit; report its pass as 'checked against' what it names, never as verified. "
+    "No tool here submits hardware jobs."
 )
 
 SEARCH_DESCRIPTION = (
@@ -160,6 +172,48 @@ RUN_QAPP_DESCRIPTION = (
     "execution is still going; poll it again with the returned id."
 )
 
+CHECK_CIRCUIT_DESCRIPTION = _NEEDS_TOKEN + (
+    "Checks an OpenQASM 3 circuit against ONE property with Leona's own trusted code and "
+    "returns pass, fail or inconclusive, a diagnosis on a fail (reversed qubit order, one "
+    "wrong phase, a QFT missing its final swaps, the inverse of the reference), and "
+    "'teeth': Leona makes deliberately broken copies of the circuit (drops a gate, swaps a "
+    "control and target, negates an angle, swaps S/T for their inverses, reverses the "
+    "qubit order) and reports how many the check caught. A check that catches none of them "
+    "could not tell a broken circuit from yours. Nothing is run on hardware and nothing is "
+    "stored. Needs the token's run scope. "
+    "THE CIRCUIT: OpenQASM 3 as qiskit.qasm3.dumps writes it, with "
+    'include "stdgates.inc"; up to 64,000 characters; up to 12 qubits (8 for a unitary '
+    "check). Final measurements are ignored for state, unitary and energy checks; a "
+    "measurement or reset before the end, or if/for/while, makes the check inconclusive. "
+    "Wider or longer circuits are inconclusive here and can be checked in a Leona "
+    "notebook. "
+    "BIT ORDER: Qiskit's. q0 is the RIGHTMOST character, so '01' means q0 = 1 and q1 = 0, "
+    "and the Pauli string 'ZI' is Z on q1. "
+    "KINDS, each with its own expectation arguments and no others: "
+    "kind='state' compares the output state from |0...0> with exactly one of reference, "
+    "amplitudes or reference_qasm, up to global phase; "
+    "kind='unitary' compares the circuit's unitary with reference or reference_qasm, up to "
+    "global phase; kind='distribution' compares the ideal measured distribution (exact, no "
+    "sampling) with probabilities; kind='energy' compares <psi|H|psi> for hamiltonian "
+    "(Pauli string to coefficient, up to 10 qubits and 256 terms) with target, 'ground' "
+    "for the exact ground energy or a number. "
+    "LIBRARY REFERENCES, built by Leona from qiskit.circuit.library: for state checks "
+    "'bell' ((|00>+|11>)/sqrt 2, the same as 'bell:phi+'), 'bell:phi-', 'bell:psi+', "
+    "'bell:psi-', 'ghz(n)', 'w(n)', 'uniform(n)'; for unitary checks 'qft(n)' and 'iqft(n)', "
+    "Qiskit's QFT including its final swaps. "
+    "AMPLITUDES AND PROBABILITIES map bitstrings to a number or an expression using numbers, "
+    "i, pi, e, sqrt(), exp(), cos(), sin() and + - * / **, e.g. {'00': '1/sqrt(2)', "
+    "'11': '1/sqrt(2)'}; basis states you leave out are 0. "
+    "TOLERANCE defaults: state 1e-6 (on 1 - fidelity), unitary 1e-6 (largest entry of the "
+    "difference after removing global phase), distribution 1e-6 (total variation distance), "
+    "energy 1e-3 (absolute difference). "
+    "THE ANSWER: 'passed' is true only for status 'pass'; 'summary' is one paragraph you can "
+    "quote; 'teeth_note' appears when the teeth were not measured. A pass means the circuit "
+    "matches what 'checked_against' names, within the tolerance, and nothing more: say "
+    "'checked against <checked_against>', never 'verified' or 'proven correct'. The "
+    "reference can itself be the wrong target."
+)
+
 _READ_ONLY = ToolAnnotations(
     readOnlyHint=True,
     destructiveHint=False,
@@ -176,8 +230,9 @@ _ACTING = ToolAnnotations(
     openWorldHint=True,
 )
 
-#: Needs a token but has no side effect: reading a run, or costing a stated point
-#: against a public rate card.
+#: Needs a token but has no side effect: reading a run, costing a stated point against a
+#: public rate card, or checking a circuit (judged, nothing stored, the same answer for
+#: the same input).
 _AUTHENTICATED_READ_ONLY = ToolAnnotations(
     readOnlyHint=True,
     destructiveHint=False,
@@ -244,7 +299,7 @@ async def _in_thread(func: Any, /, *args: Any, **kwargs: Any) -> Any:
 
 
 def build_server(client: CatalogClient | None = None) -> FastMCP:
-    """The server with its seven tools. Tests pass a `CatalogClient` with a mock
+    """The server with its nine tools. Tests pass a `CatalogClient` with a mock
     transport for the three read-only ones; the acting tools build their own
     `leona_client.Client` per call from `LEONA_API_TOKEN`, so tests for those
     construct a `Client` directly with a fake transport instead."""
@@ -505,6 +560,82 @@ def build_server(client: CatalogClient | None = None) -> FastMCP:
         )
         return execution.model_dump(mode="json")
 
+    @server.tool(
+        name="check_circuit",
+        title="Check a circuit against a property",
+        description=CHECK_CIRCUIT_DESCRIPTION,
+        annotations=_AUTHENTICATED_READ_ONLY,
+    )
+    async def check_circuit(
+        qasm: Annotated[
+            str,
+            Field(
+                min_length=1,
+                max_length=MAX_CIRCUIT_CHECK_QASM_CHARS,
+                description='The circuit as OpenQASM 3, with include "stdgates.inc".',
+            ),
+        ],
+        kind: Annotated[
+            Literal["state", "unitary", "distribution", "energy"],
+            Field(
+                description="What to compare: the output state, the unitary, the ideal "
+                "measured distribution, or an energy."
+            ),
+        ],
+        reference: Annotated[
+            str | None,
+            Field(
+                description="A library reference: bell, bell:phi-, bell:psi+, bell:psi-, "
+                "ghz(n), w(n), uniform(n) (state), or qft(n), iqft(n) (unitary)."
+            ),
+        ] = None,
+        amplitudes: Annotated[
+            dict[str, float | str] | None,
+            Field(
+                description="state only: bitstring (q0 rightmost) to amplitude, a number "
+                "or an expression such as '1/sqrt(2)' or 'exp(i*pi/4)/2'."
+            ),
+        ] = None,
+        probabilities: Annotated[
+            dict[str, float | str] | None,
+            Field(description="distribution only: bitstring (q0 rightmost) to probability."),
+        ] = None,
+        reference_qasm: Annotated[
+            str | None,
+            Field(description="state or unitary: a reference circuit as OpenQASM 3."),
+        ] = None,
+        hamiltonian: Annotated[
+            dict[str, float] | None,
+            Field(description="energy only: Pauli string (q0 rightmost) to coefficient."),
+        ] = None,
+        target: Annotated[
+            Literal["ground"] | float | None,
+            Field(description="energy only: 'ground' for the exact ground energy, or a number."),
+        ] = None,
+        tolerance: Annotated[
+            float | None,
+            Field(ge=0, description="Leave out for the kind's default (see the description)."),
+        ] = None,
+        statement: Annotated[
+            str,
+            Field(max_length=300, description="One line saying what is being checked."),
+        ] = "",
+    ) -> dict[str, Any]:
+        given = {
+            "reference": reference,
+            "amplitudes": amplitudes,
+            "probabilities": probabilities,
+            "reference_qasm": reference_qasm,
+            "hamiltonian": hamiltonian,
+            "target": target,
+            "tolerance": tolerance,
+        }
+        prop: dict[str, Any] = {"kind": kind, "subject": "circuit", "statement": statement}
+        prop.update({key: value for key, value in given.items() if value is not None})
+        client = _token_client()
+        verdict = await _in_thread(client.check_circuit, qasm, prop)
+        return _check_result(verdict)
+
     return server
 
 
@@ -516,6 +647,70 @@ def _run_result(run: Any) -> dict[str, Any]:
     unverified result as one."""
     data = run.model_dump(mode="json")
     data["verified"] = data.get("verifier_decision") == "pass"
+    return data
+
+
+def _teeth_words(verdict: CheckVerdict) -> str:
+    teeth = verdict.teeth
+    if teeth is None or teeth.status != "measured":
+        reason = teeth.reason if teeth is not None and teeth.reason else "no reason was given"
+        return f"Whether this check can catch a broken circuit was not measured: {reason}"
+    tried, caught = teeth.mutants, teeth.caught
+    copies = "copy" if tried == 1 else "copies"
+    if caught == tried:
+        words = (
+            f"Leona also made {tried} deliberately broken {copies} of the circuit that change "
+            f"its output, and the check caught all {tried}."
+        )
+    elif caught == 0:
+        words = (
+            f"Leona also made {tried} deliberately broken {copies} of the circuit that change "
+            "its output, and the check caught none of them: it could not tell a broken "
+            "circuit from this one."
+        )
+    else:
+        words = (
+            f"Leona also broke the circuit on purpose: the check caught {caught} of {tried} "
+            f"changes that alter the output. It missed: {'; '.join(teeth.survivors)}."
+        )
+    if teeth.equivalent:
+        same = "copy" if teeth.equivalent == 1 else "copies"
+        words += (
+            f" {teeth.equivalent} more broken {same} behaved exactly like the original and "
+            "were left out, since no check could catch them."
+        )
+    if teeth.reason:
+        words += f" ({teeth.reason})"
+    return words
+
+
+def _check_summary(verdict: CheckVerdict) -> str:
+    """One paragraph a model can quote as it stands: what the circuit was checked
+    against, the outcome, and whether the check could have failed. Written from the
+    verdict's own fields only, and never with the word "verified"."""
+    against = verdict.checked_against or "the property given"
+    measure = f" ({verdict.measure})" if verdict.measure else ""
+    if verdict.status == "pass":
+        head = f"Checked against {against}: pass{measure}."
+    elif verdict.status == "fail":
+        head = f"Checked against {against}: fail{measure}. {verdict.detail}".rstrip()
+    else:
+        head = (
+            "Leona could not judge this circuit, so this is neither a pass nor a fail: "
+            f"{verdict.detail}"
+        ).rstrip()
+    return f"{head} {_teeth_words(verdict)}"
+
+
+def _check_result(verdict: CheckVerdict) -> dict[str, Any]:
+    """The verdict as JSON, plus three fields a calling model cannot misread: `passed`
+    (true for `pass` and nothing else, so an `inconclusive` is never taken for one),
+    `summary`, and — only when no broken copies were tried — `teeth_note`."""
+    data = verdict.model_dump(mode="json")
+    data["passed"] = verdict.status == "pass"
+    data["summary"] = _check_summary(verdict)
+    if verdict.teeth is None or verdict.teeth.status != "measured":
+        data["teeth_note"] = _teeth_words(verdict)
     return data
 
 
