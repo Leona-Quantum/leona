@@ -36,9 +36,9 @@ const spec = {
   brief: "",
   extra: {},
   cells: [
-    { id: "m1", kind: "markdown" as const, role: "objective" as const, source: "# Bell state\nWe build one below.", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null },
-    { id: "c1", kind: "code" as const, role: "run" as const, source: "print(counts)", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null },
-    { id: "c2", kind: "code" as const, role: "run" as const, source: "1 / 0", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null },
+    { id: "m1", kind: "markdown" as const, role: "objective" as const, source: "# Bell state\nWe build one below.", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null },
+    { id: "c1", kind: "code" as const, role: "run" as const, source: "print(counts)", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null },
+    { id: "c2", kind: "code" as const, role: "run" as const, source: "1 / 0", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null },
   ],
 };
 
@@ -61,6 +61,7 @@ const report = {
       duration_ms: 120,
       execution_count: 1,
       note: "",
+      check: null,
     },
     {
       id: "c2",
@@ -72,6 +73,7 @@ const report = {
       duration_ms: 4,
       execution_count: 2,
       note: "",
+      check: null,
     },
   ],
 };
@@ -100,7 +102,7 @@ test("NotebookView renders markdown, a stdout+figure code cell, and an error cel
 
 test("text/html output is shown as literal text, never as rendered markup", () => {
   const htmlSpec = [
-    { id: "c3", kind: "code" as const, role: null, source: "render_html()", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null },
+    { id: "c3", kind: "code" as const, role: null, source: "render_html()", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null },
   ];
   const htmlReport = {
     ...report,
@@ -115,6 +117,7 @@ test("text/html output is shown as literal text, never as rendered markup", () =
         duration_ms: 1,
         execution_count: 1,
         note: "",
+        check: null,
       },
     ],
   };
@@ -166,6 +169,7 @@ function questionCell(id: string, answer: SpecCell["answer"], source = "Which ga
     answer,
     answer_prompt: null,
     timeout_s: null,
+    property: null,
   };
 }
 
