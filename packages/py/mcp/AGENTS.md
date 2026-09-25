@@ -23,11 +23,12 @@ Rules that are load-bearing:
   `leona_client.Client.from_env()` and raises a plain, token-free message when it is
   absent; nothing here logs the token or puts it in an exception. Without one, the
   three Atlas tools are unaffected.
-- **No hardware tool, and none is possible.** `leona_client.Client` has no method
-  that could reach `POST /qpu/submissions`; `token_access.py` has no allowlist entry
-  for it and `TokenScope` has no `hardware` member. "Hardware jobs come later under
-  their own permission" (ai-ops 362) is therefore not a policy this server chooses
-  to respect — there is nothing here that could violate it even if it tried to.
+- **No hardware tool.** Submitting to hardware is its own token permission (ai-ops 376
+  option 2): `POST /qpu/submissions` is in `token_access.HARDWARE_WRITES` and needs
+  `TokenScope.HARDWARE`, which a `read` or `run` token does not carry.
+  `leona_client.Client.qpu_submit` can call that route (it is how `leona_submit` submits
+  from a person's own notebook), but no tool on this server calls it, so an MCP client
+  cannot spend a hardware allowance through this server whatever scopes its token has.
 - **`run_verified` never claims a result is verified because it finished.** A run's
   `status` can be `succeeded` while `verifier_decision` is not `pass`. Every run
   tool's response carries an explicit `verified` boolean (`_run_result`), computed

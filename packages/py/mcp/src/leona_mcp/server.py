@@ -11,9 +11,10 @@ The acting tools (proposal 7 Phase C, ai-ops 349/362) take their token ONLY from
 `LEONA_API_TOKEN` environment variable — never a tool argument, so no MCP client, log
 or transcript ever carries it. With no token set they answer with a plain message
 telling the caller to mint one; the three read-only Atlas tools are unaffected. No
-hardware tool exists here: ai-ops 362's ruling was "hardware jobs come later under
-their own permission," and `leona_client.Client` has no method that could reach
-`POST /qpu/submissions` in the first place.
+hardware tool exists here. Submitting to hardware (`POST /qpu/submissions`) needs a
+token's separate `hardware` scope (ai-ops 376, `token_access.HARDWARE_WRITES`), and
+although `leona_client.Client.qpu_submit` can call that route for `leona_submit` in a
+notebook, no tool on this server does.
 
 `run_qapp` (ai-ops 349 option 2, "call it as an API") calls a published Qapp through
 the exact same `POST /v1/qapps/{slug}/executions` route the Qapp's own page calls —

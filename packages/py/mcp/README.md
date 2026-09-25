@@ -138,9 +138,9 @@ Leona answers:
 
 <!-- check-circuit-example:end -->
 
-No tool submits a hardware job. Owner ruling ai-ops 362: "hardware jobs come later
-under their own permission," so there is no tool, and no token scope, that could
-reach one.
+No tool here submits a hardware job. Submitting to hardware needs a token with the
+separate `hardware` scope (ai-ops 376), which the `run` scope does not include, and even
+with that scope this server has no tool that submits.
 
 ## Install
 
