@@ -2503,6 +2503,17 @@ def _success_criteria_check(
         "additional_notes": plan.success_criteria.additional_notes,
     }
     if metric not in execution.result:
+        if artifact_promises_no_executed_result(plan.artifact_contract):
+            # ai-ops 372: the plan's own artifact_contract already says this
+            # deliverable is a FUNCTION/CLASS that was not required to execute —
+            # there is no RESULT to hold a primary_metric in the first place, the
+            # same "n/a, not fail: nothing went wrong" reasoning
+            # `_return_contract_check` already applies to a derived circuit result.
+            return {
+                "method": "success_criteria",
+                "result": "n/a",
+                "details": details | {"reason": "artifact_contract declares no executed result"},
+            }
         return {
             "method": "success_criteria",
             "result": "fail",
