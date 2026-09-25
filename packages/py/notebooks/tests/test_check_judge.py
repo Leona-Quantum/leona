@@ -176,10 +176,12 @@ async def test_a_child_that_crashes_says_so_and_blames_nothing_else() -> None:
 
 
 _GROWS = (
-    "import sys, json, resource, time\n"
+    "import sys, json, resource, time, os\n"
     "sys.stdin.read()\n"
-    "rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss\n"
-    "rss = rss if sys.platform == 'darwin' else rss * 1024\n"
+    "try:\n"
+    "    rss = int(open('/proc/self/statm').read().split()[1]) * os.sysconf('SC_PAGE_SIZE')\n"
+    "except OSError:\n"
+    "    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss\n"
     "print(json.dumps({'event': 'ready', 'rss_bytes': rss}), flush=True)\n"
     "block = bytearray(96 * 2**20)\n"
     "for i in range(0, len(block), 4096):\n"
@@ -266,3 +268,26 @@ async def test_the_resident_size_reader_works_on_this_platform() -> None:
 
     resident = await _resident_bytes(os.getpid())
     assert resident is not None and resident > 10 * 2**20, resident
+
+
+def test_the_child_reports_its_own_size_not_its_parents() -> None:
+    """CI on Linux caught this: `ru_maxrss` carries across fork and exec, so a child of a
+    790 MiB pytest worker reported 790 MiB as its own footprint and the watch allowed
+    790 + 16. The child reads `/proc/self/statm` and `VmHWM` instead, where they exist."""
+    import json
+    import subprocess
+
+    probe = (
+        "import json; from leona_notebooks import check_judge as j; "
+        "print(json.dumps([j._resident_now(), j._resident_peak()]))"
+    )
+    ballast = bytearray(200 * 2**20)  # make THIS process large before starting the child
+    for i in range(0, len(ballast), 4096):
+        ballast[i] = 1
+    now, peak = json.loads(
+        subprocess.run(
+            [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+        ).stdout
+    )
+    del ballast
+    assert now < 150 * 2**20 and peak < 150 * 2**20, (now, peak)

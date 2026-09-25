@@ -27,6 +27,39 @@ def _emit(event: dict) -> None:
     sys.stdout.flush()
 
 
+def _resident_now() -> int:
+    """This process's resident size NOW. On Linux from `/proc/self/statm`, never from
+    `ru_maxrss`: Linux carries `ru_maxrss` across fork and exec from the parent, so a judge
+    started by a 292 MiB worker (or a 790 MiB pytest worker, as CI showed) would report
+    the PARENT's size as its own footprint, and the parent's watch would allow that much on
+    top. macOS starts `ru_maxrss` afresh, and has no `/proc`."""
+    import os
+    import resource
+
+    try:
+        with open("/proc/self/statm", "rb") as handle:
+            return int(handle.read().split()[1]) * os.sysconf("SC_PAGE_SIZE")
+    except (OSError, ValueError, IndexError):
+        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        return rss if sys.platform == "darwin" else rss * 1024
+
+
+def _resident_peak() -> int:
+    """This process's peak resident size: `VmHWM` on Linux (it starts afresh at exec,
+    unlike `ru_maxrss`), `ru_maxrss` on macOS."""
+    import resource
+
+    try:
+        with open("/proc/self/status", "rb") as handle:
+            for line in handle:
+                if line.startswith(b"VmHWM:"):
+                    return int(line.split()[1]) * 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return rss if sys.platform == "darwin" else rss * 1024
+
+
 def _address_space_bytes() -> int | None:
     """This process's virtual size (VmSize), the quantity RLIMIT_AS limits. Linux only."""
     try:
@@ -121,11 +154,11 @@ def main() -> int:
 
     _warm_up(checks, CheckProperty)
     cap = _cap_memory(int(payload.get("memory_headroom_bytes") or 0))
-    import resource
-
-    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    rss_bytes = rss if sys.platform == "darwin" else rss * 1024
-    _emit({"event": "ready", "rss_bytes": rss_bytes, "memory_cap": cap})
+    # The larger of now and the peak so far: the warm-up's transient peak is the footprint
+    # the parent's watch should allow for, not a moment's lower reading after it.
+    _emit(
+        {"event": "ready", "rss_bytes": max(_resident_now(), _resident_peak()), "memory_cap": cap}
+    )
 
     jobs = []
     for raw in payload.get("jobs", []):
@@ -165,8 +198,7 @@ def main() -> int:
             )
         else:
             _emit({"event": "teeth", "id": job_id, "teeth": item.model_dump(mode="json")})
-    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    _emit({"event": "done", "peak_rss_bytes": peak if sys.platform == "darwin" else peak * 1024})
+    _emit({"event": "done", "peak_rss_bytes": _resident_peak()})
     return 0
 
 
