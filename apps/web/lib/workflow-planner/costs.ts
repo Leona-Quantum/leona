@@ -36,6 +36,42 @@ export interface CostReport {
 
 const EMPTY_LOGICAL: LogicalSummary = { logicalQubits: null, toffolis: null, tGates: null, queries: null };
 
+/**
+ * Every note a cost report can carry, by a stable id. One table rather than a
+ * literal at each `notes.push`, so the Python port of this module
+ * (`packages/py/planner`, ai-ops 382 S2) reads these words by id from the data
+ * file `scripts/write-planner-fixture.ts` generates, instead of keeping a second
+ * copy of them. The page still receives plain `Bilingual[]`.
+ */
+export const COST_NOTES = {
+  "search-other-block": {
+    en: "The numbers here are for fixed-iteration Grover search. The block you chose has its cost stated on its card.",
+    ja: "ここの数値は反復回数固定の Grover 探索のものです。選んだブロックのコストはそのカードに記載されています。",
+  },
+  "search-count-not-below-n": { en: "The accepted count M has to be smaller than N.", ja: "受理される項目数 M は N より小さくなければなりません。" },
+  "period-finding-other-block": {
+    en: "The numbers here are for Shor-style period finding. The block you chose has its cost stated on its card.",
+    ja: "ここの数値は Shor 型の周期発見のものです。選んだブロックのコストはそのカードに記載されています。",
+  },
+  "gidney2025-tabulated-sizes": {
+    en: "Gidney 2025 tabulates 1024, 1536, 2048, 3072, 4096, 6144 and 8192 bits only, so its counts are shown only at those sizes.",
+    ja: "Gidney 2025 は 1024、1536、2048、3072、4096、6144、8192 ビットのみを表にしているため、その数値はこれらのサイズでだけ表示します。",
+  },
+  "ground-state-needs-qubitization": {
+    en: "The query and T counts here are for phase estimation of the qubitized walk. Put the simulation block back on qubitization to see them.",
+    ja: "ここの問い合わせ数と T 数は、量子ビット化したウォークの位相推定のものです。見るには、シミュレーションのブロックを量子ビット化に戻してください。",
+  },
+  "ground-state-no-model": { en: "No numeric model here for the block you chose. Its cost is stated on its card.", ja: "選んだブロックの数値モデルはここにはありません。コストはカードに記載されています。" },
+  "no-model-for-block": { en: "The block you chose has its cost stated on its card. There is no numeric model for it here.", ja: "選んだブロックのコストはカードに記載されています。ここには数値モデルはありません。" },
+  "linear-system-other-block": { en: "The numbers here are for the discrete adiabatic solver. The block you chose has its cost stated on its card.", ja: "ここの数値は離散断熱法のものです。選んだブロックのコストはカードに記載されています。" },
+  "maxcut-other-block": { en: "The gate counts here are for QAOA. The block you chose has its cost stated on its card.", ja: "ここのゲート数は QAOA のものです。選んだブロックのコストはカードに記載されています。" },
+  "phase-estimation-other-block": { en: "The numbers here are for phase estimation with a register. The block you chose has its cost stated on its card.", ja: "ここの数値はレジスタを使う位相推定のものです。選んだブロックのコストはカードに記載されています。" },
+  "no-model-for-problem": {
+    en: "No numeric cost model for this problem yet. Each block below shows its cost as its source states it.",
+    ja: "この問題にはまだ数値のコストモデルがありません。下の各ブロックに、出典が述べるコストを示しています。",
+  },
+} satisfies Record<string, Bilingual>;
+
 function value(params: ParamValues, key: ParamKey): number | null {
   const v = params[key]?.value;
   return typeof v === "number" && Number.isFinite(v) ? v : null;
@@ -87,17 +123,14 @@ const QUADRATIC_CAUTION: Suggestion = {
 function searchCosts(params: ParamValues, root: Stage | null): CostReport {
   const report: CostReport = { lines: [], classical: [], published: [], logical: { ...EMPTY_LOGICAL }, suggestions: [QUADRATIC_CAUTION], notes: [] };
   if (root?.method?.id !== "grover-fixed-iteration-search") {
-    report.notes.push({
-      en: "The numbers here are for fixed-iteration Grover search. The block you chose has its cost stated on its card.",
-      ja: "ここの数値は反復回数固定の Grover 探索のものです。選んだブロックのコストはそのカードに記載されています。",
-    });
+    report.notes.push(COST_NOTES["search-other-block"]);
     return report;
   }
   const N = value(params, "domainSize");
   const M = value(params, "markedCount");
   const needs = missing(params, ["domainSize", "markedCount"]);
   if (N !== null && M !== null && M >= N) {
-    report.notes.push({ en: "The accepted count M has to be smaller than N.", ja: "受理される項目数 M は N より小さくなければなりません。" });
+    report.notes.push(COST_NOTES["search-count-not-below-n"]);
     return report;
   }
   const theta = N !== null && M !== null ? Math.asin(Math.sqrt(M / N)) : NaN;
@@ -200,7 +233,7 @@ export const GIDNEY_2025_TABLE_5: Readonly<Record<number, readonly [number, numb
 function factoringCosts(params: ParamValues, root: Stage | null): CostReport {
   const report: CostReport = { lines: [], classical: [], published: [], logical: { ...EMPTY_LOGICAL }, suggestions: [], notes: [] };
   if (root?.method?.id !== "cyclic-period-finding") {
-    report.notes.push({ en: "The numbers here are for Shor-style period finding. The block you chose has its cost stated on its card.", ja: "ここの数値は Shor 型の周期発見のものです。選んだブロックのコストはそのカードに記載されています。" });
+    report.notes.push(COST_NOTES["period-finding-other-block"]);
     return report;
   }
   const n = value(params, "bits");
@@ -259,10 +292,7 @@ function factoringCosts(params: ParamValues, root: Stage | null): CostReport {
       });
     }
   } else if (n !== null) {
-    report.notes.push({
-      en: "Gidney 2025 tabulates 1024, 1536, 2048, 3072, 4096, 6144 and 8192 bits only, so its counts are shown only at those sizes.",
-      ja: "Gidney 2025 は 1024、1536、2048、3072、4096、6144、8192 ビットのみを表にしているため、その数値はこれらのサイズでだけ表示します。",
-    });
+    report.notes.push(COST_NOTES["gidney2025-tabulated-sizes"]);
   }
   if (n === 2048) {
     report.published.push(
@@ -293,7 +323,7 @@ function factoringCosts(params: ParamValues, root: Stage | null): CostReport {
 function ecdlpCosts(params: ParamValues, root: Stage | null): CostReport {
   const report: CostReport = { lines: [], classical: [], published: [], logical: { ...EMPTY_LOGICAL }, suggestions: [], notes: [] };
   if (root?.method?.id !== "cyclic-period-finding") {
-    report.notes.push({ en: "The numbers here are for Shor-style period finding. The block you chose has its cost stated on its card.", ja: "ここの数値は Shor 型の周期発見のものです。選んだブロックのコストはそのカードに記載されています。" });
+    report.notes.push(COST_NOTES["period-finding-other-block"]);
     return report;
   }
   const n = value(params, "bits");
@@ -338,10 +368,7 @@ function groundStateCosts(params: ParamValues, root: Stage | null): CostReport {
 
   if (rootId === "phase-estimation-ground-state") {
     if (chosenMethodFor(root, "hamiltonian-simulation") !== "qubitization-simulation") {
-      report.notes.push({
-        en: "The query and T counts here are for phase estimation of the qubitized walk. Put the simulation block back on qubitization to see them.",
-        ja: "ここの問い合わせ数と T 数は、量子ビット化したウォークの位相推定のものです。見るには、シミュレーションのブロックを量子ビット化に戻してください。",
-      });
+      report.notes.push(COST_NOTES["ground-state-needs-qubitization"]);
       return report;
     }
     const needsQpe = missing(params, ["lambda", "deltaE"]);
@@ -421,7 +448,7 @@ function groundStateCosts(params: ParamValues, root: Stage | null): CostReport {
     );
     report.logical = { ...EMPTY_LOGICAL, queries: shots };
   } else {
-    report.notes.push({ en: "No numeric model here for the block you chose. Its cost is stated on its card.", ja: "選んだブロックの数値モデルはここにはありません。コストはカードに記載されています。" });
+    report.notes.push(COST_NOTES["ground-state-no-model"]);
   }
   if (qpeQueries !== null && vqeShots !== null) {
     report.suggestions.push({
@@ -472,7 +499,7 @@ function hamiltonianSimulationCosts(params: ParamValues, root: Stage | null): Co
     );
     // A `scaling` line's value is a magnitude, not a count: keep it out of the logical summary on purpose.
   } else {
-    report.notes.push({ en: "The block you chose has its cost stated on its card. There is no numeric model for it here.", ja: "選んだブロックのコストはカードに記載されています。ここには数値モデルはありません。" });
+    report.notes.push(COST_NOTES["no-model-for-block"]);
   }
   report.suggestions.push({
     id: "trotter-in-studio",
@@ -539,7 +566,7 @@ function linearSystemCosts(params: ParamValues, root: Stage | null): CostReport 
     }
     report.logical = { ...EMPTY_LOGICAL, queries: steps, toffolis };
   } else {
-    report.notes.push({ en: "The numbers here are for the discrete adiabatic solver. The block you chose has its cost stated on its card.", ja: "ここの数値は離散断熱法のものです。選んだブロックのコストはカードに記載されています。" });
+    report.notes.push(COST_NOTES["linear-system-other-block"]);
   }
   if (kappa !== null) {
     report.suggestions.push({
@@ -570,7 +597,7 @@ function linearSystemCosts(params: ParamValues, root: Stage | null): CostReport 
 function maxcutCosts(params: ParamValues, root: Stage | null): CostReport {
   const report: CostReport = { lines: [], classical: [], published: [], logical: { ...EMPTY_LOGICAL }, suggestions: [], notes: [] };
   if (root?.method?.id !== "qaoa-cost-mixer-alternation") {
-    report.notes.push({ en: "The gate counts here are for QAOA. The block you chose has its cost stated on its card.", ja: "ここのゲート数は QAOA のものです。選んだブロックのコストはカードに記載されています。" });
+    report.notes.push(COST_NOTES["maxcut-other-block"]);
     return report;
   }
   const n = value(params, "nodes");
@@ -695,7 +722,7 @@ function amplitudeEstimationCosts(params: ParamValues, root: Stage | null): Cost
       });
     }
   } else if (root?.method?.id !== "direct-sampling-readout") {
-    report.notes.push({ en: "The block you chose has its cost stated on its card. There is no numeric model for it here.", ja: "選んだブロックのコストはカードに記載されています。ここには数値モデルはありません。" });
+    report.notes.push(COST_NOTES["no-model-for-block"]);
   }
   return report;
 }
@@ -705,7 +732,7 @@ function amplitudeEstimationCosts(params: ParamValues, root: Stage | null): Cost
 function phaseEstimationCosts(params: ParamValues, root: Stage | null): CostReport {
   const report: CostReport = { lines: [], classical: [], published: [], logical: { ...EMPTY_LOGICAL }, suggestions: [], notes: [] };
   if (root?.method?.id !== "register-phase-estimation") {
-    report.notes.push({ en: "The numbers here are for phase estimation with a register. The block you chose has its cost stated on its card.", ja: "ここの数値はレジスタを使う位相推定のものです。選んだブロックのコストはカードに記載されています。" });
+    report.notes.push(COST_NOTES["phase-estimation-other-block"]);
     return report;
   }
   const n = value(params, "precisionBits");
@@ -746,11 +773,6 @@ function phaseEstimationCosts(params: ParamValues, root: Stage | null): CostRepo
 
 // ---------------------------------------------------------------------------
 
-const NO_MODEL: Bilingual = {
-  en: "No numeric cost model for this problem yet. Each block below shows its cost as its source states it.",
-  ja: "この問題にはまだ数値のコストモデルがありません。下の各ブロックに、出典が述べるコストを示しています。",
-};
-
 export function costReport(problem: ProblemId, params: ParamValues, root: Stage | null): CostReport {
   switch (problem) {
     case "search":
@@ -773,7 +795,7 @@ export function costReport(problem: ProblemId, params: ParamValues, root: Stage 
       return phaseEstimationCosts(params, root);
     case "linear-ode":
     case "nonlinear-ode":
-      return { lines: [], classical: [], published: [], logical: { ...EMPTY_LOGICAL }, suggestions: [], notes: [NO_MODEL] };
+      return { lines: [], classical: [], published: [], logical: { ...EMPTY_LOGICAL }, suggestions: [], notes: [COST_NOTES["no-model-for-problem"]] };
   }
 }
 
