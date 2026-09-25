@@ -52,6 +52,7 @@ from majorana_contracts.enums import (
     evidence_strength_of,
 )
 from majorana_contracts.plan import (
+    ArtifactContract,
     ConstraintTerm,
     ExactLinearSystemReference,
     ExactLindbladReference,
@@ -356,6 +357,9 @@ _ACCEPTING_CONFIDENCES = frozenset({"high", "medium"})
 def _decide(
     output: "_IntentReviewOutput",
     deterministic_failed: list[str],
+    *,
+    basic_checks: Sequence[Mapping[str, Any]] = (),
+    artifact_contract: ArtifactContract | None = None,
 ) -> SemanticReviewDecision:
     """Turn one advisory review into an actionable next step. Never a dead end.
 
@@ -397,12 +401,41 @@ def _decide(
     among the unverified claims. That is the honest surface for this state, and it
     already exists; reaching it costs a candidate revision, which is cheaper than
     a wrong sentence on a user's screen.
+
+    ai-ops 372: `deterministic_failed` names any `basic_checks` entry that is not
+    literally `"pass"` — which includes `"n/a"` (SKIPPED: "the check did not
+    apply", never a defect — see `_success_criteria_check` and
+    `_return_contract_check`). For a candidate whose Plan already declares, via
+    `artifact_contract`, that no executed result was ever required
+    (`artifact_promises_no_executed_result`), every one of its checks is
+    legitimately `"n/a"` — there is no RESULT to check anything against. Routing
+    that to CODE_REPAIR asks the generator to fix a defect that does not exist:
+    confirmed against the real 2026-09-25 diagnostic run, where this was exactly
+    why `qiskitHumanEval/0`'s repair loop kept regenerating byte-identical source
+    until `candidate_not_converging` gave up on it, even though that source was
+    independently confirmed correct. A REAL `"fail"` (an actual mismatch, method
+    that ran and disagreed) still refuses exactly as before — this only forgives
+    `"n/a"`, and only when the Plan itself said not to expect anything else. This
+    is a delivery decision, not a verification one: `_decide` returning READY
+    here still cannot make `simple_pipeline_verification_summary` report `PASS`
+    (that function has no such branch — INCONCLUSIVE or FAIL are the only
+    options), so nothing here weakens the ADR-0023 evidence bar.
     """
 
     graded_acceptable = (
         output.severity in _ACCEPTING_SEVERITIES and output.confidence in _ACCEPTING_CONFIDENCES
     )
     if deterministic_failed or not graded_acceptable:
+        true_failures = [
+            check for check in basic_checks if check.get("result") not in ("pass", "n/a")
+        ]
+        nothing_to_repair = (
+            graded_acceptable
+            and not true_failures
+            and artifact_promises_no_executed_result(artifact_contract)
+        )
+        if nothing_to_repair and output.decision is SemanticReviewDecision.READY:
+            return SemanticReviewDecision.READY
         if output.decision is SemanticReviewDecision.REPLAN:
             return SemanticReviewDecision.REPLAN
         return SemanticReviewDecision.CODE_REPAIR
@@ -742,7 +775,17 @@ class SimpleIntentReviewer:
             }
         )
 
-        decision = _decide(output, deterministic_failed)
+        decision = _decide(
+            output,
+            deterministic_failed,
+            basic_checks=basic_checks,
+            # Only for the executed path: artifact_only (execution.was_not_run) is
+            # a different, pre-existing scenario with its own static-review
+            # routing above, and artifact_promises_no_executed_result's premise
+            # (an executed candidate whose Plan says nothing needed to run) does
+            # not apply to it.
+            artifact_contract=plan.artifact_contract if not artifact_only else None,
+        )
         failure_class, retry_target = _REVIEW_ROUTING[decision]
         return SimpleIntentReviewResult(
             decision=decision,

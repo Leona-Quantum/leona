@@ -223,6 +223,37 @@ class SandboxCandidateExecutor:
                 },
             )
 
+        if not circuit_expected and artifact_promises_no_executed_result(plan.artifact_contract):
+            # ai-ops 372: with circuit_expected False, `trusted_observer` (and
+            # `trusted_setup`) are BOTH the empty string ("inert without an
+            # observer to append to" — FrameworkProgram.trusted_observer's own
+            # docstring), so `compose_execution` returns the candidate's bare
+            # source with no instrumentation at all: no epilogue ever writes
+            # `source_fingerprint` or `result` to the protected-result sidecar.
+            # The two checks below (`source_fingerprint` match, then `RESULT` is
+            # a dict) exist to catch a REAL problem when instrumentation is
+            # supposed to have run — for a Plan that already says this
+            # deliverable was never required to execute, neither can ever be
+            # satisfied, by construction, regardless of the candidate. The
+            # subprocess exiting cleanly (`result.ok`, checked above) is already
+            # the whole verdict this shape has to offer.
+            #
+            # Confirmed against the real 2026-09-25 diagnostic run:
+            # qiskitHumanEval/0's real candidates (a correct, byte-for-byte
+            # verified answer) failed here with
+            # `evidence_error="source_fingerprint_mismatch"` on every one of
+            # their 5 executed attempts, which is what actually kept the repair
+            # loop cycling until `candidate_not_converging` gave up on it —
+            # `RESULT_missing` (checked next) was never reached.
+            return ExecutionOutput(
+                environment_fingerprint=self._environment_fingerprint(candidate, plan),
+                sandbox_provider=result.provider,
+                exit_code=result.exit_code,
+                duration_ms=result.duration_ms,
+                result={},
+                observation=observation | {"sandbox_runs": 1},
+            )
+
         if observation.get("source_fingerprint") != candidate.source_fingerprint:
             return self._failure(
                 candidate,
