@@ -201,3 +201,81 @@ async def test_a_real_memory_hog_spares_the_checks_after_it() -> None:
         assert "ran out of memory" in judged["heavy"].verdict.detail
         assert "The other checks were still judged" in judged["heavy"].verdict.detail
         assert judged["heavy"].final is True
+
+
+# --------------------------------------------------------------------------- 2. mutation and memory
+
+
+def _passing(n: int, gates: int) -> QuantumCircuit:
+    """A circuit that prepares the uniform state and then undoes every rotation it adds."""
+    import random
+
+    rng = random.Random(0)
+    qc = QuantumCircuit(n)
+    qc.h(range(n))
+    while qc.size() + 2 <= gates:
+        qubit = rng.randrange(n)
+        angle = rng.uniform(0.1, 3)
+        qc.rz(angle, qubit)
+        qc.rz(-angle, qubit)
+    return qc
+
+
+def test_broken_copies_that_would_not_fit_in_memory_are_refused_before_they_start() -> None:
+    """Round 2 (S2): a passing 10-qubit state check with 3,900 gates was inside every
+    static cap and still ran its child out of 64 MiB during the broken copies. The guard
+    now estimates that phase from its measured cost per gate and refuses it first. The
+    headroom is lowered here so a 600-gate circuit shows the same thing cheaply."""
+    from leona_notebooks import checks
+
+    prop = CheckProperty(kind="state", subject="q", reference="uniform(10)")
+    verdict = checks.evaluate_check(
+        prop, CheckCapture.from_circuit(_passing(10, 600)), memory_headroom_bytes=8 * 2**20
+    )
+    assert verdict.status == "pass"
+    assert verdict.teeth is not None and verdict.teeth.status == "not_measured"
+    assert "too large to test with broken copies" in verdict.teeth.reason.lower()
+    assert "memory" in verdict.teeth.reason
+    roomy = checks.evaluate_check(
+        prop, CheckCapture.from_circuit(_passing(10, 600)), memory_headroom_bytes=64 * 2**20
+    )
+    assert roomy.teeth is not None and roomy.teeth.status == "measured"
+
+
+def test_teeth_refused_by_a_limit_are_final_and_teeth_cut_by_the_clock_are_not() -> None:
+    import time as clock_module
+
+    from leona_notebooks import checks
+
+    job = CheckJob(
+        "k",
+        CheckProperty(kind="state", subject="q", reference="uniform(10)"),
+        CheckCapture.from_circuit(_passing(10, 600)),
+    )
+    events = list(
+        checks.judge_jobs(
+            [job], deadline=clock_module.monotonic() + 60, memory_headroom_bytes=8 * 2**20
+        )
+    )
+    [teeth_event] = [event for event in events if event[0] == "teeth"]
+    assert teeth_event[2].status == "not_measured" and teeth_event[3] is True
+    ticks = iter([0.0] * 3 + [10**9] * 50)
+    cut = list(checks.judge_jobs([job], deadline=1.0, clock=lambda: next(ticks)))
+    [cut_teeth] = [event for event in cut if event[0] == "teeth"]
+    assert cut_teeth[2].status == "not_measured" and cut_teeth[3] is False
+
+
+async def test_the_reviewers_3900_gate_check_keeps_its_verdict_and_is_cached() -> None:
+    """`r2_b1_child.py flat 10 3900 pass`: with the default 64 MiB the broken copies are
+    refused up front, so the child is never killed and the result is final."""
+    job = CheckJob(
+        "k",
+        CheckProperty(kind="state", subject="q", reference="uniform(10)"),
+        CheckCapture.from_circuit(_passing(10, 3900)),
+    )
+    judged = await judge_checks([job], budget_s=60)
+    result = judged["k"]
+    assert result.verdict.status == "pass", result.verdict.detail
+    assert result.verdict.teeth is not None and result.verdict.teeth.status == "not_measured"
+    assert "memory" in result.verdict.teeth.reason
+    assert result.final is True

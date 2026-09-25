@@ -182,6 +182,7 @@ def main() -> int:
         teeth=bool(payload.get("teeth", True)),
         width_caps=payload.get("width_caps") or None,
         on_start=lambda job_id, phase: _emit({"event": "start", "id": job_id, "phase": phase}),
+        memory_headroom_bytes=int(payload.get("memory_headroom_bytes") or 0) or None,
     )
     for event in events:
         kind, job_id, item = event[0], event[1], event[2]

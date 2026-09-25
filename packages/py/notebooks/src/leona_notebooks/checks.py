@@ -189,6 +189,16 @@ MAX_UNITARY_WORK = 1 << 29
 #: (`CHECK_*_MAX_QUBITS` in the contract) is sized so its measured or estimated peak fits
 #: in this. `LEONA_CHECK_JUDGE_HEADROOM_MB` overrides it for one process.
 CHECK_MEMORY_HEADROOM_BYTES = 64 << 20
+#: What judging a check and testing it with 32 broken copies costs in resident memory per
+#: gate of the flattened subject, above the child's footprint. Measured in the child, M1
+#: Pro, a passing 10-qubit state check: 1,000 gates +14.7 MiB, 2,000 gates +27.6 MiB
+#: (the judgement alone: +7.4 and +16.3 MiB). About 13.5 KiB a gate; 14 is used.
+MUTATION_BYTES_PER_GATE = 14 << 10
+#: Broken-copy testing is started only if its estimate (gates x MUTATION_BYTES_PER_GATE)
+#: stays under this share of the child's headroom; the rest is margin for a Linux
+#: footprint larger than the Mac's and for what the estimate misses (round 2 of the
+#: review of PR 1011: a 3,900-gate check was killed mid-way at 64 MiB).
+MUTATION_HEADROOM_SHARE = 0.6
 #: How often the parent reads the child's resident size.
 _MEMORY_POLL_S = 0.05
 
@@ -1810,6 +1820,7 @@ def evaluate_check(
     deadline: float | None = None,
     teeth_cache: dict[str, CheckTeeth] | None = None,
     width_caps: Mapping[str, int] | None = None,
+    memory_headroom_bytes: int | None = None,
 ) -> CheckVerdict:
     """Judge one check in THIS process, and, if it passes on a circuit, measure its teeth.
 
@@ -1825,7 +1836,12 @@ def evaluate_check(
             basis=_basis(prop),
             detail=f"Leona could not judge this check ({type(exc).__name__}).",
         )
-    return _with_teeth(judged, deadline=deadline, teeth_cache=teeth_cache)
+    return _with_teeth(
+        judged,
+        deadline=deadline,
+        teeth_cache=teeth_cache,
+        memory_headroom_bytes=memory_headroom_bytes,
+    )
 
 
 # --------------------------------------------------------------------------- teeth
@@ -1883,17 +1899,66 @@ class Mutant:
     circuit: Any = field(repr=False)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class _Candidate:
-    """A mutant not built yet. Building every possible mutant of a long circuit would copy
-    the circuit once per gate; only the chosen few are ever built."""
+    """A mutant not built yet, as four small fields: which operator, where. Its
+    description, its new gate and its circuit are made only if it is chosen
+    (`mutant`). The first version built all three for every possible mutant (a closure,
+    an f-string and, for every rotation, a negated gate object: about 2.3 KB each), so a
+    3,900-gate circuit spent megabytes on thousands of copies it never ran (round 2 of
+    the review of PR 1011)."""
 
     operator: MutationOperator
-    description: str
-    build: Callable[[], Any] = field(repr=False)
+    index: int
+    gate_number: int
+    position: int = -1
 
-    def mutant(self) -> Mutant:
-        return Mutant(self.operator, self.description, self.build())
+    def mutant(self, circuit: QuantumCircuit) -> Mutant:
+        """The broken copy of `circuit` (the flattened subject this came from)."""
+        if self.operator == "reverse_qubits":
+            n = circuit.num_qubits
+            order = list(circuit.qubits)
+
+            def reverse(_: int, ins: Any) -> tuple[Any, list[Any]]:
+                if ins.operation.name == "measure":
+                    return ins.operation, list(ins.qubits)  # the readout stays where it was
+                return ins.operation, [order[n - 1 - circuit.find_bit(q).index] for q in ins.qubits]
+
+            return Mutant(
+                self.operator,
+                "reversing the qubit order of the whole circuit",
+                _rebuild(circuit, reverse),
+            )
+        instruction = circuit.data[self.index]
+        operation = instruction.operation
+        qubits = ", ".join(f"q{circuit.find_bit(q).index}" for q in instruction.qubits)
+        where = f"the {operation.name} on {qubits}, gate {self.gate_number}"
+        if self.operator == "drop_gate":
+            return Mutant(
+                self.operator, f"dropping {where}", _replace_at(circuit, self.index, None)()
+            )
+        if self.operator == "swap_control_target":
+            return Mutant(
+                self.operator,
+                f"swapping control and target of {where}",
+                _replace_at(circuit, self.index, None, reverse=True)(),
+            )
+        if self.operator == "negate_angle":
+            negated = operation.to_mutable()
+            params = list(operation.params)
+            params[self.position] = -float(params[self.position])
+            negated.params = params
+            label = "" if len(operation.params) == 1 else f" (parameter {self.position + 1})"
+            return Mutant(
+                self.operator,
+                f"negating the {operation.name} angle{label} on {qubits}, gate {self.gate_number}",
+                _replace_at(circuit, self.index, negated)(),
+            )
+        return Mutant(
+            self.operator,
+            f"replacing {where} with {_ADJOINT_PAIRS[operation.name]}",
+            _replace_at(circuit, self.index, operation.inverse())(),
+        )
 
 
 def _flatten(circuit: QuantumCircuit) -> QuantumCircuit:
@@ -1977,69 +2042,27 @@ def _numeric(value: Any) -> float | None:
 def _all_candidates(circuit: QuantumCircuit) -> dict[MutationOperator, list[_Candidate]]:
     """Every mutant each operator can make, in gate order, unbuilt. `circuit` is flattened."""
     groups: dict[MutationOperator, list[_Candidate]] = {name: [] for name in _OPERATOR_ORDER}
-    n = circuit.num_qubits
-
-    def qubit_words(instruction: Any) -> str:
-        return ", ".join(f"q{circuit.find_bit(q).index}" for q in instruction.qubits)
-
     gate_number = 0
     for index, instruction in enumerate(circuit.data):
         operation = instruction.operation
         if operation.name in _NOT_GATES:
             continue
         gate_number += 1
-        where = f"the {operation.name} on {qubit_words(instruction)}, gate {gate_number}"
-        groups["drop_gate"].append(
-            _Candidate("drop_gate", f"dropping {where}", _replace_at(circuit, index, None))
-        )
+        groups["drop_gate"].append(_Candidate("drop_gate", index, gate_number))
         if operation.name in _ASYMMETRIC_TWO_QUBIT and len(instruction.qubits) == 2:
             groups["swap_control_target"].append(
-                _Candidate(
-                    "swap_control_target",
-                    f"swapping control and target of {where}",
-                    _replace_at(circuit, index, None, reverse=True),
-                )
+                _Candidate("swap_control_target", index, gate_number)
             )
         for position, parameter in enumerate(operation.params):
             number = _numeric(parameter)
-            if number is None or abs(number) <= 1e-9:
-                continue
-            negated = operation.to_mutable()
-            params = list(operation.params)
-            params[position] = -number
-            negated.params = params
-            label = "" if len(operation.params) == 1 else f" (parameter {position + 1})"
-            groups["negate_angle"].append(
-                _Candidate(
-                    "negate_angle",
-                    f"negating the {operation.name} angle{label} on "
-                    f"{qubit_words(instruction)}, gate {gate_number}",
-                    _replace_at(circuit, index, negated),
+            if number is not None and abs(number) > 1e-9:
+                groups["negate_angle"].append(
+                    _Candidate("negate_angle", index, gate_number, position)
                 )
-            )
         if operation.name in _ADJOINT_PAIRS:
-            groups["adjoint_swap"].append(
-                _Candidate(
-                    "adjoint_swap",
-                    f"replacing {where} with {_ADJOINT_PAIRS[operation.name]}",
-                    _replace_at(circuit, index, operation.inverse()),
-                )
-            )
-    if n > 1 and gate_number:
-        order = list(circuit.qubits)
-
-        def reverse(_: int, ins: Any) -> tuple[Any, list[Any]]:
-            if ins.operation.name == "measure":
-                return ins.operation, list(ins.qubits)  # the readout stays where it was
-            return ins.operation, [order[n - 1 - circuit.find_bit(q).index] for q in ins.qubits]
-
-        groups["reverse_qubits"].append(
-            _Candidate(
-                "reverse_qubits",
-                "reversing the qubit order of the whole circuit",
-                lambda: _rebuild(circuit, reverse),
-            )
-        )
+            groups["adjoint_swap"].append(_Candidate("adjoint_swap", index, gate_number))
+    if circuit.num_qubits > 1 and gate_number:
+        groups["reverse_qubits"].append(_Candidate("reverse_qubits", -1, 0))
     return groups
 
 
@@ -2075,7 +2098,8 @@ def mutants(circuit: Any, kind: str | None = None, *, limit: int = MAX_MUTANTS) 
     mutated. At most `limit`, chosen deterministically. `kind` is accepted for symmetry with
     the checks; every operator applies to every kind of circuit check."""
     del kind
-    return [candidate.mutant() for candidate in _select(_all_candidates(_flatten(circuit)), limit)]
+    flat = _flatten(circuit)
+    return [candidate.mutant(flat) for candidate in _select(_all_candidates(flat), limit)]
 
 
 def _teeth_key(prop: CheckProperty, fingerprint: str) -> str:
@@ -2088,6 +2112,7 @@ def _with_teeth(
     *,
     deadline: float | None,
     teeth_cache: dict[str, CheckTeeth] | None,
+    memory_headroom_bytes: int | None = None,
 ) -> CheckVerdict:
     verdict = judged.verdict
     if verdict.status != "pass" or verdict.basis != "circuit" or verdict.teeth is not None:
@@ -2095,7 +2120,14 @@ def _with_teeth(
     judge, subject = judged.judge, judged.subject
     if judge is None or subject is None:
         return verdict
-    teeth = _measure_teeth(judge, subject, judged.behaviour, deadline=deadline, cache=teeth_cache)
+    teeth = _measure_teeth(
+        judge,
+        subject,
+        judged.behaviour,
+        deadline=deadline,
+        cache=teeth_cache,
+        memory_headroom_bytes=memory_headroom_bytes,
+    )
     return verdict.model_copy(update={"teeth": teeth})
 
 
@@ -2107,6 +2139,7 @@ def _measure_teeth(
     deadline: float | None,
     cache: dict[str, CheckTeeth] | None,
     clock: Callable[[], float] = time.monotonic,
+    memory_headroom_bytes: int | None = None,
 ) -> CheckTeeth:
     key = _teeth_key(judge.prop, subject.fingerprint)
     if cache is not None and key in cache:
@@ -2134,6 +2167,19 @@ def _measure_teeth(
         )
     flat = _flatten(subject.circuit)
     gates = sum(1 for ins in flat.data if ins.operation.name not in _NOT_GATES)
+    headroom = (
+        memory_headroom_bytes if memory_headroom_bytes is not None else check_judge_headroom_bytes()
+    )
+    estimate = gates * MUTATION_BYTES_PER_GATE
+    if estimate > MUTATION_HEADROOM_SHARE * headroom:
+        return CheckTeeth(
+            status="not_measured",
+            reason=(
+                f"Too large to test with broken copies in the memory one check is given: "
+                f"{gates:,} gates would need about {estimate / 2**20:.0f} MiB, and Leona "
+                f"starts that only below {MUTATION_HEADROOM_SHARE * headroom / 2**20:.0f} MiB."
+            ),
+        )
     if gates > MUTATION_MAX_GATES:
         return CheckTeeth(
             status="not_measured",
@@ -2160,7 +2206,7 @@ def _measure_teeth(
                 "tested with broken copies.",
             )
         try:
-            mutant = candidate.mutant()
+            mutant = candidate.mutant(flat)
             behaviour = judge.behaviour(mutant.circuit.remove_final_measurements(inplace=False))
         except MemoryError:
             return CheckTeeth(
@@ -2304,6 +2350,7 @@ def judge_jobs(
     width_caps: Mapping[str, int] | None = None,
     clock: Callable[[], float] = time.monotonic,
     on_start: Callable[[str, str], None] | None = None,
+    memory_headroom_bytes: int | None = None,
 ):
     """Judge `jobs` IN THIS PROCESS, yielding events as they happen:
     `("verdict", id, JudgedCheck)` for every job first, then `("teeth", id, CheckTeeth,
@@ -2362,6 +2409,7 @@ def judge_jobs(
                 deadline=deadline,
                 cache=teeth_cache,
                 clock=clock,
+                memory_headroom_bytes=memory_headroom_bytes,
             )
         except Exception as exc:  # noqa: BLE001
             measured = CheckTeeth(
