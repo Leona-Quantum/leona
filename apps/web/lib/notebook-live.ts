@@ -47,6 +47,12 @@ export interface LiveCellView {
   status: LiveCellStatus;
   ename: string | null;
   evalue: string | null;
+  /** A `role=check` cell's verdict, straight off `NotebookLiveCellResult.check` —
+   * status only, the same "no stdout, no outputs" rule the rest of this event
+   * follows. `null` before this cell's check has run (or reset to null every
+   * attempt below is never needed: a check's cell id is judged once per dispatch,
+   * same as its status) and for every non-check cell. */
+  check: "pass" | "fail" | "inconclusive" | null;
 }
 
 export interface LiveRepairEntry {
@@ -144,7 +150,7 @@ export function parseCellsIncrementally(text: string): LiveCellView[] {
             .join("\n")
         : state.lines.join("\n");
     const id = state.id ?? `c${String(++positional).padStart(2, "0")}`;
-    return { id, kind: state.kind, role: state.role, source, writing, status: "queued", ename: null, evalue: null };
+    return { id, kind: state.kind, role: state.role, source, writing, status: "queued", ename: null, evalue: null, check: null };
   }
 
   for (const line of lines) {
@@ -197,7 +203,10 @@ export function liveNotebookFromEvents(events: readonly LiveNotebookEvent[]): Li
   let parsedMatchesCurrentDraft = false;
   let repairInFlight = false;
   const repairs: LiveRepairEntry[] = [];
-  const cellResults = new Map<string, { status: LiveCellStatus; ename: string | null; evalue: string | null }>();
+  const cellResults = new Map<
+    string,
+    { status: LiveCellStatus; ename: string | null; evalue: string | null; check: "pass" | "fail" | "inconclusive" | null }
+  >();
   const repairedSources = new Map<string, string>();
 
   for (const event of events) {
@@ -230,6 +239,7 @@ export function liveNotebookFromEvents(events: readonly LiveNotebookEvent[]): Li
           status: "queued",
           ename: null,
           evalue: null,
+          check: null,
         }));
         parsedMatchesCurrentDraft = true;
         break;
@@ -241,7 +251,9 @@ export function liveNotebookFromEvents(events: readonly LiveNotebookEvent[]): Li
           if (!id) continue;
           const rawStatus = asString(cell.status);
           const status: LiveCellStatus = rawStatus === "ok" ? "ran" : rawStatus === "error" ? "raised" : "not_run";
-          cellResults.set(id, { status, ename: asNullableString(cell.ename), evalue: asNullableString(cell.evalue) });
+          const rawCheck = asNullableString(cell.check);
+          const check = rawCheck === "pass" || rawCheck === "fail" || rawCheck === "inconclusive" ? rawCheck : null;
+          cellResults.set(id, { status, ename: asNullableString(cell.ename), evalue: asNullableString(cell.evalue), check });
         }
         break;
       }
@@ -293,6 +305,7 @@ export function liveNotebookFromEvents(events: readonly LiveNotebookEvent[]): Li
       status: result?.status ?? cell.status,
       ename: result?.ename ?? cell.ename,
       evalue: result?.evalue ?? cell.evalue,
+      check: result?.check ?? cell.check,
     };
   });
 

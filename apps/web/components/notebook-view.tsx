@@ -6,14 +6,25 @@ import { ChatMarkdown } from "./chat-markdown";
 import { NotebookCellToolbar } from "./notebook-cell-toolbar";
 import { NotebookIdeBar } from "./notebook-ide-bar";
 import { NotebookCodeEditor, NotebookCodeView, type EditorDiagnostic } from "./notebook-code-editor";
+import { NotebookCheckCard } from "./notebook-check-card";
+import { NotebookAddCheckForm } from "./notebook-add-check-form";
 import { cellDomId } from "../lib/notebook-ide";
 import { lintMessage, lintNotebook, type LintFinding } from "../lib/notebook-lint";
 import { NotebookHardwareRequests, type NotebookHardwareContext } from "./notebook-hardware-card";
+import { checkCellPillStatus, checkSummaryCounts, type CheckProperty } from "../lib/notebook-checks";
 import type { NotebookCellStatus, NotebookCellView } from "../lib/notebook-view";
 import type { PublicLocale } from "../lib/public-locale";
-import { WORKSPACE_COPY } from "../lib/workspace-locale";
+import { NOTEBOOK_CHECK_COPY, WORKSPACE_COPY } from "../lib/workspace-locale";
 
 type Cell = components["schemas"]["Cell"];
+
+/** "Add a check" (ai-ops 382): which code cell the form is open below, and the
+ * subject name it opened with. See `NotebookCellEditState` above for why this is a
+ * separate piece of state rather than folded into it. */
+export interface NotebookCheckFormState {
+  afterId: string;
+  subjectHint: string;
+}
 
 /**
  * Per-cell editing, live in the read view (ai-ops 375, "each cell can be edited and
@@ -115,6 +126,11 @@ export function NotebookView({
   onDeleteCell,
   onDuplicateCell,
   onAskNalaToChangeCell,
+  onAcceptCheck,
+  checkForm,
+  onStartAddCheck,
+  onCancelAddCheck,
+  onSubmitAddCheck,
 }: {
   cells: NotebookCellView[];
   locale?: PublicLocale;
@@ -163,8 +179,20 @@ export function NotebookView({
   onDuplicateCell?: (cellId: string) => void;
   /** "Ask Nala to change this cell": starts a chat message about it. */
   onAskNalaToChangeCell?: (cellId: string) => void;
+  /** Accept a check (ai-ops 382): `property.accepted = true`, offered only where the
+   * rest of per-cell editing is (omit it, as the read-only share page does, and no
+   * check anywhere in the notebook shows an Accept button). */
+  onAcceptCheck?: (cellId: string) => void;
+  /** "Add a check": which code cell the form is open below, mirroring `cellEdit`
+   * above. `null`/omitted renders no form. */
+  checkForm?: NotebookCheckFormState | null;
+  onStartAddCheck?: (afterId: string) => void;
+  onCancelAddCheck?: () => void;
+  onSubmitAddCheck?: (property: CheckProperty) => void;
 }) {
   const copy = WORKSPACE_COPY[locale].notebooks;
+  const checkCopy = NOTEBOOK_CHECK_COPY[locale];
+  const checkCounts = useMemo(() => checkSummaryCounts(cells), [cells]);
   // Lint runs once per render of the version on screen (no debounce: unlike the editor,
   // this surface's source never changes without a whole new `cells` array arriving), so
   // a reader sees the same "certain-to-fail Qiskit mistake" flags Nala's own draft would
@@ -190,6 +218,11 @@ export function NotebookView({
         runEverythingFreshLabel={copy.runEverythingFresh}
         runEverythingFreshHint={copy.runEverythingFreshHint}
       />
+      {checkCounts ? (
+        <p className="mj-notebook-check-summary" aria-label={checkCopy.summaryLabel}>
+          {checkCopy.summary(checkCounts)}
+        </p>
+      ) : null}
       {cells.map((cell, index) => (
         <Fragment key={cell.id}>
           {editingExistingId === cell.id && cellEdit ? (
@@ -205,6 +238,7 @@ export function NotebookView({
         <NotebookCellCard
           cell={cell}
           copy={copy}
+          checkCopy={checkCopy}
           framework={framework}
           busy={busy}
           diagnostics={cell.kind === "code" ? lintFindingsToDiagnostics(findings[cell.id] ?? [], copy.ide.lint) : []}
@@ -229,6 +263,8 @@ export function NotebookView({
           // honest reading of a single sandbox dispatch per attempt.
           locked={busy || (gradingCellIds?.size ?? 0) > 0}
           hardware={hardware ? { ...hardware, locale } : undefined}
+          onAcceptCheck={onAcceptCheck}
+          onStartAddCheck={onStartAddCheck}
         />
           )}
           {pendingInsertAfterId === cell.id && cellEdit ? (
@@ -239,6 +275,16 @@ export function NotebookView({
               onChangeSource={onChangeCellEditSource}
               onSave={onSaveCellEdit}
               onCancel={onCancelCellEdit}
+            />
+          ) : null}
+          {checkForm?.afterId === cell.id ? (
+            <NotebookAddCheckForm
+              afterId={checkForm.afterId}
+              subjectHint={checkForm.subjectHint}
+              copy={checkCopy}
+              busy={busy}
+              onCancel={() => onCancelAddCheck?.()}
+              onSubmit={(property) => onSubmitAddCheck?.(property)}
             />
           ) : null}
         </Fragment>
@@ -338,6 +384,7 @@ function NotebookCellEditCard({
 function NotebookCellCard({
   cell,
   copy,
+  checkCopy,
   framework,
   diagnostics,
   onCellAction,
@@ -356,9 +403,12 @@ function NotebookCellCard({
   locked,
   busy,
   hardware,
+  onAcceptCheck,
+  onStartAddCheck,
 }: {
   cell: NotebookCellView;
   copy: NotebookCopy;
+  checkCopy: (typeof NOTEBOOK_CHECK_COPY)[PublicLocale];
   framework: string;
   diagnostics?: EditorDiagnostic[];
   onCellAction?: (cellId: string, action: NotebookCellActionKind, detail?: string) => void;
@@ -377,11 +427,32 @@ function NotebookCellCard({
   locked?: boolean;
   busy?: boolean;
   hardware?: NotebookHardwareContext;
+  onAcceptCheck?: (cellId: string) => void;
+  onStartAddCheck?: (afterId: string) => void;
 }) {
   const [attemptOpen, setAttemptOpen] = useState(false);
   const [attemptText, setAttemptText] = useState("");
   const showExplainError = cell.error !== null;
   const showCheckAttempt = cell.role !== null && CHECKABLE_ROLES.has(cell.role);
+  const isCheckCell = cell.role === "check" && cell.checkProperty !== null;
+  // A check cell's head pill shows the VERDICT (pass/fail/inconclusive/not run yet),
+  // never the generic capture status a plain code cell's pill shows — "ok" only means
+  // the worker's capture function ran, and a check that captured cleanly then judged
+  // its subject a FAIL must never read "Passed" (the bug this fixes). `error` still
+  // wins: that means the sandbox itself crashed before capturing anything. Kept as its
+  // own nullable value (not folded into one ternary with `pillLabel`) so its type stays
+  // `CheckCellPillStatus`, not the union with `NotebookCellStatus` a single combined
+  // ternary would widen it to — TS cannot otherwise prove `checkCopy.statusChip` is
+  // indexed with one of its three keys rather than "ok"/"skipped" too.
+  const checkPillStatus = isCheckCell ? checkCellPillStatus(cell) : null;
+  const pillStatus = checkPillStatus ?? cell.status;
+  const pillLabel = checkPillStatus
+    ? checkPillStatus === "error"
+      ? copy.cellStatus.error
+      : checkPillStatus === "not_run"
+        ? checkCopy.notRunYet
+        : checkCopy.statusChip[checkPillStatus]
+    : copy.cellStatus[cell.status];
 
   function submitAttempt() {
     if (!onCellAction || !attemptText.trim() || locked) return;
@@ -392,14 +463,14 @@ function NotebookCellCard({
   return (
     <article
       id={cellDomId(cell.id)}
-      className="mj-notebook-cell"
+      className={isCheckCell ? "mj-notebook-cell mj-notebook-check-cell" : "mj-notebook-cell"}
       data-kind={cell.kind}
-      data-status={cell.status}
+      data-status={pillStatus}
       tabIndex={0}
     >
       <div className="mj-notebook-cell-head">
         {cell.role ? <span className="mj-notebook-cell-role">{cell.role}</span> : null}
-        <span className="mj-notebook-cell-pill" data-status={cell.status}>{copy.cellStatus[cell.status]}</span>
+        <span className="mj-notebook-cell-pill" data-status={pillStatus}>{pillLabel}</span>
         {cell.cachedFromSeq != null ? (
           <span className="mj-notebook-cell-cached" title={copy.cellCachedFromSeqTooltip}>
             {copy.cellCachedFromSeq(cell.cachedFromSeq)}
@@ -424,7 +495,9 @@ function NotebookCellCard({
           </div>
         ) : null}
       </div>
-      {cell.kind === "markdown" ? (
+      {isCheckCell ? (
+        <NotebookCheckCard cell={cell} copy={checkCopy} canAccept={Boolean(onAcceptCheck)} busy={busy} onAccept={onAcceptCheck} />
+      ) : cell.kind === "markdown" ? (
         // Reuses the chat thread's own typography (headings, code, lists,
         // links) rather than restating it: `.mj-chat-message` is styled once,
         // in styles.css, and every renderer of model/author markdown —
@@ -462,6 +535,13 @@ function NotebookCellCard({
           onDuplicate={onDuplicateCell ? () => onDuplicateCell(cell.id) : undefined}
           onAskNalaToChange={onAskNalaToChangeCell ? () => onAskNalaToChangeCell(cell.id) : undefined}
         />
+      ) : null}
+      {cell.kind === "code" && !isCheckCell && onStartAddCheck ? (
+        <div className="mj-notebook-cell-add-check">
+          <button type="button" className="mj-secondary-button" disabled={busy} onClick={() => onStartAddCheck(cell.id)}>
+            {checkCopy.addCheck}
+          </button>
+        </div>
       ) : null}
       {cell.kind === "code" ? <NotebookCellOutputs cell={cell} copy={copy} /> : null}
       <NotebookHardwareRequests cell={cell} context={hardware} />

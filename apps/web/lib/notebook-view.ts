@@ -17,6 +17,8 @@ type ExecutionReport = components["schemas"]["ExecutionReport"];
 type AnswerPrompt = components["schemas"]["AnswerPrompt"];
 type NotebookVersionStatus = components["schemas"]["NotebookVersionStatus"];
 type HardwareRequest = components["schemas"]["HardwareRequest"];
+type CheckProperty = components["schemas"]["CheckProperty"];
+type CheckVerdict = components["schemas"]["CheckVerdict"];
 
 export type NotebookCellStatus = "ok" | "error" | "skipped" | "not_run";
 
@@ -87,6 +89,14 @@ export interface NotebookCellView {
   answerPrompt: AnswerPrompt | null;
   /** Circuits this cell asked to run on a QPU with `leona_submit`, from the report. */
   hardwareRequests: HardwareRequest[];
+  /** For a `role=check` cell: the structured property the spec carries. `null` for
+   * every other cell, and for a check cell whose property somehow failed to parse —
+   * the contract requires one on every check cell, but this join never throws on a
+   * payload shaped unexpectedly. */
+  checkProperty: CheckProperty | null;
+  /** The worker's verdict on this check, from `CellResult.check`. `null` before the
+   * cell has ever run, and for every non-check cell. */
+  checkVerdict: CheckVerdict | null;
 }
 
 /**
@@ -160,6 +170,8 @@ export function notebookCellViews(
       graded: cell.check != null || cell.answer != null || cell.answer_prompt != null,
       answerPrompt: answerPromptOf(cell),
       hardwareRequests: result?.hardware_requests ?? [],
+      checkProperty: cell.property ?? null,
+      checkVerdict: result?.check ?? null,
     };
   });
 }
