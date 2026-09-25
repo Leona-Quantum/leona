@@ -6,12 +6,13 @@ address space (RLIMIT_AS, Linux) at its footprint plus the headroom it was given
 writes one JSON line per event to stdout as each happens:
 
     {"event": "ready", "rss_bytes": ..., "memory_cap": "..."}
+    {"event": "start", "id": ..., "phase": "verdict" | "teeth"}
     {"event": "verdict", "id": ..., "verdict": {...}, "unreadable": {...} | null, "final": ...}
-    {"event": "teeth", "id": ..., "teeth": {...}}
+    {"event": "teeth", "id": ..., "teeth": {...}, "final": ...}
     {"event": "done"}
 
 Line by line, so the parent keeps every verdict that arrived before it had to kill the
-child. The parent validates each line against the contract; nothing here is trusted
+child, and knows from the last "start" which check was running if it did. The parent validates each line against the contract; nothing here is trusted
 beyond that.
 """
 
@@ -180,8 +181,11 @@ def main() -> int:
         deadline=deadline,
         teeth=bool(payload.get("teeth", True)),
         width_caps=payload.get("width_caps") or None,
+        on_start=lambda job_id, phase: _emit({"event": "start", "id": job_id, "phase": phase}),
+        memory_headroom_bytes=int(payload.get("memory_headroom_bytes") or 0) or None,
     )
-    for kind, job_id, item in events:
+    for event in events:
+        kind, job_id, item = event[0], event[1], event[2]
         if kind == "verdict":
             _emit(
                 {
@@ -197,7 +201,14 @@ def main() -> int:
                 }
             )
         else:
-            _emit({"event": "teeth", "id": job_id, "teeth": item.model_dump(mode="json")})
+            _emit(
+                {
+                    "event": "teeth",
+                    "id": job_id,
+                    "teeth": item.model_dump(mode="json"),
+                    "final": bool(event[3]),
+                }
+            )
     _emit({"event": "done", "peak_rss_bytes": _resident_peak()})
     return 0
 
