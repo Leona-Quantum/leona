@@ -207,6 +207,23 @@ DEFAULT_PRESENCE_LIMIT = 60
 #: `0` disables it, the same escape hatch the three limiters above have.
 DEFAULT_TOKEN_LIMIT = 600
 
+#: Circuit checks one signed-in account may ask for per minute (`POST /v1/checks/circuit`,
+#: the agent connector's `check_circuit`, ai-ops 382). Keyed by user id, the same shape
+#: as `DEFAULT_COMMENT_LIMIT` and for the same reason: the account is what is asking,
+#: whichever credential it used, and one person's automations share the one ceiling.
+#:
+#: This bucket exists because nothing else meters this route. It is stateless, so the
+#: run allowance and abuse backstop (`routes/runs.py::_enforce_execute_backstop`,
+#: `_gate_notebook_run`) have no row to count, and a browser session passes no token
+#: limiter at all. A check costs real CPU on the API instance (up to about
+#: `CIRCUIT_CHECK_BUDGET_S` plus one simulation, see `circuit_check.py`), where a
+#: comment costs a row: 30 a minute is a check every two seconds, well past an agent
+#: checking circuits as it writes them, and it stops a loop from queueing an hour of
+#: checks behind one instance's single judging slot. Per instance, like the others here.
+#:
+#: `0` disables it, the same escape hatch the limiters above have.
+DEFAULT_CHECK_LIMIT = 30
+
 #: Presented by our own server-side renderer to prove it is not an anonymous
 #: caller. Never sent from a browser: the value is a server-only secret, and
 #: `apps/web/lib/repository-source.ts` — the only sender — is imported solely by
