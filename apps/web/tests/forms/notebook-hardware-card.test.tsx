@@ -22,7 +22,7 @@ const QASM = 'OPENQASM 3.0;\ninclude "stdgates.inc";\nbit[2] meas;\nqubit[2] q;\
 const DIGEST = createHash("sha256").update(QASM).digest("hex").slice(0, 12);
 const FINGERPRINT = `notebook:${NOTEBOOK}:v${SEQ}:c02:${DIGEST}`;
 
-const CELL_DEFAULTS = { tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null };
+const CELL_DEFAULTS = { tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null };
 const CELLS = [
   { id: "c01", kind: "markdown" as const, role: "objective" as const, source: "# Run a Bell pair", ...CELL_DEFAULTS },
   { id: "c02", kind: "code" as const, role: "run" as const, source: "leona_submit(bell, shots=256)", ...CELL_DEFAULTS },
@@ -48,6 +48,7 @@ function reportWith(status: "ok" | "error" = "ok") {
         duration_ms: 5,
         execution_count: 1,
         note: "",
+        check: null,
         hardware_requests: [{ qasm: QASM, shots: 256, num_qubits: 2, label: "bell pair" }],
       },
     ],
