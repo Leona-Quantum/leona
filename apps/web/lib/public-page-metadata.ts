@@ -11,6 +11,7 @@ import type { PublicLocale } from "./public-locale";
 import { PUBLIC_SHELL_COPY } from "./public-locale.ts";
 import { ABOUT_COPY } from "./about-copy.ts";
 import { CONTACT_COPY, HOME_COPY, PRICING_COPY, PRIVACY_COPY, TERMS_COPY, WORKSPACE_LANDING_COPY } from "./public-copy.ts";
+import { BENCHMARKS_COPY } from "./benchmarks-copy.ts";
 
 /**
  * `title`/`description` for the seven `[locale]` marketing pages that, until
@@ -126,6 +127,12 @@ export function termsMetadataCopy(locale: PublicLocale): Pick<Metadata, "title" 
   return locale === "ja"
     ? { title: TERMS_COPY.ja.title, description: TERMS_COPY.ja.lede }
     : { title: "Terms of service", description: "Leona Quantum early-access terms for the public website and product." };
+}
+
+export function benchmarksMetadataCopy(locale: PublicLocale): Pick<Metadata, "title" | "description"> {
+  return locale === "ja"
+    ? { title: BENCHMARKS_COPY.ja.hero.title, description: BENCHMARKS_COPY.ja.hero.body }
+    : { title: BENCHMARKS_COPY.en.hero.title, description: BENCHMARKS_COPY.en.hero.body };
 }
 
 export function workspaceMetadataCopy(locale: PublicLocale): Pick<Metadata, "title" | "description"> {
