@@ -97,6 +97,56 @@ def test_execute_false_cells_are_not_guarded_and_not_run() -> None:
     assert program.skipped == {"c01": "execute=false"}
 
 
+def test_only_restricts_the_program_to_exactly_that_set_in_document_order() -> None:
+    spec = parse_source(
+        "# ---\n# title: T\n# ---\n# %% id=c01\nx = 1\n# %% id=c02\ny = 2\n# %% id=c03\nz = 3\n"
+    )
+    program = compose_notebook_program(spec, only={"c01", "c03"})
+    assert program.cell_ids == ("c01", "c03")
+    assert program.not_run == {"c02": "unchanged, reusing an earlier result"}
+    assert program.skipped == {}
+
+
+def test_only_does_not_override_a_structural_skip_reason() -> None:
+    spec = parse_source(
+        "# ---\n# title: T\n# ---\n# %% id=c01 execute=false\nimport os\n# %% id=c02\nx = 1\n"
+    )
+    # c01 would never run regardless of `only` — the skip reason stays the real one.
+    program = compose_notebook_program(spec, only={"c01", "c02"})
+    assert program.skipped == {"c01": "execute=false"}
+    assert program.cell_ids == ("c02",)
+
+
+def test_only_never_widens_what_run_until_would_have_included() -> None:
+    spec = parse_source(
+        "# ---\n# title: T\n# ---\n# %% id=c01\nx = 1\n# %% id=c02\ny = 2\n# %% id=c03\nz = 3\n"
+    )
+    # c03 is past the run_until cut, so it is `not_run` with the RUN_UNTIL reason
+    # even though it is also named in `only`.
+    program = compose_notebook_program(spec, run_until="c02", only={"c01", "c03"})
+    assert program.cell_ids == ("c01",)
+    assert program.not_run == {
+        "c02": "unchanged, reusing an earlier result",
+        "c03": "after the cell you ran to",
+    }
+
+
+def test_only_still_guards_every_cell_it_composes() -> None:
+    spec = parse_source(
+        "# ---\n# title: T\n# ---\n# %% id=c01\nimport subprocess\n# %% id=c02\nx = 1\n"
+    )
+    with pytest.raises(NotebookGuardError) as info:
+        compose_notebook_program(spec, only={"c01", "c02"})
+    assert set(info.value.violations) == {"c01"}
+
+
+def test_omitting_only_keeps_run_until_behaviour_identical() -> None:
+    spec = parse_source("# ---\n# title: T\n# ---\n# %% id=c01\nx = 1\n# %% id=c02\ny = 2\n")
+    with_default = compose_notebook_program(spec)
+    explicit_none = compose_notebook_program(spec, only=None)
+    assert with_default == explicit_none
+
+
 def test_composed_code_never_contains_a_denied_call_of_its_own() -> None:
     from majorana_sandbox.guard import check_python_code
 

@@ -15071,6 +15071,13 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
 .mj-notebook-cell-pill[data-status="not_run"] {
   color: var(--text-2);
 }
+/* Dependency-graph replay (plan platform-vision-20260924/phase-a §3): a cell whose
+ * result was carried forward from an earlier version instead of re-run. */
+.mj-notebook-cell-cached {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-style: italic;
+}
 .mj-notebook-cell-actions {
   margin-left: auto;
 }

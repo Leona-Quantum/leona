@@ -433,12 +433,17 @@ def _default_guard(source: str) -> list[str]:
 #: The reason recorded against every code cell after `run_until`.
 RUN_UNTIL_NOTE = "after the cell you ran to"
 
+#: The reason recorded against a code cell `only` left out of this dispatch —
+#: dependency-graph replay's own reused-result cells (`leona_notebooks.dependencies`).
+NOT_SELECTED_NOTE = "unchanged, reusing an earlier result"
+
 
 def compose_notebook_program(
     spec: NotebookSpec,
     *,
     guard: Callable[[str], list[str]] | None = None,
     run_until: str | None = None,
+    only: set[str] | None = None,
     image_budget_bytes: int = DEFAULT_IMAGE_BUDGET_BYTES,
     text_cap_bytes: int = DEFAULT_TEXT_CAP_BYTES,
     repr_cap_bytes: int = DEFAULT_REPR_CAP_BYTES,
@@ -455,6 +460,17 @@ def compose_notebook_program(
     `subprocess`. Those cells are guarded on the next composition that includes them,
     which is the one where their content can actually execute. An unknown `run_until`
     raises `UnknownCellError` here, before any `ExecutionSpec` exists.
+
+    `only`, when given, further restricts the program to EXACTLY that set of cell ids
+    (still document-ordered, still bounded by `run_until`'s cut) — dependency-graph
+    replay's way of dispatching a subset of an already-composed notebook
+    (`leona_notebooks.dependencies.plan_run`). A cell within the cut but left out of
+    `only` is reported `not_run` too (`NOT_SELECTED_NOTE`, not `RUN_UNTIL_NOTE`) —
+    the same "this never counts against the report's `ok`" rule `run_until`'s own cut
+    already gets, because the run still did everything it was asked to. The static
+    guard runs on every cell that WILL execute, exactly as without `only`; a left-out
+    cell is guarded on whichever future composition actually includes it, the same
+    rule the paragraph above already states for the tail past `run_until`.
     """
     if image_budget_bytes + MAX_HARDWARE_QASM_TOTAL_CHARS >= MAX_OUTPUT_BYTES:
         # The hardware requests' OpenQASM shares the same sidecar (hardware.py says
@@ -480,6 +496,9 @@ def compose_notebook_program(
         source, reason = prepare_cell_source(cell)
         if reason is not None:
             skipped[cell.id] = reason
+            continue
+        if only is not None and cell.id not in only:
+            not_run[cell.id] = NOT_SELECTED_NOTE
             continue
         found = check(cell.source)
         if found:

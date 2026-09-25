@@ -59,6 +59,7 @@ from majorana_sandbox.spec import DEFAULT_MEMORY_MB
 
 from leona_notebooks.atlas import seed_from_record
 from leona_notebooks.circuits import validate_circuit_seed
+from leona_notebooks.dependencies import RunPlan, plan_run
 from leona_notebooks.execution import CellResult, ExecutionReport
 from leona_notebooks.grading import GradedAttempt, grades_from_report, spec_with_graders
 from leona_notebooks.authoring import advisory_structure, spec_from_author_request
@@ -93,9 +94,11 @@ from leona_notebooks.prompts import (
 )
 from leona_notebooks.revision import RevisionPlan
 from leona_notebooks.sandbox_program import (
+    RUN_UNTIL_NOTE,
     NotebookGuardError,
     build_execution_spec,
     compose_notebook_program,
+    prepare_cell_source,
     report_from_sandbox_result,
 )
 from leona_notebooks.source import SourceParseError, parse_source, render_source
@@ -693,15 +696,23 @@ class ProductionNotebookPorts(NotebookPorts):
     # -- execute ----------------------------------------------------------
 
     async def run_notebook(
-        self, spec: NotebookSpec, *, run_until: str | None = None
+        self,
+        spec: NotebookSpec,
+        *,
+        run_until: str | None = None,
+        only: set[str] | None = None,
     ) -> ExecutionReport:
         """`run_until` is the editor's "Run to here": cells after that id are left out
-        of the program and come back `not_run`. Optional with a default so this still
-        satisfies `NotebookPorts.run_notebook(spec)`, which every other caller uses."""
+        of the program and come back `not_run`. `only` further restricts the dispatch
+        to exactly that set of cell ids (dependency-graph replay's `RunPlan.execute` —
+        `leona_notebooks.dependencies.plan_run`); a cell it excludes comes back
+        `not_run` too, never counted against the report's `ok`. Both are optional with
+        a default so this still satisfies `NotebookPorts.run_notebook(spec)`, which
+        every other caller uses."""
         self._execution_attempt += 1
         attempt = self._execution_attempt
         try:
-            program = compose_notebook_program(spec, run_until=run_until)
+            program = compose_notebook_program(spec, run_until=run_until, only=only)
         except NotebookGuardError as exc:
             report = ExecutionReport(
                 notebook_slug=spec.slug,
@@ -1121,18 +1132,32 @@ def _kept_with_errors_note(outcome: PipelineOutcome, locale: str) -> str:
 #: What the chat rail says after a reader's own edit ran. Not model output — there is
 #: no LLM call on this path at all — so the two locales are written here rather than
 #: left to a prompt. Keyed the way `normalize_response_locale` returns.
+#:
+#: The `_reused` variants are new (dependency-graph replay, DESIGN §3): they fire
+#: whenever ANY cell in the merged report carries `cached_from_seq` — i.e. was reused
+#: rather than re-run this dispatch — and otherwise the ORIGINAL, unreplayed wording
+#: is unchanged, so a run that never touches the cache (a brand-new notebook, or
+#: `reuse_results=false`) reads exactly as it always has.
 _AUTHORED_TURN: dict[str, dict[str, str]] = {
     "en": {
         "ok": "Ran your edit: {ran} of {total} code cells ran cleanly.",
         "partial": "Ran your edit: {ran} of {total} code cells ran, and {failed} raised.",
         "stopped": "Ran your edit up to {run_until}: {ran} code cells ran, {not_run} left for later.",
         "nothing": "I could not run your edit: {note}",
+        "ok_reused": "Ran {ran} cells that changed or depend on your edit; {reused} unchanged cells kept their results.",
+        "partial_reused": "Ran {ran} cells that changed or depend on your edit, and {failed} raised; {reused} unchanged cells kept their results.",
+        "stopped_reused": "Ran {ran} cells up to {run_until} that changed or depend on your edit; {reused} unchanged cells kept their results, {not_run} left for later.",
+        "all_reused": "Nothing needed to change: all {reused} cells kept their results from before.",
     },
     "ja": {
         "ok": "編集を実行しました: コードセル {total} 個のうち {ran} 個が正常に実行されました。",
         "partial": "編集を実行しました: コードセル {total} 個のうち {ran} 個が実行され、{failed} 個で例外が発生しました。",
         "stopped": "{run_until} まで編集を実行しました: コードセル {ran} 個を実行し、{not_run} 個は未実行です。",
         "nothing": "編集を実行できませんでした: {note}",
+        "ok_reused": "編集の影響を受けたセル {ran} 個を実行しました。変更のないセル {reused} 個は前回の結果を保持しています。",
+        "partial_reused": "編集の影響を受けたセル {ran} 個を実行し、{failed} 個で例外が発生しました。変更のないセル {reused} 個は前回の結果を保持しています。",
+        "stopped_reused": "{run_until} まで、編集の影響を受けたセル {ran} 個を実行しました。変更のないセル {reused} 個は前回の結果を保持し、{not_run} 個は未実行です。",
+        "all_reused": "変更はありませんでした。セル {reused} 個はすべて前回の結果を保持しています。",
     },
 }
 
@@ -1140,16 +1165,113 @@ _AUTHORED_TURN: dict[str, dict[str, str]] = {
 def _authored_turn(report: ExecutionReport, *, run_until: str | None, locale: str) -> str:
     strings = _AUTHORED_TURN.get(locale, _AUTHORED_TURN["en"])
     total = len(report.cells)
-    ran = report.executed_count()
+    executed = report.executed_count()  # fresh + reused "ok"/"error" cells
     failed = len(report.failing_cells())
     not_run = sum(1 for cell in report.cells if cell.status == "not_run")
-    if ran == 0 and not report.ok:
+    # A reused cell always carries status="ok" (`plan_run` never reuses an error), so
+    # it is never itself a member of `failed`, and subtracting it out of `executed`
+    # leaves exactly the cells THIS dispatch actually ran.
+    reused = sum(1 for cell in report.cells if cell.cached_from_seq is not None)
+    ran = executed - reused
+    if executed == 0 and not report.ok:
         return strings["nothing"].format(note=report.note or "the sandbox produced no evidence")
+    if reused > 0:
+        if run_until:
+            return strings["stopped_reused"].format(
+                ran=ran, reused=reused, not_run=not_run, run_until=run_until
+            )
+        if failed:
+            return strings["partial_reused"].format(ran=ran, reused=reused, failed=failed)
+        if ran == 0:
+            return strings["all_reused"].format(reused=reused)
+        return strings["ok_reused"].format(ran=ran, reused=reused)
     if run_until:
         return strings["stopped"].format(ran=ran, not_run=not_run, run_until=run_until)
     if failed:
         return strings["partial"].format(ran=ran, total=total, failed=failed)
     return strings["ok"].format(ran=ran, total=total)
+
+
+async def _load_parent_for_replay(
+    notebook_store: NotebookStore,
+    scope: Scope,
+    session: AsyncSession,
+    parent_version_id: str,
+) -> tuple[NotebookSpec | None, ExecutionReport | None, int | None]:
+    """The parent version's spec, report and seq for `plan_run` — `(None, None,
+    None)` when there is nothing usable to reuse from (a bad id, a version with no
+    spec). That is not an error here: `plan_run` already treats a `None` parent
+    report as "every cell is stale", which is the honest answer when nothing was
+    ever cached, not a special case this function needs to guard against."""
+    try:
+        parent = await notebook_store.get_version(scope, session, uuid.UUID(parent_version_id))
+    except (KeyError, ValueError):
+        return None, None, None
+    if parent is None:
+        return None, None, None
+    parent_spec = (
+        NotebookSpec.model_validate(parent.spec)
+        if getattr(parent, "spec", None) is not None
+        else None
+    )
+    parent_report = (
+        ExecutionReport.model_validate(parent.report)
+        if getattr(parent, "report", None) is not None
+        else None
+    )
+    return parent_spec, parent_report, getattr(parent, "seq", None)
+
+
+def _merge_replay_report(
+    report: ExecutionReport, plan: RunPlan, parent_seq: int | None
+) -> ExecutionReport:
+    """Stamp each cell this dispatch actually EXECUTED with its own fresh
+    `cache_key`, and replace every cell `plan` says to REUSE with the PARENT's own
+    `CellResult` — `cached_from_seq` set to `parent_seq`, its original `cache_key`
+    kept intact. The composer (`compose_notebook_program`) only knows `skipped` and
+    `not_run`; it has never heard of a cached value, so the merge happens here, one
+    level up, where both the fresh report and the plan are in scope."""
+    merged: list[CellResult] = []
+    for cell in report.cells:
+        if cell.id in plan.execute:
+            merged.append(cell.model_copy(update={"cache_key": plan.cache_keys.get(cell.id)}))
+        elif cell.id in plan.reused:
+            merged.append(plan.reused[cell.id].model_copy(update={"cached_from_seq": parent_seq}))
+        else:
+            merged.append(cell)  # a genuine not_run: past `run_until`, or never cacheable at all
+    return report.model_copy(update={"cells": merged})
+
+
+def _all_cached_report(
+    spec: NotebookSpec, plan: RunPlan, parent_seq: int | None
+) -> ExecutionReport:
+    """`plan.execute` is empty: nothing needs a sandbox dispatch at all (plan brief
+    item 5 — "if the plan executes nothing, do not dispatch a sandbox"). Built
+    directly from `plan.reused` and each remaining cell's OWN skip classification via
+    `prepare_cell_source` — the SAME check `compose_notebook_program` runs internally
+    — so this can never drift from what a real, empty-`only` dispatch would have
+    reported for the cells it left out.
+    """
+    cells: list[CellResult] = []
+    for cell in spec.code_cells():
+        if cell.id in plan.reused:
+            cells.append(plan.reused[cell.id].model_copy(update={"cached_from_seq": parent_seq}))
+            continue
+        _source, skip_reason = prepare_cell_source(cell)
+        if skip_reason is not None:
+            cells.append(CellResult(id=cell.id, status="skipped", note=skip_reason))
+        else:
+            cells.append(CellResult(id=cell.id, status="not_run", note=RUN_UNTIL_NOTE))
+    return ExecutionReport(
+        notebook_slug=spec.slug,
+        ok=True,
+        runner="sandbox",
+        cells=cells,
+        duration_ms=0,
+        environment={},
+        dropped_bytes=0,
+        note="",
+    )
 
 
 async def _handle_author(
@@ -1181,6 +1303,29 @@ async def _handle_author(
     The one thing that IS a failure: nothing ran at all — the guard refused every cell,
     or the sandbox came back with no evidence. Then there is no result to show and the
     version is `failed` with the report's own note as the error.
+
+    **Dependency-graph replay (DESIGN §3).** `plan_run` always runs — even on a
+    notebook's very first save, with no parent at all — because it is also what
+    stamps `CellResult.cache_key` on every cell this dispatch executes, and a report
+    with no cache keys would give the NEXT author run nothing to match against,
+    silently disabling replay for every notebook forever (its first version never has
+    a parent). What varies is only what `plan_run` is handed as the parent:
+    `payload["reuse_results"]` false, or no `parent_version_id` (nothing to reuse
+    from yet), passes `parent_report=None` — `plan_run` then treats every cell as
+    stale, so `execute` is every graph cell, identical to an unreplayed full run, and
+    `reused` is empty. Otherwise the resolved parent's report decides staleness for
+    real, and only what changed (plus its downstream and their own deps — the
+    dependency graph's mutation rule) is actually dispatched.
+
+    `report.ok` keeps meaning exactly what it means today — "every cell THIS dispatch
+    ran, ran cleanly" — because a reused cell is never counted against it either way:
+    it always carries `status="ok"` (`plan_run` never reuses an error, see its own
+    docstring), so folding it in can only ever leave `ok` as true as it already was.
+    `report.executed_count()` (ok+error) DOES include reused cells, by design — that
+    count means "how many cells does this report have a real verdict for", which a
+    reused "ok" answers just as much as a freshly-run one — and `_authored_turn` is
+    the one place that cares about the distinction, so it is the one place that
+    subtracts reused cells back out to report "ran" and "reused" separately.
     """
     raw_request = payload.get("request") or {}
     spec_payload = raw_request.get("spec")
@@ -1193,8 +1338,23 @@ async def _handle_author(
     # front matter of the source it came from.
     authored = spec_from_author_request(spec=spec_payload, slug=payload.get("slug") or None)
     run_until = payload.get("run_until") or None
+    reuse_results = bool(payload.get("reuse_results", True))
+    parent_version_id = payload.get("parent_version_id")
 
-    report = await ports.run_notebook(authored, run_until=run_until)
+    parent_spec: NotebookSpec | None = None
+    parent_report: ExecutionReport | None = None
+    parent_seq: int | None = None
+    if reuse_results and parent_version_id:
+        parent_spec, parent_report, parent_seq = await _load_parent_for_replay(
+            notebook_store, scope, session, parent_version_id
+        )
+    plan = plan_run(authored, parent_spec, parent_report, run_until)
+
+    if not plan.execute:
+        report = _all_cached_report(authored, plan, parent_seq)
+    else:
+        report = await ports.run_notebook(authored, run_until=run_until, only=set(plan.execute))
+        report = _merge_replay_report(report, plan, parent_seq)
     await _record_sandbox_usage(session, scope, run_id, ports)
 
     warnings = advisory_structure(authored)

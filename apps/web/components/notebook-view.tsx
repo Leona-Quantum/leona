@@ -384,6 +384,9 @@ function NotebookCellCard({
       <div className="mj-notebook-cell-head">
         {cell.role ? <span className="mj-notebook-cell-role">{cell.role}</span> : null}
         <span className="mj-notebook-cell-pill" data-status={cell.status}>{copy.cellStatus[cell.status]}</span>
+        {cell.cachedFromSeq != null ? (
+          <span className="mj-notebook-cell-cached">{copy.cellCachedFromSeq(cell.cachedFromSeq)}</span>
+        ) : null}
         {onCellAction ? (
           <div className="mj-notebook-cell-actions mj-library-row-actions">
             <button type="button" disabled={busy} onClick={() => onCellAction(cell.id, "explain")}>{copy.actionExplain}</button>

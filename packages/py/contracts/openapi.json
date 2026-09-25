@@ -662,6 +662,11 @@
             "title": "Message",
             "type": "string"
           },
+          "reuse_results": {
+            "default": true,
+            "title": "Reuse Results",
+            "type": "boolean"
+          },
           "run_until": {
             "anyOf": [
               {
@@ -1488,6 +1493,30 @@
       "CellResult": {
         "additionalProperties": false,
         "properties": {
+          "cache_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cache Key"
+          },
+          "cached_from_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cached From Seq"
+          },
           "duration_ms": {
             "default": 0,
             "minimum": 0,
@@ -12092,7 +12121,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.37.0"
+    "version": "2.37.1"
   },
   "openapi": "3.1.0",
   "paths": {}

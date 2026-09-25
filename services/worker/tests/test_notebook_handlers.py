@@ -1373,7 +1373,15 @@ def run_stores(monkeypatch, _fake_run_plumbing):
 
 
 def _author_payload(
-    *, run_id, notebook_id, version_id, source=AUTHORED, run_until=None, slug="my-own-edit"
+    *,
+    run_id,
+    notebook_id,
+    version_id,
+    source=AUTHORED,
+    run_until=None,
+    slug="my-own-edit",
+    parent_version_id=None,
+    reuse_results=None,
 ):
     spec = parse_source(source, slug=slug)
     payload = _payload(
@@ -1385,6 +1393,10 @@ def _author_payload(
     )
     payload["slug"] = slug
     payload["run_until"] = run_until
+    if parent_version_id is not None:
+        payload["parent_version_id"] = str(parent_version_id)
+    if reuse_results is not None:
+        payload["reuse_results"] = reuse_results
     return payload
 
 
@@ -1563,6 +1575,175 @@ async def test_author_needs_no_base_version(_fake_run_plumbing):
     )
 
     assert store.versions[version_id].status == "ready"
+
+
+# --------------------------------------------------------------------------- replay
+
+
+def _dispatched_cell_ids(sandbox: FakeSandbox) -> set[str]:
+    """Every cell id the FAKE sandbox actually saw across every dispatch it made —
+    parsed straight out of the composed program, the same way `FakeSandbox._execute`
+    itself does, so this can never disagree with what the sandbox was actually given."""
+    ids: set[str] = set()
+    for spec in sandbox.specs:
+        ids.update(_CALL_ID_RE.findall(spec.code))
+    return ids
+
+
+async def test_author_replay_dispatches_only_the_needed_cells_and_stamps_cached_from_seq(
+    _fake_run_plumbing,
+):
+    """The whole point of the lane: a second author run after a one-cell edit only
+    dispatches the cells that changed or depend on it, and the merged report marks
+    every other cell as carried forward from the parent version."""
+    store = MemoryNotebookStore()
+    notebook_id = uuid.uuid4()
+    run1, version1 = uuid.uuid4(), uuid.uuid4()
+    store.seed_version(notebook_id, version1, seq=1)
+    session = Session()
+
+    # First save: no parent yet, so every cell runs — and this is also where every
+    # cell's cache_key first gets computed and stored, which the SECOND run below
+    # depends on to know anything is unchanged at all.
+    await nh.handle_notebook_revise(
+        session,
+        _author_payload(run_id=run1, notebook_id=notebook_id, version_id=version1),
+        llm=QueueLLM([]),
+        sandbox=FakeSandbox(),
+        store=store,
+    )
+    parent = store.versions[version1]
+    assert parent.status == "ready"
+    parent_by_id = {cell["id"]: cell for cell in parent.report["cells"]}
+    assert all(cell["cache_key"] for cell in parent_by_id.values()), parent_by_id
+    assert all(cell["cached_from_seq"] is None for cell in parent_by_id.values())
+
+    # AUTHORED: c01 defines x, c02 reads x (x * 2), c03 is independent of both.
+    # Editing ONLY c02's source should re-run c01 (c02's own dependency) and c02
+    # itself, and leave c03 entirely alone.
+    edited_source = AUTHORED.replace('print("second", x * 2)', 'print("second!!", x * 2)')
+    run2, version2 = uuid.uuid4(), uuid.uuid4()
+    store.seed_version(notebook_id, version2, seq=2)
+    sandbox2 = FakeSandbox()
+    await nh.handle_notebook_revise(
+        session,
+        _author_payload(
+            run_id=run2,
+            notebook_id=notebook_id,
+            version_id=version2,
+            source=edited_source,
+            parent_version_id=version1,
+        ),
+        llm=QueueLLM([]),
+        sandbox=sandbox2,
+        store=store,
+    )
+
+    child = store.versions[version2]
+    assert child.status == "ready", child.error
+    assert _dispatched_cell_ids(sandbox2) == {"c01", "c02"}
+
+    by_id = {cell["id"]: cell for cell in child.report["cells"]}
+    assert by_id["c01"]["cached_from_seq"] is None  # ran fresh (c02's own dep)
+    assert by_id["c02"]["cached_from_seq"] is None  # ran fresh (the edit itself)
+    assert by_id["c02"]["cache_key"] != parent_by_id["c02"]["cache_key"]
+    assert by_id["c03"]["cached_from_seq"] == 1  # carried forward from version 1
+    assert by_id["c03"]["status"] == "ok"
+    assert by_id["c03"]["cache_key"] == parent_by_id["c03"]["cache_key"]
+    assert child.report["ok"] is True
+    # The turn says what ran vs what was reused, not just "ran your edit".
+    assert "kept their results" in store.turns[-1].content
+
+
+async def test_author_replay_everything_cached_dispatches_no_sandbox_at_all(
+    _fake_run_plumbing,
+):
+    """A second author run with NO code change at all: `plan_run`'s execute set is
+    empty, and per the design brief this must not touch the sandbox."""
+    store = MemoryNotebookStore()
+    notebook_id = uuid.uuid4()
+    run1, version1 = uuid.uuid4(), uuid.uuid4()
+    store.seed_version(notebook_id, version1, seq=1)
+    session = Session()
+
+    await nh.handle_notebook_revise(
+        session,
+        _author_payload(run_id=run1, notebook_id=notebook_id, version_id=version1),
+        llm=QueueLLM([]),
+        sandbox=FakeSandbox(),
+        store=store,
+    )
+    parent = store.versions[version1]
+
+    run2, version2 = uuid.uuid4(), uuid.uuid4()
+    store.seed_version(notebook_id, version2, seq=2)
+    sandbox2 = FakeSandbox()
+    await nh.handle_notebook_revise(
+        session,
+        # Same source, same message field, only re-saved: nothing to run.
+        _author_payload(
+            run_id=run2,
+            notebook_id=notebook_id,
+            version_id=version2,
+            parent_version_id=version1,
+        ),
+        llm=QueueLLM([]),
+        sandbox=sandbox2,
+        store=store,
+    )
+
+    child = store.versions[version2]
+    assert child.status == "ready", child.error
+    assert sandbox2.specs == []  # the sandbox was never dispatched to at all
+    by_id = {cell["id"]: cell for cell in child.report["cells"]}
+    parent_by_id = {cell["id"]: cell for cell in parent.report["cells"]}
+    for cell_id, cell in by_id.items():
+        assert cell["cached_from_seq"] == 1, cell
+        assert cell["cache_key"] == parent_by_id[cell_id]["cache_key"]
+    assert "Nothing needed to change" in store.turns[-1].content
+
+
+async def test_author_reuse_results_false_reruns_everything_even_when_unchanged(
+    _fake_run_plumbing,
+):
+    """`reuse_results=false` is the escape hatch: even with an identical parent and
+    matching cache keys, every cell runs again."""
+    store = MemoryNotebookStore()
+    notebook_id = uuid.uuid4()
+    run1, version1 = uuid.uuid4(), uuid.uuid4()
+    store.seed_version(notebook_id, version1, seq=1)
+    session = Session()
+
+    await nh.handle_notebook_revise(
+        session,
+        _author_payload(run_id=run1, notebook_id=notebook_id, version_id=version1),
+        llm=QueueLLM([]),
+        sandbox=FakeSandbox(),
+        store=store,
+    )
+
+    run2, version2 = uuid.uuid4(), uuid.uuid4()
+    store.seed_version(notebook_id, version2, seq=2)
+    sandbox2 = FakeSandbox()
+    await nh.handle_notebook_revise(
+        session,
+        _author_payload(
+            run_id=run2,
+            notebook_id=notebook_id,
+            version_id=version2,
+            parent_version_id=version1,
+            reuse_results=False,
+        ),
+        llm=QueueLLM([]),
+        sandbox=sandbox2,
+        store=store,
+    )
+
+    child = store.versions[version2]
+    assert child.status == "ready", child.error
+    assert _dispatched_cell_ids(sandbox2) == {"c01", "c02", "c03"}
+    by_id = {cell["id"]: cell for cell in child.report["cells"]}
+    assert all(cell["cached_from_seq"] is None for cell in by_id.values())
 
 
 # --------------------------------------------------------------------------- grade

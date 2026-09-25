@@ -1145,6 +1145,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     cellStderr: string;
     cellTruncated: string;
     cellErrorLabel: string;
+    /** A cell whose result came from an earlier version's cache, not from re-running
+     * it this time (dependency-graph replay, plan platform-vision-20260924/phase-a
+     * §3) — "Unchanged since version {seq}, not re-run". */
+    cellCachedFromSeq: (seq: number) => string;
 
     actionExplain: string;
     actionSimplify: string;
@@ -2369,6 +2373,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     cellStatus: { ok: "Passed", error: "Error", skipped: "Skipped", not_run: "Not run yet" },
     cellStdout: "Output",
     cellStderr: "Error output",
+    cellCachedFromSeq: (seq) => `Unchanged since version ${seq}, not re-run`,
     cellTruncated: "Some output was cut to fit the evidence budget.",
     cellErrorLabel: "Error",
 
@@ -3584,6 +3589,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     cellStatus: { ok: "成功", error: "エラー", skipped: "スキップ", not_run: "未実行" },
     cellStdout: "出力",
     cellStderr: "エラー出力",
+    cellCachedFromSeq: (seq) => `バージョン ${seq} から変更なし、再実行していません`,
     cellTruncated: "一部の出力は容量の上限により省略されています。",
     cellErrorLabel: "エラー",
 
