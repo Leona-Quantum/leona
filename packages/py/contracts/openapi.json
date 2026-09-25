@@ -807,6 +807,114 @@
         "title": "BaselineResult",
         "type": "object"
       },
+      "BlockPlan": {
+        "additionalProperties": false,
+        "description": "The planner's INPUTS for the problem a block is a stage of: never its numbers.\n\nThe shape `StudioPlanLink` already carries into Studio\n(`apps/web/lib/workflow-planner/studio-link.ts`), without the reader's sentence: the\nproblem, the parameter values the author set, and the method chosen at each stage\npath that differs from the planner's default. The page re-runs the planner over these\nevery time it renders the block, so a cost is always today's formula at the size on\nscreen, and nothing a stored spec says can put a number in front of a reader. A value\nleft out takes the planner's own stated assumption, which the page labels as one.",
+        "properties": {
+          "choices": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Choices",
+            "type": "object"
+          },
+          "params": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Params",
+            "type": "object"
+          },
+          "problem": {
+            "enum": [
+              "search",
+              "factoring",
+              "ecdlp",
+              "ground-state",
+              "hamiltonian-simulation",
+              "linear-system",
+              "maxcut",
+              "amplitude-estimation",
+              "phase-estimation",
+              "linear-ode",
+              "nonlinear-ode"
+            ],
+            "title": "Problem",
+            "type": "string"
+          }
+        },
+        "required": [
+          "problem"
+        ],
+        "title": "BlockPlan",
+        "type": "object"
+      },
+      "BlockRef": {
+        "additionalProperties": false,
+        "description": "What a `role=block` cell places in a notebook: one Atlas method.\n\nThe cell is `kind=\"markdown\"`, and its `source` is prose rendered from this model\n(`leona_notebooks.blocks.block_comment`), so the cell reads as a paragraph in\nJupyter. The page renders the block as a card instead: the method's cost at a\nproblem size the reader moves, and the notebook's own checks (`CheckProperty.block`)\nas evidence up to the size they ran at. No number is stored here.\n\n- `method`: the Atlas layer-graph method id.\n- `plan`: the planner's inputs when the method is a stage of a planner problem, or\n  `None` when the page should show the method's own cost as its source states it.\n- `size_param`: which of the plan's parameters is the problem size the control moves.\n  `None` with a plan means the page picks one; it must be `None` without a plan.\n- `author`, `citation`, `accepted`: exactly as on `CheckProperty`. Nala may propose a\n  block, only a person accepts one, and a repair may not touch one\n  (`leona_notebooks.blocks.enforce_block_authorship`).",
+        "properties": {
+          "accepted": {
+            "default": false,
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "author": {
+            "default": "nala",
+            "enum": [
+              "nala",
+              "user",
+              "source"
+            ],
+            "title": "Author",
+            "type": "string"
+          },
+          "citation": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Citation",
+            "type": "string"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlockPlan"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "size_param": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Size Param"
+          }
+        },
+        "required": [
+          "method"
+        ],
+        "title": "BlockRef",
+        "type": "object"
+      },
       "CatalogEntryEstimate": {
         "additionalProperties": false,
         "description": "A catalogue entry's fault-tolerant cost, or a stated reason there is none (E4).\n\nDerived on read from the published record's own portable circuit \u2014 never\nauthored, never stored \u2014 so it cannot drift from the circuit a visitor is\nlooking at on the same page.\n\n`basis` is the field to branch on. Only EXACT and ESTIMATED carry numbers;\nthe other two carry `reason` and nothing else, and a client that renders a\nnumber without checking `basis` will publish a cost for a circuit that has\nnone.",
@@ -1284,6 +1392,17 @@
             ],
             "default": null
           },
+          "block": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlockRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "check": {
             "anyOf": [
               {
@@ -1640,7 +1759,8 @@
           "summary",
           "references",
           "note",
-          "check"
+          "check",
+          "block"
         ],
         "title": "CellRole",
         "type": "string"
@@ -1871,6 +1991,18 @@
             ],
             "title": "Author",
             "type": "string"
+          },
+          "block": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Block"
           },
           "citation": {
             "default": "",
@@ -12554,7 +12686,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.40.0"
+    "version": "2.41.0"
   },
   "openapi": "3.1.0",
   "paths": {}

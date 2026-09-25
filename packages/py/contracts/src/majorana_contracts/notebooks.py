@@ -79,6 +79,11 @@ class CellRole(StrEnum):
     #: code on the worker, never by the cell's own source. Not the same thing as
     #: `Cell.check`, the hidden grader of an exercise — see `CheckProperty`.
     CHECK = "check"
+    #: An Atlas method placed in the notebook (`Cell.block`), whose cost the page works
+    #: out from the planner's inputs at any problem size, beside the notebook's own
+    #: checks as evidence up to the size they ran at. A markdown cell whose `source` is
+    #: only prose rendered from the `BlockRef` — see that model.
+    BLOCK = "block"
 
 
 #: Roles whose whole content is the thing a learner must not see before they try.
@@ -461,6 +466,20 @@ class CheckProperty(_Model):
     citation: str = Field(default="", max_length=500)
     #: Whether a person has accepted this check. A Nala check stays unaccepted until then.
     accepted: bool = False
+    #: The id of the `role=block` cell this check is evidence for, if any. The block's
+    #: card lists the check's verdict and the size it ran at. It links the check to a
+    #: claim; it does not change what the check judges, so it is outside
+    #: `expectation_key` and outside the dependency cache key. `NotebookSpec` refuses one
+    #: that names a cell that is not a block, and drops one that names no cell at all
+    #: (the block was deleted).
+    block: str | None = None
+
+    @field_validator("block")
+    @classmethod
+    def _block_is_a_cell_id(cls, value: str | None) -> str | None:
+        if value is not None and not _CELL_ID_RE.match(value):
+            raise ValueError(f"block {value!r} must be a cell id matching {_CELL_ID_RE.pattern}")
+        return value
 
     @field_validator("subject")
     @classmethod
@@ -585,8 +604,147 @@ class CheckProperty(_Model):
         return self
 
     def expectation_key(self) -> dict[str, Any]:
-        """Everything that decides the verdict, and nothing about who wrote it or whether
-        it was accepted. Two properties with the same key are the same check."""
+        """Everything that decides the verdict, and nothing about who wrote it, whether
+        it was accepted, or which block it is evidence for. Two properties with the same
+        key are the same check."""
+        return self.model_dump(mode="json", exclude={"author", "accepted", "block"})
+
+
+# --------------------------------------------------------------------------- block cells
+
+#: The planner problems a block's `plan` may name, and the parameters each one takes: the
+#: `id` and `params[].key` of every entry of `PROBLEMS` in
+#: `apps/web/lib/workflow-planner/problems.ts`, restated because this package imports
+#: nothing internal. `apps/web/lib/notebook-blocks.test.ts` reads this table back from
+#: this file and fails if the two drift.
+PLANNER_PROBLEM_PARAMS: dict[str, tuple[str, ...]] = {
+    "search": ("domainSize", "markedCount", "oracleToffolis"),
+    "factoring": ("bits",),
+    "ecdlp": ("bits",),
+    "ground-state": ("lambda", "deltaE", "orbitals"),
+    "hamiltonian-simulation": ("lambda", "time", "epsilon"),
+    "linear-system": ("kappa", "epsilon", "dimension", "stepToffolis"),
+    "maxcut": ("nodes", "edges", "layers"),
+    "amplitude-estimation": ("epsilon",),
+    "phase-estimation": ("precisionBits", "failureProbability"),
+    "linear-ode": (),
+    "nonlinear-ode": (),
+}
+PlannerProblemId = Literal[
+    "search",
+    "factoring",
+    "ecdlp",
+    "ground-state",
+    "hamiltonian-simulation",
+    "linear-system",
+    "maxcut",
+    "amplitude-estimation",
+    "phase-estimation",
+    "linear-ode",
+    "nonlinear-ode",
+]
+#: `STUDIO_PLAN_LINK_MAX_CHOICES` in `apps/web/lib/workflow-planner/studio-link.ts`.
+BLOCK_PLAN_MAX_CHOICES = 32
+#: A choice's key is a stage path in the planner's tree (`quantum-linear-solve/
+#: state-preparation`): capability ids joined by `/`. Its value is a method id.
+_STAGE_PATH_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,79}(?:/[a-z0-9][a-z0-9-]{0,79}){0,7}$")
+#: Atlas layer-graph ids (`grover-fixed-iteration-search`). The shape is checked here;
+#: whether the id names a method is the page's to say, because this package does not
+#: carry the Atlas.
+_ATLAS_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,99}$")
+
+
+class BlockPlan(_Model):
+    """The planner's INPUTS for the problem a block is a stage of: never its numbers.
+
+    The shape `StudioPlanLink` already carries into Studio
+    (`apps/web/lib/workflow-planner/studio-link.ts`), without the reader's sentence: the
+    problem, the parameter values the author set, and the method chosen at each stage
+    path that differs from the planner's default. The page re-runs the planner over these
+    every time it renders the block, so a cost is always today's formula at the size on
+    screen, and nothing a stored spec says can put a number in front of a reader. A value
+    left out takes the planner's own stated assumption, which the page labels as one.
+    """
+
+    problem: PlannerProblemId
+    #: Parameter key to value. `None` clears a value the planner would otherwise assume.
+    params: dict[str, float | None] = Field(default_factory=dict)
+    #: Stage path to the method chosen there.
+    choices: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _inputs_fit_the_problem(self) -> BlockPlan:
+        declared = PLANNER_PROBLEM_PARAMS[self.problem]
+        for key, value in self.params.items():
+            if key not in declared:
+                names = ", ".join(declared) or "none"
+                raise ValueError(
+                    f"the {self.problem} problem has no parameter {key!r}; it takes: {names}"
+                )
+            if value is not None and not math.isfinite(value):
+                raise ValueError(f"params[{key}] is not a finite number")
+        if len(self.choices) > BLOCK_PLAN_MAX_CHOICES:
+            raise ValueError(f"a plan may carry at most {BLOCK_PLAN_MAX_CHOICES} choices")
+        for path, method in self.choices.items():
+            if not _STAGE_PATH_RE.match(path):
+                raise ValueError(f"choice key {path!r} is not a stage path")
+            if not _ATLAS_ID_RE.match(method):
+                raise ValueError(f"choice {path!r} names {method!r}, which is not a method id")
+        return self
+
+
+class BlockRef(_Model):
+    """What a `role=block` cell places in a notebook: one Atlas method.
+
+    The cell is `kind="markdown"`, and its `source` is prose rendered from this model
+    (`leona_notebooks.blocks.block_comment`), so the cell reads as a paragraph in
+    Jupyter. The page renders the block as a card instead: the method's cost at a
+    problem size the reader moves, and the notebook's own checks (`CheckProperty.block`)
+    as evidence up to the size they ran at. No number is stored here.
+
+    - `method`: the Atlas layer-graph method id.
+    - `plan`: the planner's inputs when the method is a stage of a planner problem, or
+      `None` when the page should show the method's own cost as its source states it.
+    - `size_param`: which of the plan's parameters is the problem size the control moves.
+      `None` with a plan means the page picks one; it must be `None` without a plan.
+    - `author`, `citation`, `accepted`: exactly as on `CheckProperty`. Nala may propose a
+      block, only a person accepts one, and a repair may not touch one
+      (`leona_notebooks.blocks.enforce_block_authorship`).
+    """
+
+    method: str
+    plan: BlockPlan | None = None
+    size_param: str | None = None
+    author: CheckAuthor = "nala"
+    citation: str = Field(default="", max_length=500)
+    accepted: bool = False
+
+    @field_validator("method")
+    @classmethod
+    def _method_is_an_atlas_id(cls, value: str) -> str:
+        if not _ATLAS_ID_RE.match(value):
+            raise ValueError(f"method {value!r} is not an Atlas method id")
+        return value
+
+    @model_validator(mode="after")
+    def _size_param_and_provenance(self) -> BlockRef:
+        if self.size_param is not None:
+            if self.plan is None:
+                raise ValueError("size_param names a planner parameter, so it needs a plan")
+            declared = PLANNER_PROBLEM_PARAMS[self.plan.problem]
+            if self.size_param not in declared:
+                names = ", ".join(declared) or "none"
+                raise ValueError(
+                    f"size_param {self.size_param!r} is not a parameter of the "
+                    f"{self.plan.problem} problem; it takes: {names}"
+                )
+        if self.author == "source" and not self.citation.strip():
+            raise ValueError("a block with author 'source' needs a citation")
+        return self
+
+    def claim_key(self) -> dict[str, Any]:
+        """Everything the block claims, and nothing about who wrote it or whether it was
+        accepted. Two blocks with the same key are the same block."""
         return self.model_dump(mode="json", exclude={"author", "accepted"})
 
 
@@ -629,8 +787,12 @@ class Cell(_Model):
     #: is data the sandbox never runs, judged by trusted code after the run. The cell's
     #: `source` is only a comment rendered from it.
     property: CheckProperty | None = None
-    # The field above shadows the builtin `property` for the rest of this class body, so
-    # the computed attributes below are declared with `builtins.property`. A bare
+    #: For `role=block` cells only, and required on them: the Atlas method the cell
+    #: places, with the planner's inputs for its cost (`BlockRef`). The cell's `source`
+    #: is only prose rendered from it.
+    block: BlockRef | None = None
+    # The `property` field above shadows the builtin `property` for the rest of this class
+    # body, so the computed attributes below are declared with `builtins.property`. A bare
     # `@property` after this line decorates with `None` and fails at import.
 
     @field_validator("id")
@@ -690,6 +852,27 @@ class Cell(_Model):
                 raise ValueError(f"cell {self.id}: a role=check cell carries no stub or grader")
         elif self.property is not None:
             raise ValueError(f"cell {self.id}: only role=check cells carry a property")
+        return self
+
+    @model_validator(mode="after")
+    def _block_exactly_on_block_cells(self) -> Cell:
+        """A `role=block` cell is its `BlockRef`; any other cell has none.
+
+        Both directions, for the reason a check cell's property is held both ways: a
+        `block` on another cell would never be drawn as a block, and a `role=block` cell
+        without one would draw a card with nothing on it. A block cell is markdown (the
+        sandbox never sees it, and in Jupyter it reads as prose) and carries nothing that
+        belongs to an exercise or a check.
+        """
+        if self.role == CellRole.BLOCK:
+            if self.block is None:
+                raise ValueError(f"cell {self.id}: a role=block cell needs a block")
+            if self.kind != "markdown":
+                raise ValueError(f"cell {self.id}: a role=block cell must be a markdown cell")
+            if self.check is not None or self.answer is not None:
+                raise ValueError(f"cell {self.id}: a role=block cell carries no grader or answer")
+        elif self.block is not None:
+            raise ValueError(f"cell {self.id}: only role=block cells carry a block")
         return self
 
     @builtins.property
@@ -758,6 +941,41 @@ class NotebookSpec(_Model):
             seen.add(cell.id)
         return self
 
+    @model_validator(mode="after")
+    def _check_block_links(self) -> NotebookSpec:
+        """A check's `property.block` names a block cell of THIS notebook.
+
+        Naming a cell that exists and is not a block is a mistake and is refused. Naming
+        a cell that is not there at all is what deleting a block leaves behind, whoever
+        deleted it, so the link is dropped here rather than failing the save: the check
+        itself is unchanged and simply stops being listed as evidence.
+        """
+        roles = {cell.id: cell.role for cell in self.cells}
+        dangling = False
+        for cell in self.cells:
+            link = cell.property.block if cell.property is not None else None
+            if link is None:
+                continue
+            if link not in roles:
+                dangling = True
+            elif roles[link] != CellRole.BLOCK:
+                raise ValueError(
+                    f"cell {cell.id}: its check is evidence for {link!r}, which is not a "
+                    "role=block cell"
+                )
+        if dangling:
+            self.cells = [
+                cell.model_copy(
+                    update={"property": cell.property.model_copy(update={"block": None})}
+                )
+                if cell.property is not None
+                and cell.property.block is not None
+                and cell.property.block not in roles
+                else cell
+                for cell in self.cells
+            ]
+        return self
+
     def cell_by_id(self, cell_id: str) -> Cell:
         for cell in self.cells:
             if cell.id == cell_id:
@@ -820,6 +1038,11 @@ class NotebookSpec(_Model):
         answer key does. A notebook with nothing secret keeps its checks: there they are the
         evidence a reader is meant to see.
 
+        A sixth, since block cells: in a notebook that `carries_secrets()`, every
+        `role=block` cell is **removed** too. Its card works out the method's cost at the
+        size the plan names, and a cost line can be the answer: a Grover block's iteration
+        count is exactly what an exercise on the same search asks for.
+
         Returns a copy; the authored spec is never mutated.
         """
         drop_checks = self.carries_secrets()
@@ -827,7 +1050,7 @@ class NotebookSpec(_Model):
         for cell in self.cells:
             if cell.role in SOLUTION_ONLY_ROLES and not (cell.is_code and cell.stub is not None):
                 continue
-            if drop_checks and cell.role == CellRole.CHECK:
+            if drop_checks and cell.role in (CellRole.CHECK, CellRole.BLOCK):
                 continue
             data = cell.model_dump()
             data["check"] = None
@@ -875,13 +1098,16 @@ class NotebookSpec(_Model):
         5. **a structured expectation** — a check cell's `property`, in a notebook that
            `carries_secrets()`. A learner build still shows that it came from one (its
            exercises, its answer prompts), so a surviving check there is named.
+        6. **a cost the page works out** — a block cell's `block`, in a notebook that
+           `carries_secrets()`. Its plan is the input to a number (an iteration count, a
+           register width) that can be the exercise's answer.
         """
         secrets = self.carries_secrets()
         leaked: list[str] = []
         for cell in self.cells:
             if cell.check is not None or cell.answer is not None:
                 leaked.append(cell.id)
-            elif cell.property is not None and secrets:
+            elif (cell.property is not None or cell.block is not None) and secrets:
                 leaked.append(cell.id)
             elif cell.role in SOLUTION_ONLY_ROLES:
                 # A surviving solution/answer cell. For a code solution the stub swap is
@@ -922,7 +1148,11 @@ class NotebookSpec(_Model):
         if report is None:
             return None
         kept = {cell.id for cell in self.for_learner().cells}
-        hidden = {cell.id for cell in self.cells if cell.role == CellRole.CHECK} - kept
+        # Block cells are markdown and have no result of their own; they are in the set
+        # so that a report which somehow carries one for them loses it with the cell.
+        hidden = {
+            cell.id for cell in self.cells if cell.role in (CellRole.CHECK, CellRole.BLOCK)
+        } - kept
         if not hidden:
             return report
         return report.model_copy(

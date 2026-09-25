@@ -154,10 +154,14 @@ from .courses import (
     UpdateCourseRequest,
 )
 from .notebooks import (
+    BLOCK_PLAN_MAX_CHOICES,
+    PLANNER_PROBLEM_PARAMS,
     AnswerPrompt,
     Audience,
     AuthorNotebookVersionRequest,
     AuthorNotebookVersionResponse,
+    BlockPlan,
+    BlockRef,
     Cell,
     CellError,
     CellGrade,
@@ -591,7 +595,18 @@ from .lifecycle import (
 # with `teeth` always set) and `MAX_CIRCUIT_CHECK_QASM_CHARS`, behind the stateless
 # POST /v1/checks/circuit. Additive: new names only, no existing model changes, no
 # migration (nothing is stored).
-CONTRACTS_VERSION = "2.40.0"
+# 2.41.0: Phase B slice S1, "block cells" (ai-ops 382; plan in
+# ai-ops/desk/leona/plans/platform-vision-20260924/phase-b/PLAN.md). New: `CellRole.BLOCK`,
+# `BlockRef` on the new `Cell.block` (only on role=block cells, which are markdown, and
+# required on them), `BlockPlan` (the planner's inputs, never its numbers, validated
+# against `PLANNER_PROBLEM_PARAMS`), and `CheckProperty.block` (the block a check is
+# evidence for; outside `expectation_key`). `NotebookSpec.for_learner()` drops block cells,
+# and `leaks_answer_key()` names them, in a notebook that `carries_secrets()`. Additive:
+# one enum value, two models, two optional fields that default to None, so every stored
+# spec still parses. No route and no migration (the spec is JSONB). Expect a
+# version-number conflict with the sibling planner-in-Python branch (S2); whichever
+# merges second re-numbers.
+CONTRACTS_VERSION = "2.41.0"
 
 __all__ = [
     "PresenceHeartbeatRequest",
@@ -748,6 +763,10 @@ __all__ = [
     "CheckProperty",
     "CheckTeeth",
     "CheckVerdict",
+    "BLOCK_PLAN_MAX_CHOICES",
+    "PLANNER_PROBLEM_PARAMS",
+    "BlockPlan",
+    "BlockRef",
     "MAX_CIRCUIT_CHECK_QASM_CHARS",
     "CircuitCheckRequest",
     "CircuitCheckResponse",

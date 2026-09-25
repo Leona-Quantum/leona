@@ -41,6 +41,7 @@ function baseProperty(overrides: Partial<CheckProperty> = {}): CheckProperty {
     author: "nala",
     citation: "",
     accepted: false,
+    block: null,
     ...overrides,
   };
 }
@@ -58,6 +59,7 @@ function checkCell(id: string, property: CheckProperty | null): Cell {
     answer: null,
     answer_prompt: null,
     timeout_s: null,
+    block: null,
     property,
   };
 }
@@ -347,7 +349,7 @@ test("the notebook-level summary is computed from the report, not guessed", () =
 
 test("no summary renders when the notebook has no check cells", () => {
   const cells = notebookCellViews(
-    [{ id: "c1", kind: "code", role: "run", source: "x = 1", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null }],
+    [{ id: "c1", kind: "code", role: "run", source: "x = 1", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null, block: null }],
     null,
   );
   const view = render(<NotebookView cells={cells} locale="en" framework="qiskit" />);
@@ -364,7 +366,7 @@ test("no summary renders when the notebook has no check cells", () => {
 function checkTriggerCells() {
   return notebookCellViews(
     [
-      { id: "c1", kind: "code" as const, role: "run" as const, source: "qc = build()", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null },
+      { id: "c1", kind: "code" as const, role: "run" as const, source: "qc = build()", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null, block: null },
       checkCell("c2", baseProperty()),
     ],
     null,

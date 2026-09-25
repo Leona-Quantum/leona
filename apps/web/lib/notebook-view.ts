@@ -19,6 +19,7 @@ type NotebookVersionStatus = components["schemas"]["NotebookVersionStatus"];
 type HardwareRequest = components["schemas"]["HardwareRequest"];
 type CheckProperty = components["schemas"]["CheckProperty"];
 type CheckVerdict = components["schemas"]["CheckVerdict"];
+type BlockRef = components["schemas"]["BlockRef"];
 
 export type NotebookCellStatus = "ok" | "error" | "skipped" | "not_run";
 
@@ -97,6 +98,9 @@ export interface NotebookCellView {
   /** The worker's verdict on this check, from `CellResult.check`. `null` before the
    * cell has ever run, and for every non-check cell. */
   checkVerdict: CheckVerdict | null;
+  /** For a `role=block` cell: the Atlas method it places and the planner's inputs for its
+   * cost (ai-ops 382, Phase B S1). `null` for every other cell. */
+  block: BlockRef | null;
 }
 
 /**
@@ -172,6 +176,7 @@ export function notebookCellViews(
       hardwareRequests: result?.hardware_requests ?? [],
       checkProperty: cell.property ?? null,
       checkVerdict: result?.check ?? null,
+      block: cell.block ?? null,
     };
   });
 }

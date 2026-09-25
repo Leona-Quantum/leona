@@ -386,6 +386,7 @@ export function buildCheckProperty(draft: CheckDraft, author: CheckAuthor = "use
     author,
     citation: "",
     accepted: false,
+    block: null,
   } as CheckProperty;
 
   switch (draft.kind) {
@@ -492,6 +493,7 @@ export function buildCheckCell(id: string, property: CheckProperty): Cell {
     answer_prompt: null,
     timeout_s: null,
     property: { ...property, author: "user", accepted: true },
+    block: null,
   };
 }
 

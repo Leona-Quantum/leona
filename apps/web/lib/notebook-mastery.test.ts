@@ -22,6 +22,7 @@ function cell(id: string, role: CellRole | null, kind: "markdown" | "code" = "co
     answer_prompt: null,
     timeout_s: null as number | null,
     property: null,
+    block: null,
   };
 }
 
