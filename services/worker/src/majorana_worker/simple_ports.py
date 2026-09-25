@@ -945,6 +945,84 @@ def _return_contract_check(result: dict[str, Any], observation: dict[str, Any]) 
     }
 
 
+#: A bare identifier segment: `create_quantum_circuit`, `BellRunner`, `run`. Never a
+#: call, a subscript, or an attribute chain that is not itself dotted identifiers.
+_ENTRY_POINT_SEGMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _resolve_entry_point_path(raw: str) -> list[str] | None:
+    """Parse a Plan's `entry_point` string into its dotted name segments.
+
+    ai-ops 372, review round 3: a model writes this field in whatever shape reads
+    naturally to it, not always a bare name — `create_quantum_circuit(n_qubits)`
+    (its own call signature), `BellRunner.run` (a class method), `module.name` (a
+    qualified name). This tolerates a trailing `(...)` call suffix and returns the
+    dotted segments for the caller to resolve; returns None when what is left
+    after stripping a call suffix is not a plain identifier path at all (an empty
+    string, an expression, anything with a stray character) — that is a malformed
+    *declaration*, not evidence about the *candidate*, so the caller reports `n/a`
+    rather than guessing a verdict from a value this function cannot parse.
+    """
+    text = raw.strip()
+    paren = text.find("(")
+    if paren != -1:
+        text = text[:paren].strip()
+    if not text:
+        return None
+    segments = text.split(".")
+    if not all(_ENTRY_POINT_SEGMENT.match(segment) for segment in segments):
+        return None
+    return segments
+
+
+def _module_level_defs(module: ast.Module) -> dict[str, ast.AST]:
+    """Function/class names bound at MODULE scope, structurally.
+
+    Deliberately narrower than `ast.walk`: a `def` nested inside another function
+    is not reachable as a module-level entry point (that was the round-2 checker's
+    bug — it accepted `entry_point="run"` when `run` existed only as a method
+    inside some class, which nothing at module scope can call by that bare name).
+    Control-flow wrappers (`if`/`try`/`with`/`for`/`while`) are transparent — the
+    sandbox executes the module top to bottom, so a definition inside one of them
+    still binds at module scope, the same convention
+    `majorana_frameworks.roles._bound_names` already uses. The first definition of
+    a repeated name wins, matching how Python's own module execution would leave
+    the LAST one bound — but for an entry-point *existence* check either occurrence
+    is equally real evidence the name was written, so which one wins does not
+    change the verdict.
+    """
+    found: dict[str, ast.AST] = {}
+
+    def visit(body: list[ast.stmt]) -> None:
+        for stmt in body:
+            if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                found.setdefault(stmt.name, stmt)
+            elif isinstance(stmt, ast.If):
+                visit(stmt.body)
+                visit(stmt.orelse)
+            elif isinstance(stmt, ast.Try):
+                visit(stmt.body)
+                for handler in stmt.handlers:
+                    visit(handler.body)
+                visit(stmt.orelse)
+                visit(stmt.finalbody)
+            elif isinstance(stmt, (ast.With, ast.AsyncWith, ast.For, ast.AsyncFor, ast.While)):
+                visit(stmt.body)
+                visit(getattr(stmt, "orelse", []))
+
+    visit(module.body)
+    return found
+
+
+def _class_method_names(class_node: ast.ClassDef) -> frozenset[str]:
+    """Method names defined directly in a class's own body (not a nested class's)."""
+    return frozenset(
+        stmt.name
+        for stmt in class_node.body
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef))
+    )
+
+
 def _entry_point_check(
     source: str, artifact_contract: ArtifactContract | None
 ) -> dict[str, Any] | None:
@@ -964,10 +1042,22 @@ def _entry_point_check(
     does not apply to a circuit-and-report deliverable, which is checked by
     `check_contract`'s RESULT-keys path instead.
 
-    A real FAIL, not `n/a`: a Plan naming an entry_point that never got written is
-    a genuine, checkable defect — this pipeline can see the name is missing
-    without ever running the candidate, the same way a syntax error is checkable
-    without running it.
+    Round 3: resolves what `entry_point` actually names, rather than requiring an
+    exact, bare, module-level identifier match. `_resolve_entry_point_path` strips
+    a trailing call suffix (`create_quantum_circuit(n_qubits)` names
+    `create_quantum_circuit`). A dotted path `A.B` passes if EITHER reading holds:
+    `A` is a module-level class defining method `B` (`BellRunner.run`), OR `B`
+    itself is bound at module scope (`module.create_quantum_circuit` — the leading
+    segment is presumed an import alias a single-file candidate would not itself
+    define, so only the last segment is actually checkable). A value that is not a
+    plain (optionally dotted, optionally called) identifier path is reported
+    `n/a`, not `fail` — that is a malformed Plan declaration, not a candidate
+    defect this pipeline can see.
+
+    A real FAIL, not `n/a`, when the path IS parseable and resolves to nothing: a
+    Plan naming an entry_point that never got written is a genuine, checkable
+    defect — this pipeline can see the name is missing without ever running the
+    candidate, the same way a syntax error is checkable without running it.
     """
     if artifact_contract is None or not artifact_contract.entry_point:
         return None
@@ -981,12 +1071,27 @@ def _entry_point_check(
         # reached) — restating it here as a second, redundant claim would be the
         # same fact under two labels.
         return None
-    defined = {
-        node.name
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-    }
-    if artifact_contract.entry_point in defined:
+
+    segments = _resolve_entry_point_path(artifact_contract.entry_point)
+    if segments is None:
+        return {
+            "method": "entry_point_defined",
+            "result": "n/a",
+            "details": {
+                "entry_point": artifact_contract.entry_point,
+                "reason": "entry_point is not a plain (optionally dotted) identifier path",
+            },
+        }
+
+    module_defs = _module_level_defs(tree)
+    last = segments[-1]
+    found = last in module_defs
+    if not found and len(segments) >= 2:
+        class_node = module_defs.get(segments[-2])
+        if isinstance(class_node, ast.ClassDef) and last in _class_method_names(class_node):
+            found = True
+
+    if found:
         return {
             "method": "entry_point_defined",
             "result": "pass",
@@ -997,10 +1102,7 @@ def _entry_point_check(
         "result": "fail",
         "details": {
             "entry_point": artifact_contract.entry_point,
-            "reason": (
-                f"no function or class named {artifact_contract.entry_point!r} "
-                "in the delivered source"
-            ),
+            "reason": (f"no definition resolves {artifact_contract.entry_point!r} at module scope"),
         },
     }
 
@@ -1481,12 +1583,22 @@ class RepoReviewArtifactSaver:
             verification_summary = unexecuted_artifact_verification_summary(review)
         else:
             assert review is not None
+            # ai-ops 372, review round 3 (nit): the run row's own summary
+            # (handlers._finish_simple_pipeline) gates this the same way — a
+            # Plan whose artifact_contract does not promise a no-executed-result
+            # deliverable must never be labelled "function written, never
+            # called" just because this particular execution came back empty.
+            # That is a candidate defect on an ordinary Plan, not an unexercised
+            # function, and the two writers of this claim must not disagree.
+            plan_promises_no_result = artifact_promises_no_executed_result(plan.artifact_contract)
             verification_summary = simple_pipeline_verification_summary(
                 reference_methods,
                 review.decision,
                 result_derived=result_was_derived(execution.observation),
                 result_never_executed=(
-                    not execution.result and not result_was_derived(execution.observation)
+                    not execution.result
+                    and not result_was_derived(execution.observation)
+                    and plan_promises_no_result
                 ),
                 recorded_checks=recorded_basic_checks(review),
                 review_severity=review.severity,

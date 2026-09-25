@@ -28,15 +28,18 @@ from majorana_agent import (
 )
 from majorana_contracts.enums import (
     Algorithm,
+    ArtifactType,
     EvidenceStrength,
     Framework,
+    MeasurementPolicy,
     RetryTarget,
     SemanticReviewDecision,
+    TopLevelExecution,
     VerificationFailureClass,
     VerificationMethod,
     VerifierDecision,
 )
-from majorana_contracts.plan import Plan, ProblemTerm, ReferenceProblem
+from majorana_contracts.plan import ArtifactContract, Plan, ProblemTerm, ReferenceProblem
 from majorana_frameworks import FrameworkProgram
 from majorana_frameworks.roles import ProgramRole
 from majorana_llm import ATLAS_WORKFLOW_PLAN_DIRECTIVE, LLMProviderError, LLMResponse
@@ -49,10 +52,12 @@ from majorana_worker.simple_ports import (
     SimpleIntentReviewResult,
     _bounded_repair_value,
     _dynamics_reference_call_args,
+    _entry_point_check,
     _invalid_field_snapshot,
     _reference_checks,
     _reference_check_routing,
     _preserve_replan_range_strength,
+    _return_contract_check,
     passed_reference_methods,
     recorded_basic_checks,
     simple_pipeline_verification_summary,
@@ -1979,6 +1984,172 @@ async def test_basic_contract_accepts_a_function_that_never_needed_to_run(task_i
     assert not any("RESULT missing key" in item for item in checked.value.diagnostics)
 
 
+async def test_a_reported_but_incomplete_result_still_fails_under_a_forbidden_plan():
+    """ai-ops 372, review round 3, mutation (b): a Plan saying execution was never
+    required is not a license to report an incomplete RESULT unchecked.
+
+    `check_contract`'s non-CIRCUIT branch reads
+    `elif execution.result or not artifact_promises_no_executed_result(...)`: the
+    `execution.result or` half means a candidate that went ahead and reported
+    SOMETHING — even under a `forbidden` plan — still has that report checked
+    against `expected_output_keys`, exactly as it would without the exemption.
+    Dropping that half (checking only `not artifact_promises_no_executed_result`)
+    would let a candidate whose contract says "nothing required" report a
+    truncated, fabricated-looking RESULT and have it wave through with no key
+    check at all — this candidate's `execution.result` is missing `counts`, the
+    plan's one declared `expected_output_keys` entry, and that must still surface
+    as `RESULT missing key 'counts'`.
+    """
+    task = _qiskit_human_eval_task("qiskitHumanEval/0")
+    source = task["prompt"] + task["canonical_solution"]
+    assert FrameworkProgram(Framework.QISKIT, source).role is ProgramRole.UNKNOWN
+
+    ports, llm, *_ = _ports()
+    payload = _plan_payload()
+    payload["artifact_contract"] = {
+        "artifact_type": "function",
+        "entry_point": task["entry_point"],
+        "measurement_policy": "not_applicable",
+        "top_level_execution": "forbidden",
+    }
+    llm.texts[0] = json.dumps(payload)
+    llm.texts[1] = json.dumps({"source": source})
+    run_id = uuid4()
+
+    planned = await ports.plan(run_id, None, None)
+    assert planned.value is not None
+    generated = await ports.generate(run_id, planned.value, None, None)
+    assert generated.value is not None
+    executed = await ports.run_execution(run_id, planned.value, generated.value)
+    assert executed.value is not None
+    # A candidate that went ahead and reported something anyway — truthy but
+    # missing the plan's one declared key. The `forbidden` contract says
+    # nothing was required to run; it does not say a report that DID happen
+    # gets to skip the key check.
+    incomplete_execution = executed.value.model_copy(update={"result": {"unrelated": 1}})
+
+    checked = await ports.check_contract(
+        run_id,
+        planned.value,
+        generated.value,
+        incomplete_execution,
+    )
+
+    assert checked.value is not None
+    assert checked.value.passed is False, checked.value.diagnostics
+    assert "RESULT missing key 'counts'" in checked.value.diagnostics
+
+
+def _entry_point_artifact_contract(entry_point: str) -> ArtifactContract:
+    return ArtifactContract(
+        entry_point=entry_point,
+        artifact_type=ArtifactType.FUNCTION,
+        measurement_policy=MeasurementPolicy.NONE,
+        top_level_execution=TopLevelExecution.FORBIDDEN,
+    )
+
+
+#: ai-ops 372 review round 3: every form the adversarial review named, both ways
+#: (real definition present -> pass; absent -> fail), plus the round-2 checker's
+#: own bug (a bare name that exists ONLY as a class method must not pass) and a
+#: malformed declaration (n/a, not a verdict on the candidate).
+_ENTRY_POINT_CASES = [
+    pytest.param(
+        "create_quantum_circuit(n_qubits)",
+        "def create_quantum_circuit(n_qubits):\n    return n_qubits\n",
+        "pass",
+        id="call-suffix-with-arg",
+    ),
+    pytest.param(
+        "create_quantum_circuit()",
+        "def create_quantum_circuit():\n    return None\n",
+        "pass",
+        id="call-suffix-no-arg",
+    ),
+    pytest.param(
+        "BellRunner.run",
+        "class BellRunner:\n    def run(self):\n        return 1\n",
+        "pass",
+        id="class-dot-method-real",
+    ),
+    pytest.param(
+        "module.create_quantum_circuit",
+        "def create_quantum_circuit(n):\n    return n\n",
+        "pass",
+        id="module-dot-name-last-segment",
+    ),
+    pytest.param(
+        "create_quantum_circuit(n_qubits)",
+        "def other_name(n):\n    return n\n",
+        "fail",
+        id="call-suffix-with-arg-absent",
+    ),
+    pytest.param(
+        "create_quantum_circuit()",
+        "def other_name():\n    return None\n",
+        "fail",
+        id="call-suffix-no-arg-absent",
+    ),
+    pytest.param(
+        "BellRunner.run",
+        "class BellRunner:\n    def other_method(self):\n        return 1\n",
+        "fail",
+        id="class-dot-method-absent",
+    ),
+    pytest.param(
+        "module.create_quantum_circuit",
+        "def other_name(n):\n    return n\n",
+        "fail",
+        id="module-dot-name-absent",
+    ),
+    pytest.param(
+        "run",
+        "class Foo:\n    def run(self):\n        return 1\n",
+        "fail",
+        id="bare-name-exists-only-as-class-method",
+    ),
+    pytest.param(
+        "run",
+        "def run():\n    return 1\n",
+        "pass",
+        id="bare-name-real-module-function",
+    ),
+    pytest.param(
+        "not a real path!!",
+        "def create_quantum_circuit(n):\n    return n\n",
+        "n/a",
+        id="malformed-declaration",
+    ),
+]
+
+
+@pytest.mark.parametrize("entry_point,source,expected", _ENTRY_POINT_CASES)
+def test_entry_point_check_resolves_every_declared_shape(entry_point, source, expected):
+    result = _entry_point_check(source, _entry_point_artifact_contract(entry_point))
+    assert result is not None
+    assert result["result"] == expected, result
+
+
+def test_return_contract_check_reports_na_not_pass_for_an_empty_non_derived_result():
+    """ai-ops 372, review round 3, mutation (c): an empty result is silence, not
+    a claim confirmed.
+
+    Review round 2 changed `_return_contract_check`'s empty-`result` branch from
+    `"pass"` to `"n/a"` on purpose (see its own docstring): a function that was
+    never called claims nothing and returns nothing, and reporting `pass` reads,
+    to a person and to `run-outcome.ts`'s `ai_review_aligned` branch, as "the
+    program returned what it claimed" — a check that ran and was satisfied. If
+    that empty-result branch reverted to falling through to `pass` (dropping the
+    `if not result:` early return), an unexecuted candidate would again be told
+    it confirmed a return contract it never had a chance to keep.
+    """
+    result = _return_contract_check({}, {})
+
+    assert result["method"] == "return_contract"
+    assert result["result"] == "n/a", result
+    assert result["details"] == {"result_origin": "not_executed", "result_keys": []}
+
+
 async def test_a_delivered_function_candidate_is_never_labelled_verified_pass():
     """ai-ops 372, downstream of the check_contract fix.
 
@@ -2648,6 +2819,93 @@ async def test_artifact_type_other_kills_a_widened_circuit_expected_mutation():
     )
     assert output.observation.get("evidence_error") == "source_fingerprint_mismatch"
     assert output.result == {}
+
+
+async def test_program_role_under_demo_only_still_must_bind_final_circuit():
+    """ai-ops 372, review round 3, mutation (a): a self-reported RESULT is not a
+    free pass just because the contract says execution was never required.
+
+    `no_result_promised` in runtime_ports.py keys on
+    `artifact_promises_no_executed_result(...) AND program.role is ProgramRole.UNKNOWN`.
+    The UNKNOWN half is load-bearing on its own: a FUNCTION/demo_only candidate
+    whose module-scope code runs itself and binds RESULT directly (ProgramRole.PROGRAM)
+    is not "nothing to report" — it is a program that self-reported a result with
+    no FINAL_CIRCUIT for the platform to compare it against. If the guard were
+    widened to grant the same exemption to PROGRAM role (dropping
+    `and program.role is ProgramRole.UNKNOWN`), `circuit_expected` would go False
+    for this candidate too, skip the `contract_diagnostics` "must bind
+    FINAL_CIRCUIT" check, and let a completely fabricated RESULT — no circuit
+    built, no native evidence collected, nothing to compare against — sail
+    straight through to the sandbox and out the other side as a real answer.
+    `test_function_demo_only_with_exact_diag_reference_still_grades_physical`
+    covers the twin case (PROGRAM role that DOES bind FINAL_CIRCUIT) and shows
+    real instrumentation still runs for it; this test is what proves the PROGRAM
+    role without FINAL_CIRCUIT is refused rather than silently exempted.
+    """
+    from majorana_agent.models import CandidateRevision
+    from majorana_contracts.plan import Plan
+    from majorana_frameworks import FrameworkProgram
+    from majorana_sandbox.local import LocalSubprocessSandbox
+    from majorana_worker.runtime_ports import SandboxCandidateExecutor
+
+    # Binds RESULT (ProgramRole.PROGRAM) but never builds or binds FINAL_CIRCUIT —
+    # a number invented with no quantum computation behind it at all.
+    source = "RESULT = {'value': 42}\n"
+    plan = Plan.model_validate(
+        {
+            "domain": "quantum information",
+            "algorithm": "other",
+            "framework": "qiskit",
+            "parameters": {
+                "shots": None,
+                "seed": None,
+                "custom": None,
+                "optimizer": None,
+                "max_iterations": None,
+            },
+            "problem_summary": "Report a fabricated value with no circuit behind it",
+            "algorithm_rationale": "No quantum algorithm applies to this request",
+            "qubits_estimate": 1,
+            "success_criteria": {
+                "primary_metric": "value",
+                "expected_range": None,
+                "additional_notes": None,
+            },
+            "artifact_contract": {
+                "entry_point": "compute",
+                "artifact_type": "function",
+                "measurement_policy": "none",
+                "top_level_execution": "demo_only",
+            },
+            "verification_plan": None,
+            "expected_output_keys": ["value"],
+            "expected_runtime_sec": 5,
+        }
+    )
+    program = FrameworkProgram(Framework.QISKIT, source)
+    assert program.role is ProgramRole.PROGRAM, (
+        "fixture must exercise the PROGRAM role, not UNKNOWN"
+    )
+    candidate = CandidateRevision(
+        candidate_id=uuid4(),
+        run_id=uuid4(),
+        tool_call_id="program-role-fabrication-control",
+        revision=1,
+        plan_id=uuid4(),
+        framework=Framework.QISKIT,
+        source=program.normalized_source,
+        source_fingerprint=program.fingerprint,
+    )
+
+    output = await SandboxCandidateExecutor(LocalSubprocessSandbox()).run_candidate(candidate, plan)
+
+    assert output.failure_kind is ExecutionFailureKind.CODE_ERROR, (
+        "a PROGRAM-role candidate under a demo_only FUNCTION contract must NOT get "
+        "the UNKNOWN-only no_result_promised exemption — it still owes FINAL_CIRCUIT"
+    )
+    assert output.observation.get("contract_diagnostics") == [
+        "contract:qiskit circuit code must bind FINAL_CIRCUIT"
+    ]
 
 
 async def test_basic_contract_rejects_observed_qubits_above_plan_and_lane():
@@ -3402,6 +3660,115 @@ async def test_repo_review_saver_persists_every_deliverable_artifact_without_ver
     else:
         assert "Intent alignment was not established" in captured["version"]["limitations"]
     assert captured["run_binding"] == (run_id, version_id)
+
+
+async def test_repo_saver_computes_result_never_executed_from_real_evidence(monkeypatch):
+    """ai-ops 372, review round 3, mutation (f) — the artifact-saver half.
+
+    `test_finish_simple_pipeline_computes_result_never_executed_from_real_evidence`
+    (test_handlers.py) covers the run-row summary's wiring; this is the OTHER
+    call site named by the coordinator, the artifact saver's own
+    `result_never_executed=(not execution.result and not result_was_derived(...))`
+    inside `_materialize`. Every other test that reaches "function written, never
+    called" sets `result_never_executed=True` by hand when calling
+    `simple_pipeline_verification_summary` directly — none of them drive
+    `RepoReviewArtifactSaver.save` itself with evidence that is genuinely empty.
+    If that computation were hardcoded to `False` (mutant R7), a candidate that
+    really never executed anything would still be filed as though it had.
+    """
+    run_id = uuid4()
+    candidate_id = uuid4()
+    execution_id = uuid4()
+    task = _qiskit_human_eval_task("qiskitHumanEval/0")
+    source = task["prompt"] + task["canonical_solution"]
+    program = FrameworkProgram(Framework.QISKIT, source)
+    assert program.role is ProgramRole.UNKNOWN
+    candidate = CandidateRevision(
+        candidate_id=candidate_id,
+        run_id=run_id,
+        tool_call_id="simple:generate:1",
+        revision=1,
+        plan_id=uuid4(),
+        framework=Framework.QISKIT,
+        source=program.normalized_source,
+        source_fingerprint=program.fingerprint,
+    )
+    execution = ExecutionEvidence(
+        execution_id=execution_id,
+        candidate_id=candidate_id,
+        source_fingerprint=program.fingerprint,
+        environment_fingerprint="e" * 64,
+        sandbox_provider="test",
+        exit_code=0,
+        duration_ms=1,
+        # The real shape: nothing ran, nothing was derived. Nothing here sets
+        # result_never_executed by hand — the saver must compute it from this.
+        result={},
+        observation={},
+    )
+    review = SemanticReviewEvidence(
+        review_id=uuid4(),
+        candidate_id=candidate_id,
+        execution_id=execution_id,
+        source_fingerprint=program.fingerprint,
+        attempt_seq=1,
+        decision=SemanticReviewDecision.READY,
+        confidence="high",
+        severity="none",
+        reason_code="semantic_ready",
+        failure_class=None,
+        retry_target=RetryTarget.NONE,
+        feedback={
+            "critic": {"summary": "delivers the requested function", "residual_risks": []},
+            "basic_checks": [
+                {"method": "structural", "result": "pass"},
+                {"method": "return_contract", "result": "n/a"},
+            ],
+        },
+    )
+    payload = _plan_payload()
+    payload["artifact_contract"] = {
+        "artifact_type": "function",
+        "entry_point": task["entry_point"],
+        "measurement_policy": "not_applicable",
+        "top_level_execution": "forbidden",
+    }
+    payload.pop("verification_plan")
+    plan = Plan.model_validate(payload)
+    artifact_id = uuid4()
+    version_id = uuid4()
+    captured = {}
+
+    async def create_artifact(_scope, _session, **values):
+        return SimpleNamespace(id=artifact_id)
+
+    async def create_version(_scope, _session, _artifact_id, **values):
+        captured["version"] = values
+        return SimpleNamespace(id=version_id, seq=1)
+
+    async def set_run_artifact_version(_scope, _session, _run_id, _version_id):
+        return None
+
+    monkeypatch.setattr(simple_ports_module.artifacts_repo, "create_artifact", create_artifact)
+    monkeypatch.setattr(simple_ports_module.artifacts_repo, "create_version", create_version)
+    monkeypatch.setattr(
+        simple_ports_module.runs_repo,
+        "set_run_artifact_version",
+        set_run_artifact_version,
+    )
+    saver = RepoReviewArtifactSaver(
+        scope=object(),
+        session=object(),
+        run_id=run_id,
+        parent_artifact_id=None,
+        title="Bell state",
+    )
+
+    await saver.save(candidate, execution, review, None, plan)
+
+    summary = captured["version"]["metadata"]["verification_summary"]
+    assert summary["reason_code"] == "function_written_not_called", summary
+    assert "function written, never called" in summary["unverified_claims"]
 
 
 async def test_repo_saver_persists_large_source_as_explicitly_unexecuted(monkeypatch):
