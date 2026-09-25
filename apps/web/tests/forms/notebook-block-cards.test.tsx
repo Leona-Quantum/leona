@@ -191,8 +191,14 @@ test("a stage below the root says its numbers are the whole workflow's", () => {
 // ------------------------------------------------------------------------- prose and holes
 
 test("a method with no planner numbers shows its source's cost text and citations", () => {
-  const view = renderNotebook([blockCell("b01", { ...GROVER, method: "product-formula-simulation", plan: null, size_param: null })]);
+  const view = renderNotebook(
+    [blockCell("b01", { ...GROVER, method: "product-formula-simulation", plan: null, size_param: null }), checkCell("k01", "b01")],
+    [verdict("k01", "pass", 4)],
+  );
   const shown = text(view);
+  // No size to place, so the boundary says past what width the source's words are all there is.
+  const cited = CATALOG.methods.find((candidate) => candidate.id === "product-formula-simulation")!.citations[0];
+  assert.ok(shown.includes(COPY.proseBeyond("4", `${cited.authors.split(",")[0].trim().split(/\s+/).pop()} et al. ${cited.year}`)));
   assert.ok(shown.includes(COPY.proseHeading));
   const method = CATALOG.methods.find((candidate) => candidate.id === "product-formula-simulation")!;
   assert.ok(method.citations.length > 0);
@@ -207,6 +213,8 @@ test("a method whose cost the Atlas does not record is a hole with the Atlas's r
   assert.ok(shown.includes(COPY.holeHeading));
   assert.ok(shown.includes(COPY.holeReason));
   assert.match(shown, /Katz/);
+  // Nothing is shown as a cost, so nothing is called anyone's claim.
+  assert.doesNotMatch(shown, /'s claim/);
 });
 
 test("an id the Atlas does not have is a hole that says so", () => {
@@ -262,7 +270,7 @@ test("with no passing check, every size is the source's claim", () => {
   const view = renderNotebook([blockCell("b01", GROVER), checkCell("k01", "b01")], []);
   const shown = text(view);
   assert.ok(shown.includes(COPY.noBoundary));
-  assert.match(shown, /the numbers above are .+'s claim/);
+  assert.match(shown, /the cost above is .+'s claim/);
 });
 
 test("a block with no linked check says how to add one", () => {

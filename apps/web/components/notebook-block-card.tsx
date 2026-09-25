@@ -206,7 +206,13 @@ export function NotebookBlockCard({
         evidence={evidence}
         boundary={boundary}
         width={cost?.width ?? null}
-        hasPlan={Boolean(placed && cost)}
+        shown={
+          catalog.status === "ready" && placed && cost
+            ? "numbers"
+            : catalog.status === "ready" && method?.cost
+              ? "prose"
+              : "none"
+        }
         source={source}
         copy={copy}
         checkCopy={checkCopy}
@@ -386,7 +392,7 @@ function BlockEvidenceSection({
   evidence,
   boundary,
   width,
-  hasPlan,
+  shown,
   source,
   copy,
   checkCopy,
@@ -394,12 +400,14 @@ function BlockEvidenceSection({
   evidence: readonly BlockEvidence[];
   boundary: number | null;
   width: number | null;
-  hasPlan: boolean;
+  /** What the card shows as the cost: the planner's numbers at a size, the source's own
+   * words, or nothing (a hole, or the Atlas not loaded). Nothing shown, nothing claimed. */
+  shown: "numbers" | "prose" | "none";
   source: string;
   copy: BlockCopy;
   checkCopy: CheckCopy;
 }) {
-  const standing = sizeStanding(hasPlan ? width : null, boundary);
+  const standing = sizeStanding(shown === "numbers" ? width : null, boundary);
   return (
     <section className="mj-notebook-block-evidence" aria-label={copy.evidenceHeading}>
       <h4 className="mj-notebook-block-subheading">{copy.evidenceHeading}</h4>
@@ -423,16 +431,22 @@ function BlockEvidenceSection({
           ))}
         </ul>
       )}
-      <p className="mj-notebook-block-boundary" data-standing={standing}>
-        {boundary === null ? copy.noBoundary : copy.boundary(formatPlain(boundary))}{" "}
-        {standing === "within" && width !== null
-          ? copy.within(formatPlain(width))
-          : standing === "beyond" && width !== null && boundary !== null
-            ? copy.beyond(formatPlain(boundary), formatPlain(width), source)
-            : standing === "unplaced" && boundary !== null
-              ? copy.unplacedStanding(formatPlain(boundary), source)
-              : copy.uncheckedClaim(source)}
-      </p>
+      {shown === "none" ? (
+        boundary !== null ? <p className="mj-notebook-block-boundary">{copy.boundary(formatPlain(boundary))}</p> : null
+      ) : (
+        <p className="mj-notebook-block-boundary" data-standing={standing}>
+          {boundary === null ? copy.noBoundary : copy.boundary(formatPlain(boundary))}{" "}
+          {standing === "within" && width !== null
+            ? copy.within(formatPlain(width))
+            : standing === "beyond" && width !== null && boundary !== null
+              ? copy.beyond(formatPlain(boundary), formatPlain(width), source)
+              : standing === "unplaced" && boundary !== null
+                ? shown === "prose"
+                  ? copy.proseBeyond(formatPlain(boundary), source)
+                  : copy.unplacedStanding(formatPlain(boundary), source)
+                : copy.uncheckedClaim(source)}
+        </p>
+      )}
       {standing === "beyond" ? (
         <p className="mj-notebook-block-muted">
           {copy.ceilings(

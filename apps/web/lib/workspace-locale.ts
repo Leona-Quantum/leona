@@ -5208,6 +5208,7 @@ export const NOTEBOOK_BLOCK_COPY: Record<PublicLocale, {
   within: (width: string) => string;
   beyond: (boundary: string, width: string, source: string) => string;
   unplacedStanding: (boundary: string, source: string) => string;
+  proseBeyond: (boundary: string, source: string) => string;
   uncheckedClaim: (source: string) => string;
   ceilings: (state: string, distribution: string, unitary: string, energy: string) => string;
   sourceJoin: string;
@@ -5278,13 +5279,14 @@ export const NOTEBOOK_BLOCK_COPY: Record<PublicLocale, {
     evidenceChecked: (qubits) => `checked on a ${qubits}-qubit circuit`,
     evidenceValue: "checked from a value, so it has no circuit width",
     boundary: (qubits) => `The checks here pass on circuits up to ${qubits} qubits.`,
-    noBoundary: "No check with a circuit has passed yet, so nothing in this notebook backs these numbers at any size.",
+    noBoundary: "No check with a circuit has passed yet, so nothing in this notebook backs this cost at any size.",
     within: (width) => `At this size the circuit has ${width} qubits, inside what the checks here ran.`,
     beyond: (boundary, width, source) =>
-      `Beyond ${boundary} qubits, the numbers above are ${source}'s claim. Nothing in this notebook has run a ${width}-qubit circuit.`,
+      `Beyond ${boundary} qubits, the cost above is ${source}'s claim. Nothing in this notebook has run a ${width}-qubit circuit.`,
     unplacedStanding: (boundary, source) =>
-      `The plan gives no qubit count at this size, so it cannot be placed against the checks, which reach ${boundary} qubits. The numbers above are ${source}'s claim.`,
-    uncheckedClaim: (source) => `At every size, the numbers above are ${source}'s claim.`,
+      `The plan gives no qubit count at this size, so it cannot be placed against the checks, which reach ${boundary} qubits. The cost above is ${source}'s claim.`,
+    proseBeyond: (boundary, source) => `Past ${boundary} qubits, the cost above is ${source}'s claim.`,
+    uncheckedClaim: (source) => `At every size, the cost above is ${source}'s claim.`,
     ceilings: (state, distribution, unitary, energy) =>
       `Leona checks a state on at most ${state} qubits, a distribution on ${distribution}, a unitary on ${unitary} and an energy on ${energy}. Past that, the source is all there is.`,
     sourceJoin: " and ",
@@ -5357,13 +5359,14 @@ export const NOTEBOOK_BLOCK_COPY: Record<PublicLocale, {
     evidenceChecked: (qubits) => `${qubits} 量子ビットの回路でチェック済み`,
     evidenceValue: "値からチェックしたため、回路の幅はありません",
     boundary: (qubits) => `このノートブックのチェックは、${qubits} 量子ビットまでの回路で合格しています。`,
-    noBoundary: "回路を使うチェックはまだ合格していないため、どの規模でもこの数値を裏付けるものはこのノートブックにありません。",
+    noBoundary: "回路を使うチェックはまだ合格していないため、どの規模でもこのコストを裏付けるものはこのノートブックにありません。",
     within: (width) => `この規模では回路は ${width} 量子ビットで、チェックが実行した範囲に入っています。`,
     beyond: (boundary, width, source) =>
-      `${boundary} 量子ビットを超える部分の数値は ${source} の主張です。このノートブックでは ${width} 量子ビットの回路を実行していません。`,
+      `${boundary} 量子ビットを超える規模では、上のコストは ${source} の主張です。このノートブックでは ${width} 量子ビットの回路を実行していません。`,
     unplacedStanding: (boundary, source) =>
-      `この規模では計画に量子ビット数がないため、${boundary} 量子ビットまでのチェックと比べられません。数値は ${source} の主張です。`,
-    uncheckedClaim: (source) => `どの規模でも、上の数値は ${source} の主張です。`,
+      `この規模では計画に量子ビット数がないため、${boundary} 量子ビットまでのチェックと比べられません。上のコストは ${source} の主張です。`,
+    proseBeyond: (boundary, source) => `${boundary} 量子ビットを超える規模では、上のコストは ${source} の主張です。`,
+    uncheckedClaim: (source) => `どの規模でも、上のコストは ${source} の主張です。`,
     ceilings: (state, distribution, unitary, energy) =>
       `Leona がチェックできるのは、状態は ${state} 量子ビット、分布は ${distribution}、ユニタリは ${unitary}、エネルギーは ${energy} 量子ビットまでです。それを超える規模では出典だけが頼りです。`,
     sourceJoin: "と",
