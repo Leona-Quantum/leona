@@ -209,6 +209,10 @@ type = "forbidden"
 source_modules = ["leona_mcp"]
 forbidden_modules = [
     "majorana_api",
+    # The check-cell engine lives here, and the API route judges with it; the MCP server
+    # asks the route over HTTP (`check_circuit`, ai-ops 382) and must never judge a
+    # circuit itself, or its verdicts would come from code a user's machine controls.
+    "leona_notebooks",
     "majorana_agent",
     "majorana_worker",
     "sqlalchemy",
@@ -225,6 +229,9 @@ type = "forbidden"
 source_modules = ["leona_client"]
 forbidden_modules = [
     "majorana_api",
+    # Same reason as the MCP contract above (`Client.check_circuit` asks the route, it
+    # never runs the engine), and also a cycle: leona_notebooks depends on this package.
+    "leona_notebooks",
     "majorana_agent",
     "majorana_worker",
     "sqlalchemy",
