@@ -192,6 +192,7 @@ export async function PublicSite({
               <span>{copy.footer.company}</span>
               <Link href="/about">{copy.nav.about}</Link>
               <Link href="/pricing">{copy.nav.pricing}</Link>
+              <Link href="/benchmarks">{copy.nav.benchmarks}</Link>
               <Link href="/contact">{copy.footer.contact}</Link>
             </div>
             <div>
