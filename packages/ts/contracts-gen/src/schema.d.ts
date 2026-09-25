@@ -1011,6 +1011,11 @@ export interface components {
              */
             caught: number;
             /**
+             * Could Not Run
+             * @default 0
+             */
+            could_not_run: number;
+            /**
              * Equivalent
              * @default 0
              */
