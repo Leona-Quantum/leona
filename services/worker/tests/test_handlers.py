@@ -17,11 +17,13 @@ from majorana_agent import (
 from majorana_contracts import CircuitOptimizationRequest
 from majorana_frameworks.optimizers import build_kernel_payload, result_from_kernel
 from majorana_contracts.enums import (
+    ArtifactType,
     Framework,
     RunMode,
     RunStatus,
     RetryTarget,
     SemanticReviewDecision,
+    TopLevelExecution,
     VerifierDecision,
 )
 from majorana_api import credential_crypto
@@ -492,7 +494,13 @@ async def test_simple_terminal_success_records_typed_advisory_outcome():
     # `ExecutionEvidence.observation` is a required field with a default factory,
     # so it is never absent on the real type. A double thinner than the thing it
     # stands in for fails on the first caller that reads a real field.
-    execution = SimpleNamespace(observation={})
+    # `result` is non-empty here to match `basic_checks` below (return_contract
+    # and success_criteria both recorded "pass", which only happens when the
+    # candidate genuinely returned something) — ai-ops 372 review round 2:
+    # `result_never_executed` reads `execution.result` directly, so a double
+    # claiming a real "pass" while carrying an empty result would silently mislabel
+    # this advisory-but-executed outcome as "function written, never called".
+    execution = SimpleNamespace(observation={}, result={"counts": {"00": 512, "11": 512}})
     review = SimpleNamespace(
         decision=SemanticReviewDecision.READY,
         severity="none",
@@ -563,6 +571,96 @@ async def test_simple_terminal_success_records_typed_advisory_outcome():
         "verification_summary": summary,
         "residual_risks": "AI review is advisory",
     }
+
+
+async def test_finish_simple_pipeline_computes_result_never_executed_from_real_evidence():
+    """ai-ops 372, review round 3, mutation (f): the handler must derive
+    `result_never_executed` from the run's own evidence, not from a caller's say-so.
+
+    `test_simple_terminal_success_records_typed_advisory_outcome` above pins the
+    executed path (non-empty `execution.result`) and every other end-to-end test
+    for this reason code sets `result_never_executed=True` by hand when calling
+    `simple_pipeline_verification_summary` directly — none of them drive
+    `_finish_simple_pipeline` itself with evidence that is ACTUALLY empty. If
+    the handler's own
+    `result_never_executed=(not execution.result and not result_was_derived(...))`
+    computation were hardcoded to `False` (mutant R6), this exact scenario — a
+    candidate whose execution genuinely returned nothing and derived nothing —
+    would be misfiled under the ordinary "ai_review_aligned" reason code instead
+    of "function_written_not_called", and nothing here would catch it.
+    """
+    run_id = uuid.uuid4()
+    candidate_id = uuid.uuid4()
+    candidate = SimpleNamespace(
+        candidate_id=candidate_id,
+        source_fingerprint="a" * 64,
+    )
+    # The real shape a genuinely-never-executed candidate's evidence takes:
+    # empty result, no derivation. This is what the handler itself must read to
+    # arrive at result_never_executed=True — nothing here sets that flag by hand.
+    execution = SimpleNamespace(observation={}, result={})
+    # ai-ops 372, review round 3 (nit): the handler now also requires the
+    # Plan's own artifact_contract to promise no executed result before it
+    # will claim "function written, never called" — a FUNCTION/forbidden
+    # contract is exactly the shape that promise applies to.
+    plan = SimpleNamespace(
+        plan=SimpleNamespace(
+            artifact_contract=SimpleNamespace(
+                artifact_type=ArtifactType.FUNCTION,
+                top_level_execution=TopLevelExecution.FORBIDDEN,
+            )
+        )
+    )
+    review = SimpleNamespace(
+        decision=SemanticReviewDecision.READY,
+        severity="none",
+        feedback={
+            "critic": {"residual_risks": ["AI review is advisory"]},
+            "basic_checks": [
+                {"method": "structural", "result": "pass"},
+                {"method": "return_contract", "result": "n/a"},
+            ],
+        },
+        assert_binding=lambda _candidate, _execution: None,
+    )
+    artifact = SimpleNamespace(
+        candidate_id=candidate_id,
+        source_fingerprint="a" * 64,
+    )
+    outcome = SimplePipelineOutcome(
+        status=SimplePipelineStatus.SUCCEEDED,
+        stage=SimplePipelineStage.COMPLETED,
+        counters=SimplePipelineCounters(),
+        plan=plan,
+        candidate=candidate,
+        execution=execution,
+        review=review,
+        artifact=artifact,
+    )
+
+    class RunStore:
+        async def finish(self, status, payload, **fields):
+            self.observed = (status, payload, fields)
+            return status
+
+    run_store = RunStore()
+    ctx = RunContext(
+        run_id=run_id,
+        task_prompt="Write a function, never call it",
+        mode=RunMode.EXECUTE,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=None,
+        sink=object(),
+    )
+    result = await handlers._finish_simple_pipeline(ctx, run_store, outcome)
+
+    assert result is RunStatus.SUCCEEDED
+    status, payload, _fields = run_store.observed
+    assert payload["reason_code"] == "function_written_not_called", payload
+    summary = payload["verification_summary"]
+    assert "function written, never called" in summary["unverified_claims"]
 
 
 async def test_completed_execute_generates_a_grounded_natural_language_explanation():

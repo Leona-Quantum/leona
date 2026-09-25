@@ -28,16 +28,20 @@ from majorana_agent import (
 )
 from majorana_contracts.enums import (
     Algorithm,
+    ArtifactType,
     EvidenceStrength,
     Framework,
+    MeasurementPolicy,
     RetryTarget,
     SemanticReviewDecision,
+    TopLevelExecution,
     VerificationFailureClass,
     VerificationMethod,
     VerifierDecision,
 )
-from majorana_contracts.plan import Plan, ProblemTerm, ReferenceProblem
+from majorana_contracts.plan import ArtifactContract, Plan, ProblemTerm, ReferenceProblem
 from majorana_frameworks import FrameworkProgram
+from majorana_frameworks.roles import ProgramRole
 from majorana_llm import ATLAS_WORKFLOW_PLAN_DIRECTIVE, LLMProviderError, LLMResponse
 
 from majorana_worker import simple_ports as simple_ports_module
@@ -48,10 +52,12 @@ from majorana_worker.simple_ports import (
     SimpleIntentReviewResult,
     _bounded_repair_value,
     _dynamics_reference_call_args,
+    _entry_point_check,
     _invalid_field_snapshot,
     _reference_checks,
     _reference_check_routing,
     _preserve_replan_range_strength,
+    _return_contract_check,
     passed_reference_methods,
     recorded_basic_checks,
     simple_pipeline_verification_summary,
@@ -1883,6 +1889,1025 @@ async def test_basic_contract_reads_protected_result_not_sandbox_stdout():
     assert executed.value.observation["sandbox_stdout"]
 
 
+def _qiskit_human_eval_task(task_id: str) -> dict:
+    """Load one REAL vendored Qiskit HumanEval task (ai-ops 372).
+
+    Same file the live 2026-09-23 benchmark run scored against
+    (evals/public-benchmarks/qiskit-human-eval, pinned in its own PROVENANCE.md).
+    Used here to reproduce, with no model call, why Nala's own review step
+    turned down a candidate that is byte-for-byte the benchmark's own
+    canonical (i.e. definitionally correct) solution.
+    """
+    from pathlib import Path
+
+    dataset_path = (
+        Path(__file__).resolve().parents[3]
+        / "evals"
+        / "public-benchmarks"
+        / "qiskit-human-eval"
+        / "dataset_qiskit_test_human_eval.json"
+    )
+    records = json.loads(dataset_path.read_text())
+    (record,) = (r for r in records if r["task_id"] == task_id)
+    return record
+
+
+@pytest.mark.parametrize(
+    "task_id",
+    ["qiskitHumanEval/0", "qiskitHumanEval/1"],
+    ids=["create_quantum_circuit", "run_bell_state_simulator"],
+)
+async def test_basic_contract_accepts_a_function_that_never_needed_to_run(task_id):
+    """ai-ops 372: reproduce, offline, why the review step turned down correct code.
+
+    `qiskitHumanEval/0` and `/1` both ask for a plain Python FUNCTION — one
+    returns an unexecuted `QuantumCircuit` object, the other computes and
+    returns counts as its own return value. Neither canonical (i.e. correct
+    by the benchmark's own grading) solution binds `RESULT` or `FINAL_CIRCUIT`
+    at module scope, because nothing in the task asks the candidate to
+    demonstrate execution — `classify_source` (majorana_frameworks.roles)
+    reads that source as `ProgramRole.UNKNOWN`, confirmed below with no model
+    call. `check_contract`'s non-CIRCUIT branch then requires the model's own
+    `expected_output_keys` (schema-mandated, `min_length=1`, so it can never
+    be empty) to appear in `execution.result` — which stays `{}` forever, for
+    every one of `max_generation_attempts` (8) candidates, because nothing
+    about this task ever populates a module-scope RESULT. The plan's own
+    `artifact_contract.artifact_type=function` already says the deliverable
+    is a callable, not a result-reporting computation — the same distinction
+    `majorana_verification.methods.verify_return_contract`'s docstring
+    describes ("the plan means the *entry point's* return value there, and
+    nothing observes that today") but check_contract never consults it.
+    """
+    task = _qiskit_human_eval_task(task_id)
+    source = task["prompt"] + task["canonical_solution"]
+
+    # Independent confirmation, no model call: the benchmark's own correct
+    # answer binds neither RESULT nor FINAL_CIRCUIT at module scope.
+    assert FrameworkProgram(Framework.QISKIT, source).role is ProgramRole.UNKNOWN
+
+    ports, llm, *_ = _ports()
+    payload = _plan_payload()
+    payload["artifact_contract"] = {
+        "artifact_type": "function",
+        "entry_point": task["entry_point"],
+        "measurement_policy": "not_applicable",
+        "top_level_execution": "forbidden",
+    }
+    llm.texts[0] = json.dumps(payload)
+    llm.texts[1] = json.dumps({"source": source})
+    run_id = uuid4()
+
+    planned = await ports.plan(run_id, None, None)
+    assert planned.value is not None
+    assert planned.value.plan.artifact_contract is not None
+    assert planned.value.plan.artifact_contract.artifact_type.value == "function"
+    generated = await ports.generate(run_id, planned.value, None, None)
+    assert generated.value is not None
+    executed = await ports.run_execution(run_id, planned.value, generated.value)
+    assert executed.value is not None
+    # The fake Executor test double always returns a Bell-state result
+    # regardless of source; override it with what a REAL sandbox run of this
+    # exact, role=UNKNOWN source produces — nothing, because nothing in it
+    # ever assigns RESULT (confirmed above via classify_source, the same
+    # function run_candidate itself uses for the lowering decision).
+    real_execution = executed.value.model_copy(update={"result": {}})
+
+    checked = await ports.check_contract(
+        run_id,
+        planned.value,
+        generated.value,
+        real_execution,
+    )
+
+    assert checked.value is not None
+    assert checked.value.passed is True, checked.value.diagnostics
+    assert not any("RESULT missing key" in item for item in checked.value.diagnostics)
+
+
+async def test_a_reported_but_incomplete_result_still_fails_under_a_forbidden_plan():
+    """ai-ops 372, review round 3, mutation (b): a Plan saying execution was never
+    required is not a license to report an incomplete RESULT unchecked.
+
+    `check_contract`'s non-CIRCUIT branch reads
+    `elif execution.result or not artifact_promises_no_executed_result(...)`: the
+    `execution.result or` half means a candidate that went ahead and reported
+    SOMETHING — even under a `forbidden` plan — still has that report checked
+    against `expected_output_keys`, exactly as it would without the exemption.
+    Dropping that half (checking only `not artifact_promises_no_executed_result`)
+    would let a candidate whose contract says "nothing required" report a
+    truncated, fabricated-looking RESULT and have it wave through with no key
+    check at all — this candidate's `execution.result` is missing `counts`, the
+    plan's one declared `expected_output_keys` entry, and that must still surface
+    as `RESULT missing key 'counts'`.
+    """
+    task = _qiskit_human_eval_task("qiskitHumanEval/0")
+    source = task["prompt"] + task["canonical_solution"]
+    assert FrameworkProgram(Framework.QISKIT, source).role is ProgramRole.UNKNOWN
+
+    ports, llm, *_ = _ports()
+    payload = _plan_payload()
+    payload["artifact_contract"] = {
+        "artifact_type": "function",
+        "entry_point": task["entry_point"],
+        "measurement_policy": "not_applicable",
+        "top_level_execution": "forbidden",
+    }
+    llm.texts[0] = json.dumps(payload)
+    llm.texts[1] = json.dumps({"source": source})
+    run_id = uuid4()
+
+    planned = await ports.plan(run_id, None, None)
+    assert planned.value is not None
+    generated = await ports.generate(run_id, planned.value, None, None)
+    assert generated.value is not None
+    executed = await ports.run_execution(run_id, planned.value, generated.value)
+    assert executed.value is not None
+    # A candidate that went ahead and reported something anyway — truthy but
+    # missing the plan's one declared key. The `forbidden` contract says
+    # nothing was required to run; it does not say a report that DID happen
+    # gets to skip the key check.
+    incomplete_execution = executed.value.model_copy(update={"result": {"unrelated": 1}})
+
+    checked = await ports.check_contract(
+        run_id,
+        planned.value,
+        generated.value,
+        incomplete_execution,
+    )
+
+    assert checked.value is not None
+    assert checked.value.passed is False, checked.value.diagnostics
+    assert "RESULT missing key 'counts'" in checked.value.diagnostics
+
+
+def _entry_point_artifact_contract(entry_point: str) -> ArtifactContract:
+    return ArtifactContract(
+        entry_point=entry_point,
+        artifact_type=ArtifactType.FUNCTION,
+        measurement_policy=MeasurementPolicy.NONE,
+        top_level_execution=TopLevelExecution.FORBIDDEN,
+    )
+
+
+#: ai-ops 372 review round 3: every form the adversarial review named, both ways
+#: (real definition present -> pass; absent -> fail), plus the round-2 checker's
+#: own bug (a bare name that exists ONLY as a class method must not pass) and a
+#: malformed declaration (n/a, not a verdict on the candidate).
+_ENTRY_POINT_CASES = [
+    pytest.param(
+        "create_quantum_circuit(n_qubits)",
+        "def create_quantum_circuit(n_qubits):\n    return n_qubits\n",
+        "pass",
+        id="call-suffix-with-arg",
+    ),
+    pytest.param(
+        "create_quantum_circuit()",
+        "def create_quantum_circuit():\n    return None\n",
+        "pass",
+        id="call-suffix-no-arg",
+    ),
+    pytest.param(
+        "BellRunner.run",
+        "class BellRunner:\n    def run(self):\n        return 1\n",
+        "pass",
+        id="class-dot-method-real",
+    ),
+    pytest.param(
+        "module.create_quantum_circuit",
+        "def create_quantum_circuit(n):\n    return n\n",
+        "pass",
+        id="module-dot-name-last-segment",
+    ),
+    pytest.param(
+        "create_quantum_circuit(n_qubits)",
+        "def other_name(n):\n    return n\n",
+        "fail",
+        id="call-suffix-with-arg-absent",
+    ),
+    pytest.param(
+        "create_quantum_circuit()",
+        "def other_name():\n    return None\n",
+        "fail",
+        id="call-suffix-no-arg-absent",
+    ),
+    pytest.param(
+        "BellRunner.run",
+        "class BellRunner:\n    def other_method(self):\n        return 1\n",
+        "fail",
+        id="class-dot-method-absent",
+    ),
+    pytest.param(
+        "module.create_quantum_circuit",
+        "def other_name(n):\n    return n\n",
+        "fail",
+        id="module-dot-name-absent",
+    ),
+    pytest.param(
+        "run",
+        "class Foo:\n    def run(self):\n        return 1\n",
+        "fail",
+        id="bare-name-exists-only-as-class-method",
+    ),
+    pytest.param(
+        "run",
+        "def run():\n    return 1\n",
+        "pass",
+        id="bare-name-real-module-function",
+    ),
+    pytest.param(
+        "not a real path!!",
+        "def create_quantum_circuit(n):\n    return n\n",
+        "n/a",
+        id="malformed-declaration",
+    ),
+]
+
+
+@pytest.mark.parametrize("entry_point,source,expected", _ENTRY_POINT_CASES)
+def test_entry_point_check_resolves_every_declared_shape(entry_point, source, expected):
+    result = _entry_point_check(source, _entry_point_artifact_contract(entry_point))
+    assert result is not None
+    assert result["result"] == expected, result
+
+
+def test_return_contract_check_reports_na_not_pass_for_an_empty_non_derived_result():
+    """ai-ops 372, review round 3, mutation (c): an empty result is silence, not
+    a claim confirmed.
+
+    Review round 2 changed `_return_contract_check`'s empty-`result` branch from
+    `"pass"` to `"n/a"` on purpose (see its own docstring): a function that was
+    never called claims nothing and returns nothing, and reporting `pass` reads,
+    to a person and to `run-outcome.ts`'s `ai_review_aligned` branch, as "the
+    program returned what it claimed" — a check that ran and was satisfied. If
+    that empty-result branch reverted to falling through to `pass` (dropping the
+    `if not result:` early return), an unexecuted candidate would again be told
+    it confirmed a return contract it never had a chance to keep.
+    """
+    result = _return_contract_check({}, {})
+
+    assert result["method"] == "return_contract"
+    assert result["result"] == "n/a", result
+    assert result["details"] == {"result_origin": "not_executed", "result_keys": []}
+
+
+async def test_a_delivered_function_candidate_is_never_labelled_verified_pass():
+    """ai-ops 372, downstream of the check_contract fix.
+
+    Pins the REAL, OBSERVED behavior with the real SimpleIntentReviewer (a
+    real advisory model call, stubbed response) rather than the fake Reviewer
+    double `_ports()` uses elsewhere in this file — so the full review()
+    codepath, including `_success_criteria_check`,
+    `SimpleIntentReviewer._decide`, and `simple_pipeline_verification_summary`,
+    actually runs.
+
+    **History, because the finding changed twice and both versions are worth
+    keeping straight.** The first version of this PR fixed only `check_contract`
+    and found — correctly, at the time — that this was NOT sufficient:
+    `SimpleIntentReviewer._decide` is a SEPARATE deterministic gate that forces
+    `CODE_REPAIR` whenever any `basic_checks` entry is `!= "pass"`, and `"n/a"`
+    (what `_success_criteria_check` reports for this shape) still counted,
+    so the candidate stayed stuck in `CODE_REPAIR` even with a "ready" model
+    opinion. That finding held up until the owner-approved diagnostic re-run
+    (2026-09-25, real deepseek-v4-pro traffic) showed it happening for real —
+    `qiskitHumanEval/0` cycling on `candidate_not_converging` — which is what
+    justified fixing `_decide` too, narrowly: when every non-"pass" check is
+    `"n/a"` (nothing failed, nothing to repair) AND the Plan's own
+    `artifact_contract` already said no executed result was required, `_decide`
+    now honors a "ready" opinion instead of overriding it. See
+    `test_diag_task0_real_candidate_is_delivered_ready_not_code_repair` below
+    for the same finding built from the actual recorded diagnostic candidate
+    rather than this synthetic one; both should reach the same place.
+
+    A REAL "fail" (an actual mismatch) still refuses exactly as before — see
+    `test_diag_task1_real_candidate_with_required_execution_still_repairs` for
+    a real-data control on that.
+    """
+    from majorana_evals.public_benchmarks.qiskit_human_eval import build_nala_prompt
+
+    task = _qiskit_human_eval_task("qiskitHumanEval/0")
+    source = task["prompt"] + task["canonical_solution"]
+    nala_prompt = build_nala_prompt(task["prompt"])
+
+    plan_payload = _plan_payload()
+    plan_payload["artifact_contract"] = {
+        "artifact_type": "function",
+        "entry_point": task["entry_point"],
+        "measurement_policy": "not_applicable",
+        "top_level_execution": "forbidden",
+    }
+    generation_llm = QueueLLM([json.dumps(plan_payload), json.dumps({"source": source})])
+    review_llm = QueueLLM(
+        [
+            json.dumps(
+                {
+                    "decision": "ready",
+                    "confidence": "high",
+                    "severity": "none",
+                    "summary": "the function matches the requested signature",
+                    "passed_checks": ["request_to_plan", "plan_to_source"],
+                    "residual_risks": ["AI review is advisory"],
+                }
+            )
+        ]
+    )
+    from majorana_sandbox.local import LocalSubprocessSandbox
+    from majorana_worker.runtime_ports import SandboxCandidateExecutor
+
+    ports = ProductionSimplePipelinePorts(
+        store=MemoryAgentStore(),
+        observer=Observer(),
+        llm=generation_llm,
+        executor=SandboxCandidateExecutor(LocalSubprocessSandbox()),
+        reviewer=SimpleIntentReviewer(llm=review_llm, task_prompt=nala_prompt),
+        converter=Converter(),
+        saver=Saver(),
+        task_prompt=nala_prompt,
+        framework=Framework.QISKIT,
+        requested_shots=100,
+        requested_seed=7,
+    )
+    run_id = uuid4()
+
+    planned = await ports.plan(run_id, None, None)
+    assert planned.value is not None
+    generated = await ports.generate(run_id, planned.value, None, None)
+    assert generated.value is not None
+    # The REAL sandbox, not the fake Executor test double.
+    real_execution = await ports.run_execution(run_id, planned.value, generated.value)
+    assert real_execution.value is not None
+    assert real_execution.value.result == {}
+    real_execution = real_execution.value
+
+    checked = await ports.check_contract(run_id, planned.value, generated.value, real_execution)
+    assert checked.value is not None
+    assert checked.value.passed is True, checked.value.diagnostics
+
+    reviewed = await ports.review(run_id, planned.value, generated.value, real_execution, 1)
+    assert reviewed.value is not None
+
+    checks = reviewed.value.feedback["basic_checks"]
+    success_criteria = next(c for c in checks if c["method"] == "success_criteria")
+    # This PR's second fix: honest "n/a" (nothing to check), not a false "fail".
+    assert success_criteria["result"] == "n/a", checks
+
+    assert reviewed.value.decision is SemanticReviewDecision.READY, reviewed.value.feedback
+
+    summary = simple_pipeline_verification_summary(
+        semantic_review_decision=reviewed.value.decision,
+        result_never_executed=True,
+        recorded_checks=checks,
+        review_severity=reviewed.value.severity,
+    )
+    assert summary["decision"] != "pass", (
+        "must never be labelled PASS without an independent reference (ADR-0023)"
+    )
+    assert summary["evidence_strength"] == "structural"
+    assert summary["candidate_defect_observed"] is False
+    # Review round 2, blocker 2: this must never read as "Executed" downstream
+    # (apps/web/lib/run-outcome.ts keys off reason_code == "ai_review_aligned").
+    assert summary["reason_code"] == "function_written_not_called"
+    assert "function written, never called" in summary["unverified_claims"]
+
+
+#: ai-ops 372, from the owner-approved $3 diagnostic re-run (2026-09-25, deepseek-v4-pro,
+#: pipeline commit 6ad4c8dd — this branch's own head at the time it ran). Pulled directly
+#: from the run's Postgres (run_plans/run_candidates for run_id 01a0d703-cd98-7e64-8999-
+#: 9d20bd84d44b, qiskitHumanEval/0's last-attempted run) rather than reconstructed — the
+#: model's REAL plan and REAL last candidate, byte for byte. See
+#: REVIEW-REJECTS-DIAGNOSIS.md §8.
+_DIAG_TASK0_PLAN_PAYLOAD = {
+    "domain": "quantum-circuit-construction",
+    "algorithm": "other",
+    "framework": "qiskit",
+    "parameters": {
+        "seed": None,
+        "shots": None,
+        "custom": None,
+        "optimizer": None,
+        "max_iterations": None,
+    },
+    "problem_summary": (
+        "Implement a self-contained Qiskit function create_quantum_circuit(n_qubits) that "
+        "accepts a positive integer n_qubits and returns a QuantumCircuit with exactly "
+        "n_qubits qubits and no classical bits. The function must preserve the exact "
+        "signature and docstring shown in the request, contain no example usage, print "
+        "statements, or tests, and be executable as written."
+    ),
+    "qubits_estimate": 1,
+    "success_criteria": {
+        "expected_range": None,
+        "primary_metric": "circuit_qubit_count",
+        "additional_notes": [
+            "The returned QuantumCircuit must have exactly n_qubits qubits and zero classical bits.",
+            "The function must be self-contained and preserve the requested signature and docstring.",
+        ],
+    },
+    "artifact_contract": {
+        "entry_point": "create_quantum_circuit",
+        "return_shape": "QuantumCircuit with n_qubits qubits and 0 classical bits",
+        "artifact_type": "function",
+        "measurement_policy": "none",
+        "top_level_execution": "forbidden",
+        "expected_return_type": "QuantumCircuit",
+    },
+    "verification_plan": None,
+    "algorithm_rationale": (
+        "The task is a minimal circuit-construction utility. A QuantumCircuit is "
+        "instantiated with the requested number of qubits and returned directly. No gates, "
+        "measurements, or classical registers are specified, so the circuit remains an "
+        "empty n-qubit register."
+    ),
+    "expected_output_keys": ["circuit_qubit_count", "circuit_classical_bit_count"],
+    "expected_runtime_sec": 5,
+}
+
+#: The model's real, last-attempted (revision 7) candidate for that same run — the exact
+#: source recorded in run_candidates, unedited. Independently confirmed to pass
+#: qiskitHumanEval/0's own check() (README's diagnostic scoring). Never bound RESULT or
+#: FINAL_CIRCUIT: `FrameworkProgram(Framework.QISKIT, _DIAG_TASK0_CANDIDATE_SOURCE).role
+#: is ProgramRole.UNKNOWN`, asserted below.
+_DIAG_TASK0_CANDIDATE_SOURCE = '''from qiskit import QuantumCircuit
+
+def create_quantum_circuit(n_qubits):
+    """ Generate a Quantum Circuit for the given int 'n_qubits' and return it.
+    """
+    if not isinstance(n_qubits, int) or n_qubits <= 0:
+        raise ValueError("n_qubits must be a positive integer")
+    return QuantumCircuit(n_qubits)
+'''
+
+#: qiskitHumanEval/1's real plan for the same diagnostic run (run_id
+#: 01a0d704-49cd-7513-a9f7-ece54aafba32) — top_level_execution="required", unlike task 0's
+#: "forbidden". Used below as a REAL-DATA CONTROL: this plan does NOT qualify for
+#: artifact_promises_no_executed_result, so the fixes in this PR must not, and do not,
+#: change its outcome.
+_DIAG_TASK1_PLAN_PAYLOAD = {
+    "domain": "quantum-computing",
+    "algorithm": "Bell",
+    "framework": "qiskit",
+    "parameters": {
+        "seed": None,
+        "shots": None,
+        "custom": None,
+        "optimizer": None,
+        "max_iterations": None,
+    },
+    "problem_summary": (
+        "Implement a self-contained Python function `run_bell_state_simulator()` in "
+        "Qiskit. The function must define a phi-plus Bell state circuit using a Hadamard "
+        "gate on qubit 0 followed by a CNOT with qubit 0 as control and qubit 1 as target, "
+        "transpile it, run it, and return the resulting counts dictionary."
+    ),
+    "qubits_estimate": 2,
+    "success_criteria": {
+        "expected_range": None,
+        "primary_metric": "counts",
+        "additional_notes": [
+            "The returned counts dictionary should contain keys '00' and '11' with "
+            "approximately equal probabilities.",
+            "The module-level name FINAL_CIRCUIT must be bound to the transpiled circuit object.",
+        ],
+    },
+    "artifact_contract": {
+        "entry_point": "run_bell_state_simulator",
+        "return_shape": "counts dictionary mapping bitstrings to counts",
+        "artifact_type": "function",
+        "measurement_policy": "measure_all",
+        "top_level_execution": "required",
+        "expected_return_type": "dict",
+    },
+    "verification_plan": None,
+    "algorithm_rationale": (
+        "A Bell state is created by applying a Hadamard gate to the first qubit, followed "
+        "by a CNOT gate. The final circuit object is bound to FINAL_CIRCUIT at module scope "
+        "to satisfy the execution contract."
+    ),
+    "expected_output_keys": ["counts"],
+    "expected_runtime_sec": 15,
+}
+
+#: The model's real revision-1 candidate for that run: a bare function, structurally
+#: identical in shape to task 0's (no RESULT/FINAL_CIRCUIT bound) — real evidence that the
+#: SAME shape of candidate reaches a DIFFERENT outcome once the plan's own
+#: top_level_execution says execution is required, not forbidden.
+_DIAG_TASK1_BARE_CANDIDATE_SOURCE = '''from qiskit import QuantumCircuit
+from qiskit_aer import AerSimulator
+from qiskit_ibm_runtime import Sampler
+from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
+
+def run_bell_state_simulator():
+    """ Define a phi plus bell state using Qiskit, transpile the circuit using pass manager with optimization level as 1, run it using Qiskit Sampler with the Aer simulator as backend and return the counts dictionary.
+    """
+    bell = QuantumCircuit(2)
+    bell.h(0)
+    bell.cx(0, 1)
+    bell.measure_all()
+    backend = AerSimulator()
+    pass_manager = generate_preset_pass_manager(optimization_level=1, backend=backend)
+    isa_circuit = pass_manager.run(bell)
+    sampler = Sampler(mode=backend)
+    result = sampler.run([isa_circuit], shots=1000).result()
+    return result[0].data.meas.get_counts()
+'''
+
+
+async def test_diag_task0_real_candidate_executes_cleanly_with_no_result_bound():
+    """ai-ops 372 §8, part 1 of 2: the EARLIEST gate, confirmed with the real sandbox.
+
+    Two rounds of fix here, and this docstring names both because the mechanism
+    changed between them:
+
+    Round 1 (wrong): I made `circuit_expected` False for every FUNCTION/CLASS Plan
+    not marked required. That turned OFF `FrameworkProgram.trusted_observer`/
+    `trusted_setup` entirely (both go to the empty string — "inert without an
+    observer to append to"), so `compose_execution` ran the candidate's bare
+    source with NO instrumentation at all: no epilogue ever wrote
+    `source_fingerprint`, so the very next check
+    (`observation["source_fingerprint"] == candidate.source_fingerprint`) failed
+    unconditionally. Confirmed directly against the real diagnostic evidence
+    (`candidate_executions.observation` for qiskitHumanEval/0's run, not the
+    trimmed `run_events` "sandbox.result" projection, which drops this field):
+    every one of its 5 executed attempts recorded `exit_code=3,
+    evidence_error="source_fingerprint_mismatch"` — the actual, confirmed reason
+    the repair loop kept regenerating byte-identical, already-correct source
+    until `candidate_not_converging` gave up on it. This ALSO threw away real
+    evidence for candidates that DID bind FINAL_CIRCUIT/RESULT under a
+    FUNCTION/CLASS Plan (an adversarial review's S1/S3 findings) — a real
+    regression from origin/dev, not just an incomplete fix.
+
+    Round 2 (current code): `circuit_expected` is restored to its original,
+    unconditional computation — instrumentation runs exactly as on dev, so
+    `source_fingerprint` is written and this check passes normally. Only a
+    narrower `no_result_promised` (= `artifact_promises_no_executed_result(...)
+    and program.role is ProgramRole.UNKNOWN`) treats a still-missing `RESULT` as
+    `{}` instead of `RESULT_missing`, later in the same function — the fingerprint
+    check itself is never touched. This test now exercises THAT fallback, not the
+    fingerprint one; `evidence_error="source_fingerprint_mismatch"` is asserted
+    absent as a regression guard against round 1's defect recurring, not as the
+    thing currently making this candidate succeed.
+
+    Uses the REAL LocalSubprocessSandbox (not a test double) so this is an actual
+    subprocess execution of the actual recorded source, not a simulation of one.
+    """
+    from majorana_agent.models import CandidateRevision
+    from majorana_frameworks import FrameworkProgram
+    from majorana_frameworks.roles import ProgramRole
+    from majorana_contracts.plan import Plan
+    from majorana_sandbox.local import LocalSubprocessSandbox
+    from majorana_worker.runtime_ports import SandboxCandidateExecutor
+
+    program = FrameworkProgram(Framework.QISKIT, _DIAG_TASK0_CANDIDATE_SOURCE)
+    assert program.role is ProgramRole.UNKNOWN
+
+    plan = Plan.model_validate(_DIAG_TASK0_PLAN_PAYLOAD)
+    candidate = CandidateRevision(
+        candidate_id=uuid4(),
+        run_id=uuid4(),
+        tool_call_id="diag-task0",
+        revision=1,
+        plan_id=uuid4(),
+        framework=Framework.QISKIT,
+        source=program.normalized_source,
+        source_fingerprint=program.fingerprint,
+    )
+
+    output = await SandboxCandidateExecutor(LocalSubprocessSandbox()).run_candidate(candidate, plan)
+
+    assert output.exit_code == 0, output.observation
+    assert output.failure_kind is None, output.observation
+    assert output.result == {}
+    # Round 2: instrumentation runs normally now — the fingerprint IS written
+    # (positive confirmation, not just the absence of the round-1 error).
+    assert output.observation.get("source_fingerprint") == candidate.source_fingerprint
+    assert output.observation.get("evidence_error") != "source_fingerprint_mismatch"
+
+
+async def test_diag_task0_real_candidate_is_delivered_ready_not_code_repair():
+    """ai-ops 372 §8, part 2 of 2: end to end, from not_converging to delivered.
+
+    Drives the REAL qiskitHumanEval/0 plan and the REAL last-attempted candidate from the
+    2026-09-25 diagnostic through check_contract -> review with the real
+    SimpleIntentReviewer, ending at simple_pipeline_verification_summary. In the live run
+    this exact shape ended in run_status="failed", reason "candidate_not_converging" — the
+    repair loop regenerated byte-identical source because check_contract (fixed earlier in
+    this PR) and _decide() (fixed here) both treated a Plan that explicitly declares no
+    executed result as if something had failed.
+    """
+    task0_source = _DIAG_TASK0_CANDIDATE_SOURCE
+    generation_llm = QueueLLM(
+        [json.dumps(_DIAG_TASK0_PLAN_PAYLOAD), json.dumps({"source": task0_source})]
+    )
+    review_llm = QueueLLM(
+        [
+            json.dumps(
+                {
+                    "decision": "ready",
+                    "confidence": "high",
+                    "severity": "none",
+                    "summary": "the function returns the requested QuantumCircuit",
+                    "passed_checks": ["request_to_plan", "plan_to_source"],
+                    "residual_risks": ["AI review is advisory"],
+                }
+            )
+        ]
+    )
+    from majorana_sandbox.local import LocalSubprocessSandbox
+    from majorana_worker.runtime_ports import SandboxCandidateExecutor
+
+    ports = ProductionSimplePipelinePorts(
+        store=MemoryAgentStore(),
+        observer=Observer(),
+        llm=generation_llm,
+        executor=SandboxCandidateExecutor(LocalSubprocessSandbox()),
+        reviewer=SimpleIntentReviewer(
+            llm=review_llm,
+            task_prompt="Using Qiskit, complete create_quantum_circuit(n_qubits).",
+        ),
+        converter=Converter(),
+        saver=Saver(),
+        task_prompt="Using Qiskit, complete create_quantum_circuit(n_qubits).",
+        framework=Framework.QISKIT,
+        requested_shots=100,
+        requested_seed=7,
+    )
+    run_id = uuid4()
+
+    planned = await ports.plan(run_id, None, None)
+    assert planned.value is not None
+    generated = await ports.generate(run_id, planned.value, None, None)
+    assert generated.value is not None
+    # The REAL sandbox, not the fake Executor test double: this is what actually
+    # produces the clean, empty result for this shape (confirmed independently in
+    # test_diag_task0_real_candidate_executes_cleanly_with_no_result_bound), not an
+    # assumption forged onto a canned fake result.
+    real_execution = await ports.run_execution(run_id, planned.value, generated.value)
+    assert real_execution.value is not None
+    assert real_execution.value.result == {}
+    real_execution = real_execution.value
+
+    checked = await ports.check_contract(run_id, planned.value, generated.value, real_execution)
+    assert checked.value is not None
+    assert checked.value.passed is True, checked.value.diagnostics
+
+    reviewed = await ports.review(run_id, planned.value, generated.value, real_execution, 1)
+    assert reviewed.value is not None
+    assert reviewed.value.decision is SemanticReviewDecision.READY, reviewed.value.feedback
+
+    checks = reviewed.value.feedback["basic_checks"]
+    success_criteria = next(c for c in checks if c["method"] == "success_criteria")
+    assert success_criteria["result"] == "n/a", checks
+
+    summary = simple_pipeline_verification_summary(
+        semantic_review_decision=reviewed.value.decision,
+        result_never_executed=True,
+        recorded_checks=checks,
+        review_severity=reviewed.value.severity,
+    )
+    assert summary["decision"] in ("inconclusive",), summary
+    assert summary["decision"] != "pass"
+    assert summary["evidence_strength"] == "structural"
+    assert summary["candidate_defect_observed"] is False
+    assert "quantum correctness" in summary["unverified_claims"]
+    # Review round 2, blocker 2: qiskitHumanEval/0's real, correct candidate must
+    # never be presented to a user as "Executed" — it never executed anything.
+    assert summary["reason_code"] == "function_written_not_called"
+    assert "function written, never called" in summary["unverified_claims"]
+
+
+async def test_diag_task1_real_candidate_with_required_execution_still_repairs():
+    """ai-ops 372 §8 control, real data: this PR's exemption correctly does NOT fire here.
+
+    qiskitHumanEval/1's real plan in the same diagnostic run declared
+    top_level_execution="required" (the model's own, reasonable reading of "run it... and
+    return the counts dictionary" — unlike task 0's "just build and return the circuit").
+    artifact_promises_no_executed_result is False for this plan by design, so a candidate
+    that does not satisfy the execution contract must still repair, exactly as before this
+    PR. Uses task 1's own real revision-1 candidate (structurally a bare function, same
+    shape as task 0's) to show the SAME shape of candidate reaches a DIFFERENT, correct
+    outcome once the plan's own declared intent differs — the guard is reading the plan,
+    not guessing from the source.
+    """
+    generation_llm = QueueLLM(
+        [
+            json.dumps(_DIAG_TASK1_PLAN_PAYLOAD),
+            json.dumps({"source": _DIAG_TASK1_BARE_CANDIDATE_SOURCE}),
+        ]
+    )
+    ports, *_ = _ports()
+    ports._llm = generation_llm  # noqa: SLF001 - reuse the fixture's other fakes, swap the LLM
+    run_id = uuid4()
+
+    planned = await ports.plan(run_id, None, None)
+    assert planned.value is not None
+    assert planned.value.plan.artifact_contract.top_level_execution.value == "required"
+    generated = await ports.generate(run_id, planned.value, None, None)
+    assert generated.value is not None
+    executed = await ports.run_execution(run_id, planned.value, generated.value)
+    assert executed.value is not None
+    real_execution = executed.value.model_copy(update={"result": {}})
+
+    checked = await ports.check_contract(run_id, planned.value, generated.value, real_execution)
+    assert checked.value is not None
+    assert checked.value.passed is False, "top_level_execution=required must still enforce RESULT"
+    assert any("RESULT missing key" in item for item in checked.value.diagnostics)
+
+
+async def test_function_demo_only_with_exact_diag_reference_still_grades_physical():
+    """ai-ops 372 §8 should-fix (e): the S3 regression from the adversarial review.
+
+    A FUNCTION/demo_only Plan (measurement_policy=none, so the model is instructed
+    the request wants a demo circuit and a physics reference, not a bare no-result
+    function) with a declared `exact_diag` reference and a candidate that correctly
+    computes the ground-state energy must still grade `evidence_strength=physical`
+    and pass its `exact_diag` check — exactly as it would on origin/dev. This
+    regressed in an earlier iteration of this PR's fix (blocker 1): making
+    `circuit_expected` unconditionally False for every FUNCTION/CLASS plan silently
+    threw away real, correctly-computed evidence for a plan whose candidate DID
+    bind FINAL_CIRCUIT and RESULT. This PR's `no_result_promised` guard (also
+    keying on `ProgramRole.UNKNOWN`) does not apply here, since this candidate's
+    role is PROGRAM (RESULT is bound), so full instrumentation and reference
+    checking still run.
+    """
+    from majorana_sandbox.local import LocalSubprocessSandbox
+    from majorana_worker.runtime_ports import SandboxCandidateExecutor
+
+    prompt = (
+        "Write a Qiskit function prepare_ground() for H = Z0 + Z1 and demo it: "
+        "compute the ground-state energy of the prepared state."
+    )
+    plan_payload = {
+        "domain": "quantum simulation",
+        "framework": "qiskit",
+        "algorithm": "VQE",
+        "problem_summary": (
+            "Prepare the ground state of H = Z0 + Z1 and report its ground-state energy"
+        ),
+        "algorithm_rationale": "X on both qubits gives |11>, the ground state",
+        "parameters": {
+            "shots": None,
+            "seed": None,
+            "custom": None,
+            "optimizer": None,
+            "max_iterations": None,
+        },
+        "qubits_estimate": 2,
+        "expected_runtime_sec": 10,
+        "success_criteria": {
+            "primary_metric": "energy",
+            "expected_range": None,
+            "additional_notes": None,
+        },
+        "expected_output_keys": ["energy"],
+        "artifact_contract": {
+            "artifact_type": "function",
+            "entry_point": "prepare_ground",
+            "measurement_policy": "none",
+            "top_level_execution": "demo_only",
+        },
+        "verification_plan": {
+            "methods": ["exact_diag"],
+            "reference_result_key": "energy",
+            "reference_hamiltonian": [
+                {"coefficient": 1.0, "pauli": "ZI"},
+                {"coefficient": 1.0, "pauli": "IZ"},
+            ],
+        },
+    }
+    source = """from qiskit import QuantumCircuit
+from qiskit.quantum_info import Statevector, SparsePauliOp
+
+def prepare_ground():
+    qc = QuantumCircuit(2)
+    qc.x(0)
+    qc.x(1)
+    return qc
+
+FINAL_CIRCUIT = prepare_ground()
+_h = SparsePauliOp.from_list([("ZI", 1.0), ("IZ", 1.0)])
+RESULT = {"energy": float(Statevector(FINAL_CIRCUIT).expectation_value(_h).real)}
+"""
+    generation_llm = QueueLLM([json.dumps(plan_payload), json.dumps({"source": source})])
+    review_llm = QueueLLM(
+        [
+            json.dumps(
+                {
+                    "decision": "ready",
+                    "confidence": "high",
+                    "severity": "none",
+                    "summary": "the demo circuit and reported energy match the reference",
+                    "passed_checks": ["request_to_plan", "plan_to_source"],
+                    "residual_risks": ["AI review is advisory"],
+                }
+            )
+        ]
+    )
+    ports = ProductionSimplePipelinePorts(
+        store=MemoryAgentStore(),
+        observer=Observer(),
+        llm=generation_llm,
+        executor=SandboxCandidateExecutor(LocalSubprocessSandbox()),
+        reviewer=SimpleIntentReviewer(llm=review_llm, task_prompt=prompt),
+        converter=Converter(),
+        saver=Saver(),
+        task_prompt=prompt,
+        framework=Framework.QISKIT,
+        requested_shots=None,
+        requested_seed=None,
+    )
+    run_id = uuid4()
+
+    planned = await ports.plan(run_id, None, None)
+    assert planned.value is not None
+    generated = await ports.generate(run_id, planned.value, None, None)
+    assert generated.value is not None
+    executed = await ports.run_execution(run_id, planned.value, generated.value)
+    assert executed.value is not None
+    assert executed.value.result == {"energy": -2.0}, executed.value.observation
+    assert "source_fingerprint" in executed.value.observation
+
+    checked = await ports.check_contract(run_id, planned.value, generated.value, executed.value)
+    assert checked.value is not None
+    assert checked.value.passed is True, checked.value.diagnostics
+
+    reviewed = await ports.review(run_id, planned.value, generated.value, executed.value, 1)
+    assert reviewed.value is not None
+    assert reviewed.value.decision is SemanticReviewDecision.READY, reviewed.value.feedback
+
+    checks = reviewed.value.feedback["basic_checks"]
+    exact_diag = next(c for c in checks if c["method"] == "exact_diag")
+    assert exact_diag["result"] == "pass", checks
+
+    summary = simple_pipeline_verification_summary(
+        semantic_review_decision=reviewed.value.decision,
+        recorded_checks=checks,
+        review_severity=reviewed.value.severity,
+    )
+    assert summary["evidence_strength"] == "physical", summary
+
+
+async def test_artifact_type_other_kills_a_widened_circuit_expected_mutation():
+    """ai-ops 372 §8 should-fix (e): kills the specific surviving mutation the
+    adversarial reviewer named — widening `no_result_promised`'s
+    `artifact_promises_no_executed_result(...) and program.role is ProgramRole.UNKNOWN`
+    guard down to just `if not circuit_expected:` in runtime_ports.py.
+
+    `ArtifactType.OTHER` ALSO gets `circuit_expected=False` (the original, pre-this-PR
+    behavior: `artifact_type is not ArtifactType.OTHER` is the one existing exemption
+    dev already had) — but `artifact_promises_no_executed_result` returns False for
+    `OTHER` (it only recognizes `FUNCTION`/`CLASS`). A bare candidate under an
+    `other`-typed Plan must therefore still hit the real
+    `source_fingerprint_mismatch` gate exactly as it would on dev, NOT the clean
+    `result={}` pass this PR's narrow exemption grants only to
+    `FUNCTION`/`CLASS` + `ProgramRole.UNKNOWN`. A mutant that keys off
+    `circuit_expected` alone cannot tell `OTHER` and `FUNCTION`/`forbidden` apart —
+    this test can.
+    """
+    from majorana_agent.models import CandidateRevision
+    from majorana_contracts.plan import Plan
+    from majorana_frameworks import FrameworkProgram
+    from majorana_sandbox.local import LocalSubprocessSandbox
+    from majorana_worker.runtime_ports import SandboxCandidateExecutor
+
+    source = "def other_thing(n):\n    return n * 2\n"
+    plan = Plan.model_validate(
+        {
+            "domain": "quantum information",
+            "algorithm": "other",
+            "framework": "qiskit",
+            "parameters": {
+                "shots": None,
+                "seed": None,
+                "custom": None,
+                "optimizer": None,
+                "max_iterations": None,
+            },
+            "problem_summary": "Return double the input; not a quantum computation",
+            "algorithm_rationale": "No quantum algorithm applies to this request",
+            "qubits_estimate": 1,
+            "success_criteria": {
+                "primary_metric": "value",
+                "expected_range": None,
+                "additional_notes": None,
+            },
+            "artifact_contract": {
+                "entry_point": "other_thing",
+                "artifact_type": "other",
+                "measurement_policy": "not_applicable",
+                "top_level_execution": "forbidden",
+            },
+            "verification_plan": None,
+            "expected_output_keys": ["value"],
+            "expected_runtime_sec": 5,
+        }
+    )
+    program = FrameworkProgram(Framework.QISKIT, source)
+    candidate = CandidateRevision(
+        candidate_id=uuid4(),
+        run_id=uuid4(),
+        tool_call_id="other-type-control",
+        revision=1,
+        plan_id=uuid4(),
+        framework=Framework.QISKIT,
+        source=program.normalized_source,
+        source_fingerprint=program.fingerprint,
+    )
+
+    output = await SandboxCandidateExecutor(LocalSubprocessSandbox()).run_candidate(candidate, plan)
+
+    assert output.exit_code != 0, (
+        "an ArtifactType.OTHER plan must NOT get the FUNCTION/CLASS no-result exemption"
+    )
+    assert output.observation.get("evidence_error") == "source_fingerprint_mismatch"
+    assert output.result == {}
+
+
+async def test_program_role_under_demo_only_still_must_bind_final_circuit():
+    """ai-ops 372, review round 3, mutation (a): a self-reported RESULT is not a
+    free pass just because the contract says execution was never required.
+
+    `no_result_promised` in runtime_ports.py keys on
+    `artifact_promises_no_executed_result(...) AND program.role is ProgramRole.UNKNOWN`.
+    The UNKNOWN half is load-bearing on its own: a FUNCTION/demo_only candidate
+    whose module-scope code runs itself and binds RESULT directly (ProgramRole.PROGRAM)
+    is not "nothing to report" — it is a program that self-reported a result with
+    no FINAL_CIRCUIT for the platform to compare it against. If the guard were
+    widened to grant the same exemption to PROGRAM role (dropping
+    `and program.role is ProgramRole.UNKNOWN`), `circuit_expected` would go False
+    for this candidate too, skip the `contract_diagnostics` "must bind
+    FINAL_CIRCUIT" check, and let a completely fabricated RESULT — no circuit
+    built, no native evidence collected, nothing to compare against — sail
+    straight through to the sandbox and out the other side as a real answer.
+    `test_function_demo_only_with_exact_diag_reference_still_grades_physical`
+    covers the twin case (PROGRAM role that DOES bind FINAL_CIRCUIT) and shows
+    real instrumentation still runs for it; this test is what proves the PROGRAM
+    role without FINAL_CIRCUIT is refused rather than silently exempted.
+    """
+    from majorana_agent.models import CandidateRevision
+    from majorana_contracts.plan import Plan
+    from majorana_frameworks import FrameworkProgram
+    from majorana_sandbox.local import LocalSubprocessSandbox
+    from majorana_worker.runtime_ports import SandboxCandidateExecutor
+
+    # Binds RESULT (ProgramRole.PROGRAM) but never builds or binds FINAL_CIRCUIT —
+    # a number invented with no quantum computation behind it at all.
+    source = "RESULT = {'value': 42}\n"
+    plan = Plan.model_validate(
+        {
+            "domain": "quantum information",
+            "algorithm": "other",
+            "framework": "qiskit",
+            "parameters": {
+                "shots": None,
+                "seed": None,
+                "custom": None,
+                "optimizer": None,
+                "max_iterations": None,
+            },
+            "problem_summary": "Report a fabricated value with no circuit behind it",
+            "algorithm_rationale": "No quantum algorithm applies to this request",
+            "qubits_estimate": 1,
+            "success_criteria": {
+                "primary_metric": "value",
+                "expected_range": None,
+                "additional_notes": None,
+            },
+            "artifact_contract": {
+                "entry_point": "compute",
+                "artifact_type": "function",
+                "measurement_policy": "none",
+                "top_level_execution": "demo_only",
+            },
+            "verification_plan": None,
+            "expected_output_keys": ["value"],
+            "expected_runtime_sec": 5,
+        }
+    )
+    program = FrameworkProgram(Framework.QISKIT, source)
+    assert program.role is ProgramRole.PROGRAM, (
+        "fixture must exercise the PROGRAM role, not UNKNOWN"
+    )
+    candidate = CandidateRevision(
+        candidate_id=uuid4(),
+        run_id=uuid4(),
+        tool_call_id="program-role-fabrication-control",
+        revision=1,
+        plan_id=uuid4(),
+        framework=Framework.QISKIT,
+        source=program.normalized_source,
+        source_fingerprint=program.fingerprint,
+    )
+
+    output = await SandboxCandidateExecutor(LocalSubprocessSandbox()).run_candidate(candidate, plan)
+
+    assert output.failure_kind is ExecutionFailureKind.CODE_ERROR, (
+        "a PROGRAM-role candidate under a demo_only FUNCTION contract must NOT get "
+        "the UNKNOWN-only no_result_promised exemption — it still owes FINAL_CIRCUIT"
+    )
+    assert output.observation.get("contract_diagnostics") == [
+        "contract:qiskit circuit code must bind FINAL_CIRCUIT"
+    ]
+
+
 async def test_basic_contract_rejects_observed_qubits_above_plan_and_lane():
     ports, *_ = _ports()
     run_id = uuid4()
@@ -2635,6 +3660,115 @@ async def test_repo_review_saver_persists_every_deliverable_artifact_without_ver
     else:
         assert "Intent alignment was not established" in captured["version"]["limitations"]
     assert captured["run_binding"] == (run_id, version_id)
+
+
+async def test_repo_saver_computes_result_never_executed_from_real_evidence(monkeypatch):
+    """ai-ops 372, review round 3, mutation (f) — the artifact-saver half.
+
+    `test_finish_simple_pipeline_computes_result_never_executed_from_real_evidence`
+    (test_handlers.py) covers the run-row summary's wiring; this is the OTHER
+    call site named by the coordinator, the artifact saver's own
+    `result_never_executed=(not execution.result and not result_was_derived(...))`
+    inside `_materialize`. Every other test that reaches "function written, never
+    called" sets `result_never_executed=True` by hand when calling
+    `simple_pipeline_verification_summary` directly — none of them drive
+    `RepoReviewArtifactSaver.save` itself with evidence that is genuinely empty.
+    If that computation were hardcoded to `False` (mutant R7), a candidate that
+    really never executed anything would still be filed as though it had.
+    """
+    run_id = uuid4()
+    candidate_id = uuid4()
+    execution_id = uuid4()
+    task = _qiskit_human_eval_task("qiskitHumanEval/0")
+    source = task["prompt"] + task["canonical_solution"]
+    program = FrameworkProgram(Framework.QISKIT, source)
+    assert program.role is ProgramRole.UNKNOWN
+    candidate = CandidateRevision(
+        candidate_id=candidate_id,
+        run_id=run_id,
+        tool_call_id="simple:generate:1",
+        revision=1,
+        plan_id=uuid4(),
+        framework=Framework.QISKIT,
+        source=program.normalized_source,
+        source_fingerprint=program.fingerprint,
+    )
+    execution = ExecutionEvidence(
+        execution_id=execution_id,
+        candidate_id=candidate_id,
+        source_fingerprint=program.fingerprint,
+        environment_fingerprint="e" * 64,
+        sandbox_provider="test",
+        exit_code=0,
+        duration_ms=1,
+        # The real shape: nothing ran, nothing was derived. Nothing here sets
+        # result_never_executed by hand — the saver must compute it from this.
+        result={},
+        observation={},
+    )
+    review = SemanticReviewEvidence(
+        review_id=uuid4(),
+        candidate_id=candidate_id,
+        execution_id=execution_id,
+        source_fingerprint=program.fingerprint,
+        attempt_seq=1,
+        decision=SemanticReviewDecision.READY,
+        confidence="high",
+        severity="none",
+        reason_code="semantic_ready",
+        failure_class=None,
+        retry_target=RetryTarget.NONE,
+        feedback={
+            "critic": {"summary": "delivers the requested function", "residual_risks": []},
+            "basic_checks": [
+                {"method": "structural", "result": "pass"},
+                {"method": "return_contract", "result": "n/a"},
+            ],
+        },
+    )
+    payload = _plan_payload()
+    payload["artifact_contract"] = {
+        "artifact_type": "function",
+        "entry_point": task["entry_point"],
+        "measurement_policy": "not_applicable",
+        "top_level_execution": "forbidden",
+    }
+    payload.pop("verification_plan")
+    plan = Plan.model_validate(payload)
+    artifact_id = uuid4()
+    version_id = uuid4()
+    captured = {}
+
+    async def create_artifact(_scope, _session, **values):
+        return SimpleNamespace(id=artifact_id)
+
+    async def create_version(_scope, _session, _artifact_id, **values):
+        captured["version"] = values
+        return SimpleNamespace(id=version_id, seq=1)
+
+    async def set_run_artifact_version(_scope, _session, _run_id, _version_id):
+        return None
+
+    monkeypatch.setattr(simple_ports_module.artifacts_repo, "create_artifact", create_artifact)
+    monkeypatch.setattr(simple_ports_module.artifacts_repo, "create_version", create_version)
+    monkeypatch.setattr(
+        simple_ports_module.runs_repo,
+        "set_run_artifact_version",
+        set_run_artifact_version,
+    )
+    saver = RepoReviewArtifactSaver(
+        scope=object(),
+        session=object(),
+        run_id=run_id,
+        parent_artifact_id=None,
+        title="Bell state",
+    )
+
+    await saver.save(candidate, execution, review, None, plan)
+
+    summary = captured["version"]["metadata"]["verification_summary"]
+    assert summary["reason_code"] == "function_written_not_called", summary
+    assert "function written, never called" in summary["unverified_claims"]
 
 
 async def test_repo_saver_persists_large_source_as_explicitly_unexecuted(monkeypatch):
