@@ -184,7 +184,7 @@ function logExtent(values: number[]): [number, number] {
  * marks drawn as diamonds that are never joined to the line. Hovering or
  * focusing reads the nearest point out beside the chart.
  */
-function LogChart({
+export function LogChart({
   title,
   points,
   marks,

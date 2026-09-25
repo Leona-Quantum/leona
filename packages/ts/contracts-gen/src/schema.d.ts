@@ -401,6 +401,79 @@ export interface components {
             type: "baseline.result";
         };
         /**
+         * BlockPlan
+         * @description The planner's INPUTS for the problem a block is a stage of: never its numbers.
+         *
+         *     The shape `StudioPlanLink` already carries into Studio
+         *     (`apps/web/lib/workflow-planner/studio-link.ts`), without the reader's sentence: the
+         *     problem, the parameter values the author set, and the method chosen at each stage
+         *     path that differs from the planner's default. The page re-runs the planner over these
+         *     every time it renders the block, so a cost is always today's formula at the size on
+         *     screen, and nothing a stored spec says can put a number in front of a reader. A value
+         *     left out takes the planner's own stated assumption, which the page labels as one.
+         */
+        BlockPlan: {
+            /** Choices */
+            choices?: {
+                [key: string]: string;
+            };
+            /** Params */
+            params?: {
+                [key: string]: number | null;
+            };
+            /**
+             * Problem
+             * @enum {string}
+             */
+            problem: "search" | "factoring" | "ecdlp" | "ground-state" | "hamiltonian-simulation" | "linear-system" | "maxcut" | "amplitude-estimation" | "phase-estimation" | "linear-ode" | "nonlinear-ode";
+        };
+        /**
+         * BlockRef
+         * @description What a `role=block` cell places in a notebook: one Atlas method.
+         *
+         *     The cell is `kind="markdown"`, and its `source` is prose rendered from this model
+         *     (`leona_notebooks.blocks.block_comment`), so the cell reads as a paragraph in
+         *     Jupyter. The page renders the block as a card instead: the method's cost at a
+         *     problem size the reader moves, and the notebook's own checks (`CheckProperty.block`)
+         *     as evidence up to the size they ran at. No number is stored here.
+         *
+         *     - `method`: the Atlas layer-graph method id.
+         *     - `plan`: the planner's inputs when the method is a stage of a planner problem, or
+         *       `None` when the page should show the method's own cost as its source states it.
+         *     - `size_param`: which of the plan's parameters is the problem size the control moves.
+         *       `None` with a plan means the page picks one; it must be `None` without a plan.
+         *     - `author`, `citation`, `accepted`: exactly as on `CheckProperty`. Nala may propose a
+         *       block, only a person accepts one, and a repair may not touch one
+         *       (`leona_notebooks.blocks.enforce_block_authorship`).
+         */
+        BlockRef: {
+            /**
+             * Accepted
+             * @default false
+             */
+            accepted: boolean;
+            /**
+             * Author
+             * @default nala
+             * @enum {string}
+             */
+            author: "nala" | "user" | "source";
+            /**
+             * Citation
+             * @default
+             */
+            citation: string;
+            /** Method */
+            method: string;
+            /** @default null */
+            plan: components["schemas"]["BlockPlan"] | null;
+            /**
+             * Size Param
+             * @default null
+             */
+            size_param: string | null;
+        };
+        /**
          * CatalogEntryEstimate
          * @description A catalogue entry's fault-tolerant cost, or a stated reason there is none (E4).
          *
@@ -637,6 +710,8 @@ export interface components {
             answer: (components["schemas"]["ChoiceAnswer"] | components["schemas"]["NumericAnswer"] | components["schemas"]["TextAnswer"] | components["schemas"]["RubricAnswer"]) | null;
             /** @default null */
             answer_prompt: components["schemas"]["AnswerPrompt"] | null;
+            /** @default null */
+            block: components["schemas"]["BlockRef"] | null;
             /**
              * Check
              * @default null
@@ -801,7 +876,7 @@ export interface components {
          * CellRole
          * @enum {string}
          */
-        CellRole: "setup" | "objective" | "concept" | "predict" | "run" | "observe" | "explain" | "modify" | "checkpoint" | "figure" | "exercise" | "hint" | "solution" | "question" | "answer" | "summary" | "references" | "note" | "check";
+        CellRole: "setup" | "objective" | "concept" | "predict" | "run" | "observe" | "explain" | "modify" | "checkpoint" | "figure" | "exercise" | "hint" | "solution" | "question" | "answer" | "summary" | "references" | "note" | "check" | "block";
         /** ChatCompleted */
         ChatCompleted: {
             /**
@@ -948,6 +1023,11 @@ export interface components {
              * @enum {string}
              */
             author: "nala" | "user" | "source";
+            /**
+             * Block
+             * @default null
+             */
+            block: string | null;
             /**
              * Citation
              * @default

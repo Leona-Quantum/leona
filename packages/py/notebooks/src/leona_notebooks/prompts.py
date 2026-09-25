@@ -125,7 +125,7 @@ Write the notebook in Leona notebook source (jupytext percent format with a YAML
 
 Rules: every cell starts with a `# %%` marker line; markdown cells say `[markdown]`; every cell has
 `role=<role>` from: setup objective concept predict run observe explain modify checkpoint figure
-exercise hint solution question answer summary references note check. Add `execute=false` to any cell that
+exercise hint solution question answer summary references note check block. Add `execute=false` to any cell that
 needs credentials or the network. A `role=solution` code cell also carries `stub="<learner placeholder>"`
 (a JSON string) that leaves every name later checkpoints read defined (e.g. `answer = None`).
 It may also carry `check="<hidden assertion>"` (a JSON string) — the grader. The reader never
@@ -162,6 +162,12 @@ value (value). Bitstrings and Pauli strings put q0 on the RIGHT. `subject` is th
 holding the circuit (unbound parameters and mid-circuit measurement cannot be checked). Your
 checks are shown as "proposed by Nala" until the reader accepts them. Never edit a check to
 make it pass: if a check fails, the code or the claim is wrong, not the check.
+You MAY add a `role=block` MARKDOWN cell for an Atlas method the notebook uses, but only
+with a method id given to you in the brief or the seed material; never invent one. Leona
+shows its cost from the method's source, at any problem size, beside the checks. Its body
+is prose Leona writes, so leave it empty:
+  # %% [markdown] role=block block={"method":"grover-fixed-iteration-search"}
+Your blocks are shown as "proposed by Nala" until the reader accepts them.
 Use `tags=["raises-exception"]` only on a cell that is meant to fail. Markdown may use $...$ for maths.
 Do not number cells; do not add ids. Never write an API token, email address or file path into a cell.
 """
@@ -384,8 +390,8 @@ A check that cannot fail is not a check, and returning one is refused, not appli
 actually right and something upstream is wrong, fix the upstream cell or the claim instead — see the
 reasoning rule below for an `AssertionError`.
 
-Never return a `role=check` cell. A repair may not change a check, and Leona puts back any
-check a repair touches, so the only fix that counts is to the code or the claim it checks.
+Never return a `role=check` or `role=block` cell. A repair may not change either, and Leona
+puts back any it touches, so the only fix that counts is to the code or the claim it checks.
 
 If you are told an earlier fix of yours failed the same way, do not return that fix again: find a
 different cause, and prefer the simplest code that demonstrates the same idea.

@@ -247,8 +247,8 @@ test("buildCheckCell always sets author=user, accepted=true — a reader who wri
 
 test("insertCheckCellAfter places the new cell right after the named one, with the next free id", () => {
   const cells = [
-    { id: "c01", kind: "code" as const, role: null, source: "", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null },
-    { id: "c02", kind: "code" as const, role: null, source: "", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null },
+    { id: "c01", kind: "code" as const, role: null, source: "", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null, block: null },
+    { id: "c02", kind: "code" as const, role: null, source: "", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null, block: null },
   ];
   const property = buildCheckProperty(stateDraft({ referenceFamily: "bell" }));
   const { cells: next, id } = insertCheckCellAfter(cells, "c01", property);
@@ -257,14 +257,14 @@ test("insertCheckCellAfter places the new cell right after the named one, with t
 });
 
 test("nextCheckCellId agrees with the plain cell insertion's id scheme (cNN, lowest free)", () => {
-  const cells = [{ id: "c01", kind: "code" as const, role: null, source: "", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null }];
+  const cells = [{ id: "c01", kind: "code" as const, role: null, source: "", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null, block: null }];
   assert.equal(nextCheckCellId(cells), "c02");
 });
 
 test("subjectHintFor finds the last top-level assignment in the preceding code cell", () => {
   const cells = [
-    { id: "c01", kind: "code" as const, role: null, source: "a = 1\nqc = build()\n", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null },
-    { id: "c02", kind: "markdown" as const, role: null, source: "text", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null },
+    { id: "c01", kind: "code" as const, role: null, source: "a = 1\nqc = build()\n", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null, block: null },
+    { id: "c02", kind: "markdown" as const, role: null, source: "text", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null, block: null },
   ];
   assert.equal(subjectHintFor(cells, "c01"), "qc");
   // A markdown cell (or an unknown id) has no source to guess from.
@@ -275,7 +275,7 @@ test("subjectHintFor finds the last top-level assignment in the preceding code c
 test("applyCheckAccept sets accepted=true on the named cell and leaves everything else untouched", () => {
   const property = buildCheckProperty(stateDraft({ referenceFamily: "ghz", referenceQubits: "3" }), "nala");
   const cells = [
-    { id: "c01", kind: "code" as const, role: "check" as const, source: "# check: x", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: { ...property, accepted: false } },
+    { id: "c01", kind: "code" as const, role: "check" as const, source: "# check: x", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: { ...property, accepted: false }, block: null },
   ];
   const next = applyCheckAccept(cells, "c01");
   assert.equal(next[0].property?.accepted, true);
@@ -287,7 +287,7 @@ test("applyCheckAccept sets accepted=true on the named cell and leaves everythin
 
 test("applyCheckAccept on an unknown id or a non-check cell is a no-op", () => {
   const cells = [
-    { id: "c01", kind: "code" as const, role: null, source: "x = 1", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null },
+    { id: "c01", kind: "code" as const, role: null, source: "x = 1", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null, property: null, block: null },
   ];
   assert.deepEqual(applyCheckAccept(cells, "c01"), cells);
   assert.deepEqual(applyCheckAccept(cells, "nope"), cells);
@@ -364,8 +364,10 @@ function checkCellView(overrides: Partial<NotebookCellView> = {}): NotebookCellV
       author: "nala",
       citation: "",
       accepted: false,
+      block: null,
     },
     checkVerdict: null,
+    block: null,
     ...overrides,
   };
 }

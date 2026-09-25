@@ -58,7 +58,7 @@ export const BASELINE_KIND_VALUES = [
   "none",
 ] as const;
 
-/** CellRole — 19 members. */
+/** CellRole — 20 members. */
 export const CELL_ROLE_VALUES = [
   "setup",
   "objective",
@@ -79,6 +79,7 @@ export const CELL_ROLE_VALUES = [
   "references",
   "note",
   "check",
+  "block",
 ] as const;
 
 /** CircuitCompiler — 6 members. */

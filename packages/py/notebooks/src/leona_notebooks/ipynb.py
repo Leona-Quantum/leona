@@ -324,12 +324,18 @@ def to_ipynb(
             "tags": sorted({*(cell.tags), *([cell.role.value] if cell.role else [])}),
         }
         if cell.kind == "markdown":
+            source = cell.source
+            if cell.block is not None:
+                # A block cell leaves as prose saying what it is and who wrote it, with the
+                # block itself in the cell's metadata, where `from_ipynb` reads it back.
+                metadata["leona"]["block"] = cell.block.model_dump(mode="json")
+                source = block_cell_export_source(cell.block)
             cells.append(
                 {
                     "id": cell.id,
                     "cell_type": "markdown",
                     "metadata": metadata,
-                    "source": cell.source,
+                    "source": source,
                 }
             )
             continue
@@ -414,6 +420,29 @@ def check_cell_export_source(prop: Any) -> str:
     return "\n".join(lines) + "\n"
 
 
+def block_cell_export_source(ref: Any) -> str:
+    """The source of an exported block cell: the block in words, and who wrote it."""
+    from leona_notebooks.blocks import block_export_source
+
+    return block_export_source(ref)
+
+
+def _block_ref(own: dict[str, Any]) -> dict[str, Any] | None:
+    """The `leona.block` a block cell carried out, if it is still one a block can use. A
+    `role=block` cell whose block is missing or no longer valid comes back as an ordinary
+    markdown cell: its source is prose, so nothing a reader needs is lost."""
+    from leona_notebooks.spec import Cell
+
+    raw = own.get("block")
+    if not isinstance(raw, dict):
+        return None
+    try:
+        Cell.model_validate({"id": "probe", "kind": "markdown", "role": "block", "block": raw})
+    except ValueError:
+        return None
+    return raw
+
+
 def _check_property(own: dict[str, Any]) -> dict[str, Any] | None:
     """The `leona.property` a check cell carried out, if it is one a check can use. A
     `role=check` cell whose property is missing or no longer valid comes back as an
@@ -478,7 +507,21 @@ def from_ipynb(notebook: dict[str, Any], *, slug: str | None = None) -> Notebook
                 entry["role"] = None
             else:
                 entry["property"] = prop
+        if role_name == CellRole.BLOCK.value:
+            block = _block_ref(own) if cell_type == "markdown" else None
+            if block is None:
+                entry["role"] = None
+            else:
+                entry["block"] = block
         cells.append(entry)
+    # A check's link to a block survives only if the file still has that block. A
+    # hand-edited file can point one at a cell that is not a block, which the spec would
+    # refuse as a whole; the link is the only part lost.
+    blocks = {entry["id"] for entry in cells if "block" in entry}
+    for entry in cells:
+        prop = entry.get("property")
+        if isinstance(prop, dict) and prop.get("block") is not None and prop["block"] not in blocks:
+            entry["property"] = {**prop, "block": None}
     title = str(leona_meta.get("title") or _first_heading(cells) or "Imported notebook")
     payload: dict[str, Any] = {
         "slug": slug or leona_meta.get("slug") or _slugify(title),

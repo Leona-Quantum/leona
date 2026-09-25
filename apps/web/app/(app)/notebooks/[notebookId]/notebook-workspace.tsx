@@ -20,6 +20,13 @@ import {
   type NotebookCellEditState,
   type NotebookCellGrade,
 } from "../../../../components/notebook-view";
+import type { BlockCatalogState } from "../../../../components/notebook-block-card";
+import {
+  applyBlockAccept,
+  insertBlockCellAfter,
+  type BlockCatalog,
+  type BlockRef,
+} from "../../../../lib/notebook-blocks";
 import { refusalSentence } from "../../../../lib/api-error";
 import { diffNotebookVersions } from "../../../../lib/notebook-diff";
 import { NotebookEditor } from "../../../../components/notebook-editor";
@@ -178,6 +185,15 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   // `source` string that state carries, so it owns its whole draft locally
   // (`NotebookAddCheckForm`) and only reports the finished `CheckProperty` here.
   const [checkForm, setCheckForm] = useState<{ afterId: string; subjectHint: string } | null>(null);
+  // "Add a block" (ai-ops 382, Phase B S1): which cell it is open below. Like the check
+  // form, it owns its whole draft and only reports the finished `BlockRef` here.
+  const [blockForm, setBlockForm] = useState<{ afterId: string } | null>(null);
+  // The Atlas slice block cards are drawn from. Fetched once, and only when the notebook
+  // on screen has a block cell or one is being added: no other notebook load pays for it.
+  const [blockCatalog, setBlockCatalog] = useState<BlockCatalogState>({ status: "loading" });
+  // The language the catalog on screen (or in flight) was asked for: a locale switch asks
+  // again, because every label and cost text in it is in one language.
+  const blockCatalogLocale = useRef<string | null>(null);
   // Whether a per-cell save (edit, add, delete, move, duplicate) is in flight — kept
   // apart from `saving`, which is specifically the page-level editor's own save, so the
   // two surfaces' busy states cannot be confused for one another.
@@ -401,6 +417,28 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
       ? pinnedSeq ?? defaultVersionSeq({ currentSeq: notebook.current_version_seq, versions })
       : null;
   const version = loadedVersion?.notebook_id === notebookId && loadedVersion.seq === selectedSeq ? loadedVersion : null;
+
+  const needsBlockCatalog =
+    blockForm !== null || (version?.spec?.cells ?? []).some((cell) => cell.role === "block");
+  useEffect(() => {
+    const wanted = locale === "ja" ? "ja" : "en";
+    if (!needsBlockCatalog || blockCatalogLocale.current === wanted) return;
+    blockCatalogLocale.current = wanted;
+    setBlockCatalog({ status: "loading" });
+    fetch(`/api/notebook-blocks?locale=${wanted}`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error(String(response.status));
+        const catalog = (await response.json()) as BlockCatalog;
+        // A response for a language the page has since left is dropped.
+        if (blockCatalogLocale.current === wanted) setBlockCatalog({ status: "ready", catalog });
+      })
+      .catch(() => {
+        if (blockCatalogLocale.current !== wanted) return;
+        // A later need may try again: a failed load is not a permanent answer.
+        blockCatalogLocale.current = null;
+        setBlockCatalog({ status: "error" });
+      });
+  }, [needsBlockCatalog, locale]);
 
   useEffect(() => {
     setVersionError(null);
@@ -916,8 +954,10 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     // exclusive inline panels — opening one closes the other outright, the same way
     // `startAddCheck` closes `cellEdit`. The check form has no unsaved-changes gate
     // of its own to consult here (its draft lives entirely inside
-    // `NotebookAddCheckForm`), so this direction is a plain close, not a confirm.
+    // `NotebookAddCheckForm`), so this direction is a plain close, not a confirm. The
+    // "Add a block" form is the third such panel and closes the same way.
     setCheckForm(null);
+    setBlockForm(null);
     next();
   }
 
@@ -1044,6 +1084,7 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
 
   function startAddCheck(afterId: string) {
     setCellEdit(null);
+    setBlockForm(null);
     setCheckForm({ afterId, subjectHint: subjectHintFor(originalCells, afterId) });
   }
 
@@ -1060,6 +1101,34 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     const { cells: nextCells } = insertCheckCellAfter(originalCells, checkForm.afterId, property);
     const ok = await saveCellsAsVersion(nextCells, { execute: false });
     if (ok) setCheckForm(null);
+  }
+
+  // ------------------------------------------------------------------- block cells
+  //
+  // ai-ops 382, Phase B S1. Accept and "Add a block" are one more per-cell edit through
+  // `saveCellsAsVersion`, like checks: neither sends an author change, and the server's
+  // authorship stamp (`leona_notebooks.blocks.enforce_block_authorship`) decides it.
+
+  function acceptBlock(cellId: string) {
+    void saveCellsAsVersion(applyBlockAccept(originalCells, cellId), { execute: false });
+  }
+
+  function startAddBlock(afterId: string) {
+    setCellEdit(null);
+    setCheckForm(null);
+    setBlockForm({ afterId });
+  }
+
+  function cancelAddBlock() {
+    setBlockForm(null);
+  }
+
+  /** Saves the new block cell; stays open with the reader's choices on a failed save. */
+  async function submitAddBlock(ref: BlockRef) {
+    if (!blockForm) return;
+    const { cells: nextCells } = insertBlockCellAfter(originalCells, blockForm.afterId, ref);
+    const ok = await saveCellsAsVersion(nextCells, { execute: false });
+    if (ok) setBlockForm(null);
   }
 
   /** "Ask Nala to change this cell" (rule 3, "as well as by Nala"): starts a chat
@@ -1628,6 +1697,12 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
               onStartAddCheck={canEdit ? startAddCheck : undefined}
               onCancelAddCheck={canEdit ? cancelAddCheck : undefined}
               onSubmitAddCheck={canEdit ? (property) => void submitAddCheck(property) : undefined}
+              blockCatalog={blockCatalog}
+              onAcceptBlock={canEdit ? acceptBlock : undefined}
+              blockForm={canEdit ? blockForm : null}
+              onStartAddBlock={canEdit ? startAddBlock : undefined}
+              onCancelAddBlock={canEdit ? cancelAddBlock : undefined}
+              onSubmitAddBlock={canEdit ? (ref) => void submitAddBlock(ref) : undefined}
             />
             </>
           ) : !isGenerating && !versionError ? (

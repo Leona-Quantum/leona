@@ -108,6 +108,7 @@ EXPORTED = [
     notebooks.UpdateNotebookRequest,
     notebooks.GradeReport,
     notebooks.CellGrade,
+    notebooks.BlockRef,
     notebooks.GradeAttemptRequest,
     notebooks.GradeAttemptResponse,
     notebooks.NotebookGradesSnapshot,
