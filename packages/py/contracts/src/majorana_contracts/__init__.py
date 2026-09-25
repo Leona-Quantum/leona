@@ -207,6 +207,11 @@ from .notebooks import (
     TextAnswer,
     UpdateNotebookRequest,
 )
+from .circuit_checks import (
+    MAX_CIRCUIT_CHECK_QASM_CHARS,
+    CircuitCheckRequest,
+    CircuitCheckResponse,
+)
 from .notebook_shares import (
     MAX_LIVE_SHARE_LINKS_PER_NOTEBOOK,
     MAX_SHARE_LINK_LIFETIME_DAYS,
@@ -551,7 +556,13 @@ from .lifecycle import (
 # status on the `notebook.cells` event's `NotebookLiveCellResult`. Additive: one enum
 # value, three models, three optional fields that default to None, so every stored spec,
 # report and event still parses. No route and no migration (spec and report are JSONB).
-CONTRACTS_VERSION = "2.38.0"
+# 2.39.0: the agent connector's first headless tool, `check_circuit` (ai-ops 382 option 1,
+# "move the connector up to ship with it"; VISION §5.8). New: `CircuitCheckRequest`
+# (an OpenQASM 3 circuit plus a `CheckProperty`), `CircuitCheckResponse` (a `CheckVerdict`
+# with `teeth` always set) and `MAX_CIRCUIT_CHECK_QASM_CHARS`, behind the stateless
+# POST /v1/checks/circuit. Additive: new names only, no existing model changes, no
+# migration (nothing is stored).
+CONTRACTS_VERSION = "2.39.0"
 
 __all__ = [
     "PresenceHeartbeatRequest",
@@ -708,6 +719,9 @@ __all__ = [
     "CheckProperty",
     "CheckTeeth",
     "CheckVerdict",
+    "MAX_CIRCUIT_CHECK_QASM_CHARS",
+    "CircuitCheckRequest",
+    "CircuitCheckResponse",
     "CreateNotebookRequest",
     "CreateNotebookResponse",
     "CreateNotebookTurnRequest",

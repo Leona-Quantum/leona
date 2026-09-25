@@ -1108,6 +1108,41 @@ export interface components {
             options: string[];
         };
         /**
+         * CircuitCheckRequest
+         * @description One circuit and one property to check it against.
+         *
+         *     `property.kind` is `state`, `unitary`, `distribution` or `energy`. A `value` check is
+         *     refused (400): it judges a number a notebook computed, and a circuit is not one.
+         *
+         *     `property.subject` is required by `CheckProperty` and **ignored here**: it names a
+         *     variable in a notebook, and this route has no notebook. Send `"circuit"` by
+         *     convention. The authorship fields (`author`, `citation`, `accepted`) are ignored too:
+         *     the verdict never depends on them and nothing is stored.
+         *
+         *     Bitstrings in `amplitudes`, `probabilities` and Pauli strings in `hamiltonian` follow
+         *     Qiskit's convention: q0 is the RIGHTMOST character.
+         */
+        CircuitCheckRequest: {
+            property: components["schemas"]["CheckProperty"];
+            /**
+             * Qasm
+             * @description The circuit, as OpenQASM 3 (include "stdgates.inc" for standard gates).
+             */
+            qasm: string;
+        };
+        /**
+         * CircuitCheckResponse
+         * @description The verdict, with `teeth` always set.
+         *
+         *     In a notebook, `teeth` is left empty on a check that did not pass. Here it is always
+         *     present, as `not_measured` with the reason when no broken copies were tried, so a
+         *     caller never has to guess whether an absent field means "not tried" or "forgotten".
+         *     A `pass` means "checked against `verdict.checked_against`", never "verified".
+         */
+        CircuitCheckResponse: {
+            verdict: components["schemas"]["CheckVerdict"];
+        };
+        /**
          * CircuitCompiler
          * @description Trusted third-party compiler selected for a bounded Studio IR job.
          * @enum {string}

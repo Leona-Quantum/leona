@@ -2177,6 +2177,42 @@
         "title": "ChoiceAnswer",
         "type": "object"
       },
+      "CircuitCheckRequest": {
+        "additionalProperties": false,
+        "description": "One circuit and one property to check it against.\n\n`property.kind` is `state`, `unitary`, `distribution` or `energy`. A `value` check is\nrefused (400): it judges a number a notebook computed, and a circuit is not one.\n\n`property.subject` is required by `CheckProperty` and **ignored here**: it names a\nvariable in a notebook, and this route has no notebook. Send `\"circuit\"` by\nconvention. The authorship fields (`author`, `citation`, `accepted`) are ignored too:\nthe verdict never depends on them and nothing is stored.\n\nBitstrings in `amplitudes`, `probabilities` and Pauli strings in `hamiltonian` follow\nQiskit's convention: q0 is the RIGHTMOST character.",
+        "properties": {
+          "property": {
+            "$ref": "#/components/schemas/CheckProperty"
+          },
+          "qasm": {
+            "description": "The circuit, as OpenQASM 3 (include \"stdgates.inc\" for standard gates).",
+            "maxLength": 64000,
+            "minLength": 1,
+            "title": "Qasm",
+            "type": "string"
+          }
+        },
+        "required": [
+          "qasm",
+          "property"
+        ],
+        "title": "CircuitCheckRequest",
+        "type": "object"
+      },
+      "CircuitCheckResponse": {
+        "additionalProperties": false,
+        "description": "The verdict, with `teeth` always set.\n\nIn a notebook, `teeth` is left empty on a check that did not pass. Here it is always\npresent, as `not_measured` with the reason when no broken copies were tried, so a\ncaller never has to guess whether an absent field means \"not tried\" or \"forgotten\".\nA `pass` means \"checked against `verdict.checked_against`\", never \"verified\".",
+        "properties": {
+          "verdict": {
+            "$ref": "#/components/schemas/CheckVerdict"
+          }
+        },
+        "required": [
+          "verdict"
+        ],
+        "title": "CircuitCheckResponse",
+        "type": "object"
+      },
       "CircuitCompiler": {
         "description": "Trusted third-party compiler selected for a bounded Studio IR job.",
         "enum": [
@@ -12471,7 +12507,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.38.0"
+    "version": "2.39.0"
   },
   "openapi": "3.1.0",
   "paths": {}
