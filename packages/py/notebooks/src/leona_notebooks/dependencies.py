@@ -697,7 +697,9 @@ def check_property_payload(cell: Any) -> Any:
     if prop is None:
         return None
     data = prop.model_dump(mode="json") if hasattr(prop, "model_dump") else dict(prop)
-    return {key: value for key, value in data.items() if key not in {"author", "accepted"}}
+    # `block` (which block cell the check is evidence for) is left out for the same
+    # reason: linking a check to a block changes what it supports, not what it judges.
+    return {key: value for key, value in data.items() if key not in {"author", "accepted", "block"}}
 
 
 def cell_cache_payload(

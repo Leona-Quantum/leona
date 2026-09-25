@@ -27,7 +27,7 @@ from leona_notebooks.prompts import NotebookOutline, NotebookReview, RepairConte
 from leona_notebooks.revision import RevisionError, RevisionPlan, apply_revision
 from leona_notebooks.sandbox_program import _default_guard, prepare_cell_source
 from leona_notebooks.source import SourceParseError, parse_source, render_source
-from leona_notebooks.spec import Cell, NotebookSpec, Seed
+from leona_notebooks.spec import Cell, CellRole, NotebookSpec, Seed
 from leona_notebooks.templates import check_structure
 
 Stage = Literal[
@@ -382,14 +382,14 @@ def _validate_repair_cells(
 def _with_omitted_from(spec: NotebookSpec, cell: Cell, *, as_id: str | None = None) -> Cell:
     """`cell` with every attribute it left unset taken from the existing cell it replaces
     (`as_id`, or its own id). Only unset values are filled: `role`, `stub`, `check`,
-    `answer`, `timeout_s` and `property` when None, `tags` when empty. `kind`, `source` and `execute`
-    are always the repair's own."""
+    `answer`, `timeout_s`, `property` and `block` when None, `tags` when empty. `kind`,
+    `source` and `execute` are always the repair's own."""
     try:
         original = spec.cell_by_id(as_id or cell.id)
     except KeyError:
         return cell
     update: dict[str, object] = {}
-    for name in ("role", "stub", "check", "answer", "timeout_s", "property"):
+    for name in ("role", "stub", "check", "answer", "timeout_s", "property", "block"):
         if getattr(cell, name) is None and getattr(original, name) is not None:
             update[name] = getattr(original, name)
     if not cell.tags and original.tags:
@@ -460,21 +460,25 @@ def _apply_repair(
     # earlier cell, not the one the model was shown as failing.
     touched_ids = [*(t.id for t in explicit_targets), *([cell_id] if replacement else [])]
     repaired = apply_revision(spec, RevisionPlan(reply="", ops=plan_ops))
-    # A repair may not touch a check (DESIGN §1.4). Whatever it did to one is undone here,
-    # by id, whatever the prompt said and whatever the validation above let through: the
-    # model that wrote both the code and the check would otherwise "fix" a failing check
-    # by weakening it.
+    # A repair may not touch a check or a block (DESIGN §1.4). Whatever it did to one is
+    # undone here, by id, whatever the prompt said and whatever the validation above let
+    # through: the model that wrote both the code and the check would otherwise "fix" a
+    # failing check by weakening it, or move the block the check is evidence for.
     repaired, restored = restore_checks(spec, repaired)
     kept = [cell for cell in touched_ids if cell not in restored]
     if not kept:
         raise _StageFailed(
             "notebook.repair",
-            "the repair only changed a check, which a repair may not do; the check was "
+            "the repair only changed a check or a block, which a repair may not do; it was "
             "put back unchanged",
         )
-    touched = tuple(
-        dict.fromkeys([*kept, *(f"{cell} (a check, put back unchanged)" for cell in restored)])
-    )
+    roles = {cell.id: cell.role for cell in spec.cells}
+
+    def put_back(cell: str) -> str:
+        what = "a block" if roles.get(cell) == CellRole.BLOCK else "a check"
+        return f"{cell} ({what}, put back unchanged)"
+
+    touched = tuple(dict.fromkeys([*kept, *(put_back(cell) for cell in restored)]))
     return repaired, touched
 
 

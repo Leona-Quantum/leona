@@ -57,6 +57,7 @@ from majorana_contracts.notebooks import (
     MAX_CHECK_HAMILTONIAN_QUBITS,
     MAX_CHECK_VALUE_ENTRIES,
     MAX_CHECK_VERDICT_QASM_CHARS,
+    BlockRef,
     CheckProperty,
     CheckTeeth,
     CheckVerdict,
@@ -409,8 +410,9 @@ def check_comment(prop: CheckProperty) -> str:
     return f"# check: {describe_property(prop)}\n"
 
 
-def authorship_words(prop: CheckProperty) -> str:
-    """Who wrote the check, for the page and the exported notebook."""
+def authorship_words(prop: CheckProperty | BlockRef) -> str:
+    """Who wrote the check (or the block: the same three fields, the same words), for the
+    page and the exported notebook."""
     cited = f", citing {prop.citation}" if prop.citation else ""
     if prop.author == "source":
         return f"from {prop.citation}" + ("" if prop.accepted else ", not yet accepted")
@@ -422,6 +424,43 @@ def authorship_words(prop: CheckProperty) -> str:
 # --------------------------------------------------------------------------- authorship
 
 Actor = Literal["nala", "user"]
+
+
+def authorship_stamp(
+    actor: Actor,
+    *,
+    prior: CheckProperty | BlockRef | None,
+    submitted: CheckProperty | BlockRef,
+    has_parent: bool,
+) -> dict[str, Any]:
+    """The `author` and `accepted` one check or block gets, by DESIGN §1.4's rules.
+
+    `prior` is the same claim as the parent version had it (matched by id or, failing
+    that, by content), or `None` for a new or changed one. One function for both kinds of
+    cell, so a check and a block can never be stamped by two drifting copies of one rule.
+    """
+    if actor == "nala":
+        if prior is not None:
+            stamp: dict[str, Any] = {"author": prior.author, "accepted": prior.accepted}
+        else:
+            stamp = {"author": "nala", "accepted": False}
+    elif prior is not None:
+        stamp = {"author": prior.author, "accepted": submitted.accepted}
+    elif not has_parent:
+        if submitted.author == "nala":
+            stamp = {"author": "nala", "accepted": False}
+        else:
+            stamp = {"author": "user", "accepted": True}
+    else:
+        stamp = {
+            "author": "source" if submitted.author == "source" else "user",
+            "accepted": True,
+        }
+    if stamp["author"] == "source" and not submitted.citation.strip():
+        # A `source` claim needs a citation (the contract). A reader who deletes the
+        # citation of one that was `source` has made it their own.
+        stamp["author"] = "user"
+    return stamp
 
 
 def enforce_check_authorship(
@@ -457,8 +496,18 @@ def enforce_check_authorship(
       unaccepted; every other check is the reader's, accepted; a `source` label is not
       taken from a file, since that is exactly the claim a hand-edited export would make.
 
+    `block` (the block a check is evidence for) is outside "changed" too, because it does
+    not change what the check judges: a reader who links Nala's check to a block leaves it
+    Nala's. When NALA links a check to a block, or moves the link, that is Nala's claim
+    that the check is evidence for it, so the check becomes Nala's unaccepted proposal
+    again. Nala removing a link claims nothing and changes nothing.
+
     Every check cell's source is re-rendered from its property, so the comment always says
     what is actually judged.
+
+    Block cells are stamped here too, by the same rules
+    (`leona_notebooks.blocks.enforce_block_authorship`), so every door that stamps a check
+    stamps a block.
     """
 
     def key(prop: CheckProperty) -> str:
@@ -483,43 +532,45 @@ def enforce_check_authorship(
         prior = by_id.get(cell.id)
         if prior is None or key(prior) != key(prop):
             prior = by_key.get(key(prop))
-        if actor == "nala":
-            if prior is not None:
-                stamp = {"author": prior.author, "accepted": prior.accepted}
-            else:
-                stamp = {"author": "nala", "accepted": False}
-        elif prior is not None:
-            stamp = {"author": prior.author, "accepted": prop.accepted}
-        elif parent is None:
-            if prop.author == "nala":
-                stamp = {"author": "nala", "accepted": False}
-            else:
-                stamp = {"author": "user", "accepted": True}
-        else:
-            stamp = {"author": "source" if prop.author == "source" else "user", "accepted": True}
-        if stamp["author"] == "source" and not prop.citation.strip():
-            # A `source` check needs a citation (the contract). A reader who deletes the
-            # citation of a check that was `source` has made it their own.
-            stamp["author"] = "user"
+        if prior is not None and actor == "nala" and _relinked(prior, prop):
+            # Nala pointing a check at a block is a claim that it is evidence for that
+            # block, so the check is Nala's proposal again. Unlinking claims nothing.
+            prior = None
+        stamp = authorship_stamp(actor, prior=prior, submitted=prop, has_parent=parent is not None)
         stamped = prop.model_copy(update=stamp)
         cells.append(
             cell.model_copy(update={"property": stamped, "source": check_comment(stamped)})
         )
-    return new.with_cells(cells)
+    # Every door that stamps a check stamps a block by the same rules, here, so no route
+    # can remember one and forget the other (the import route once stamped nothing).
+    from leona_notebooks.blocks import enforce_block_authorship
+
+    return enforce_block_authorship(new.with_cells(cells), parent, actor)
+
+
+def _relinked(prior: CheckProperty, new: CheckProperty) -> bool:
+    return new.block is not None and new.block != prior.block
+
+
+#: The cells a repair may not touch: a check (it would weaken the test of its own fix) and
+#: a block (the claim the notebook's checks are evidence for).
+PROTECTED_ROLES: frozenset[CellRole] = frozenset({CellRole.CHECK, CellRole.BLOCK})
 
 
 def restore_checks(before: NotebookSpec, after: NotebookSpec) -> tuple[NotebookSpec, list[str]]:
-    """Undo whatever a repair did to a check: every check cell that existed before comes
-    back exactly as it was, by id — edited, relabelled, turned into another kind of cell or
-    deleted. Returns the restored spec and the ids that had to be restored.
+    """Undo whatever a repair did to a check or a block: every such cell that existed
+    before comes back exactly as it was, by id — edited, relabelled, turned into another
+    kind of cell or deleted. Returns the restored spec and the ids that had to be restored.
 
     A model that wrote both the code and the check would otherwise "fix" a failing check by
-    weakening it — the failure VISION §5.1 names. The pipeline also refuses a repair that
-    changes a cell's role and prompts the model not to touch checks, but those are the
-    model's side of the bargain; this is the side that does not depend on it. A check a
-    repair somehow introduced is stamped as Nala's, unaccepted.
+    weakening it — the failure VISION §5.1 names. A block is held the same way: it is the
+    claim the checks are evidence for, and a repair that moved it (a smaller problem, a
+    different method) would change what "checked" is about. The pipeline also refuses a
+    repair that changes a cell's role and prompts the model not to touch either, but those
+    are the model's side of the bargain; this is the side that does not depend on it. One
+    a repair somehow introduced is stamped as Nala's, unaccepted.
     """
-    original = {cell.id: cell for cell in before.cells if cell.role == CellRole.CHECK}
+    original = {cell.id: cell for cell in before.cells if cell.role in PROTECTED_ROLES}
     restored: list[str] = []
     cells: list[Cell] = []
     present: set[str] = set()

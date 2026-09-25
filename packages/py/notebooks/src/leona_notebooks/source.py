@@ -71,8 +71,10 @@ _CLOSERS = {"[": "]", "{": "}"}
 #: marker line; the cell's body is only the comment `check_comment` renders from it. It is
 #: here, and rendered below, for the reason `check` is: an attribute that parses but does
 #: not render is deleted by the first revise or repair turn that re-renders the cell.
+#: `block` is a `role=block` markdown cell's `BlockRef`, on the marker line for the same
+#: reason; its body is only the prose `block_comment` renders from it.
 _CELL_HEADER_FIELDS = frozenset(
-    {"id", "role", "tags", "execute", "stub", "check", "answer", "timeout_s", "property"}
+    {"id", "role", "tags", "execute", "stub", "check", "answer", "timeout_s", "property", "block"}
 )
 
 
@@ -360,6 +362,7 @@ def parse_source(text: str, *, slug: str | None = None) -> NotebookSpec:
                 "answer": attrs.pop("answer", None),
                 "timeout_s": attrs.pop("timeout_s", None),
                 "property": attrs.pop("property", None),
+                "block": attrs.pop("block", None),
             }
         )
 
@@ -404,21 +407,23 @@ def parse_source(text: str, *, slug: str | None = None) -> NotebookSpec:
 
 
 def _with_check_comments(spec: NotebookSpec) -> NotebookSpec:
-    """Every check cell's body re-rendered from its property. The body is never executed,
-    so whatever the author wrote under the marker is replaced by what the check actually
-    says — and `render_source` then `parse_source` is an exact round trip."""
-    if not any(cell.property is not None for cell in spec.cells):
+    """Every check cell's body re-rendered from its property, and every block cell's from
+    its block. Neither body is executed or read, so whatever the author wrote under the
+    marker is replaced by what the cell actually says — and `render_source` then
+    `parse_source` is an exact round trip."""
+    if not any(cell.property is not None or cell.block is not None for cell in spec.cells):
         return spec
+    from leona_notebooks.blocks import block_comment
     from leona_notebooks.checks import check_comment
 
-    return spec.with_cells(
-        [
-            cell.model_copy(update={"source": check_comment(cell.property)})
-            if cell.property is not None
-            else cell
-            for cell in spec.cells
-        ]
-    )
+    cells = []
+    for cell in spec.cells:
+        if cell.property is not None:
+            cell = cell.model_copy(update={"source": check_comment(cell.property)})
+        elif cell.block is not None:
+            cell = cell.model_copy(update={"source": block_comment(cell.block)})
+        cells.append(cell)
+    return spec.with_cells(cells)
 
 
 def _slug_from_title(title: str) -> str:
@@ -501,6 +506,16 @@ def render_source(spec: NotebookSpec, *, include_ids: bool = True) -> str:
                 "property="
                 + json.dumps(
                     cell.property.model_dump(mode="json", exclude_defaults=True),
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            )
+        if cell.block is not None:
+            # Defaults left out (they re-fill on parse), `method` always kept, one line.
+            attrs.append(
+                "block="
+                + json.dumps(
+                    cell.block.model_dump(mode="json", exclude_defaults=True),
                     ensure_ascii=False,
                     separators=(",", ":"),
                 )
