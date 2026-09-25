@@ -1980,46 +1980,36 @@ async def test_basic_contract_rejects_a_function_that_never_needed_to_run(task_i
 
 
 async def test_a_delivered_function_candidate_is_never_labelled_verified_pass():
-    """ai-ops 372, downstream of the check_contract fix (coordinator's item 2).
+    """ai-ops 372, downstream of the check_contract fix.
 
     Pins the REAL, OBSERVED behavior with the real SimpleIntentReviewer (a
     real advisory model call, stubbed response) rather than the fake Reviewer
     double `_ports()` uses elsewhere in this file — so the full review()
     codepath, including `_success_criteria_check`,
     `SimpleIntentReviewer._decide`, and `simple_pipeline_verification_summary`,
-    actually runs. This is not the answer I expected going in, and the test
-    asserts what actually happens, not what would be convenient.
+    actually runs.
 
-    check_contract now lets a FUNCTION/CLASS-declared, non-executed candidate
-    through — confirmed below. But the review CONTROLLER
-    (`SimpleIntentReviewer._decide`) is a SEPARATE deterministic gate: it
-    forces CODE_REPAIR whenever ANY entry in `basic_checks` has
-    `result != "pass"`, regardless of the model's own "ready" opinion
-    (`deterministic_failed or not graded_acceptable` → CODE_REPAIR, never
-    READY). `_success_criteria_check` for this shape now returns "n/a" rather
-    than "fail" (this PR's second, smaller fix — honest reporting, matching
-    `_return_contract_check`'s existing "n/a, not fail" precedent for a
-    derived circuit result) — but "n/a" is STILL `!= "pass"`, so it is STILL
-    counted as `deterministic_failed`. **The candidate is therefore still
-    routed to CODE_REPAIR, not READY, even after both fixes in this PR.**
+    **History, because the finding changed twice and both versions are worth
+    keeping straight.** The first version of this PR fixed only `check_contract`
+    and found — correctly, at the time — that this was NOT sufficient:
+    `SimpleIntentReviewer._decide` is a SEPARATE deterministic gate that forces
+    `CODE_REPAIR` whenever any `basic_checks` entry is `!= "pass"`, and `"n/a"`
+    (what `_success_criteria_check` reports for this shape) still counted,
+    so the candidate stayed stuck in `CODE_REPAIR` even with a "ready" model
+    opinion. That finding held up until the owner-approved diagnostic re-run
+    (2026-09-25, real deepseek-v4-pro traffic) showed it happening for real —
+    `qiskitHumanEval/0` cycling on `candidate_not_converging` — which is what
+    justified fixing `_decide` too, narrowly: when every non-"pass" check is
+    `"n/a"` (nothing failed, nothing to repair) AND the Plan's own
+    `artifact_contract` already said no executed result was required, `_decide`
+    now honors a "ready" opinion instead of overriding it. See
+    `test_diag_task0_real_candidate_is_delivered_ready_not_code_repair` below
+    for the same finding built from the actual recorded diagnostic candidate
+    rather than this synthetic one; both should reach the same place.
 
-    I deliberately did NOT change `_decide`'s `deterministic_failed` filter
-    (whether "n/a"/"skipped" should count as a failure there) in this PR: that
-    function is the review controller for every Nala run, not just this
-    benchmark's FUNCTION/CLASS shape, and changing what it treats as a defect
-    is a materially bigger, differently-reviewed change than this PR's fix.
-    So: this PR's fix is CONFIRMED to remove the check_contract rejection, and
-    CONFIRMED, by this test, NOT to be sufficient by itself to reach READY —
-    the run would still burn its whole repair budget and end up back at
-    `_recover_sound_candidate_or_fail`, same as before, for the reason traced
-    here rather than for the check_contract reason. Whether that also held for
-    the real 2026-09-23 candidates (whose plans may have differed from the one
-    engineered here) is exactly what the diagnostic re-run this PR prepares
-    (not runs) would settle.
-
-    Either way — CODE_REPAIR here, or READY in some other plan shape — this
-    also pins the ADR-0023 property that actually mattered to ask about:
-    `simple_pipeline_verification_summary` never grades this shape a PASS.
+    A REAL "fail" (an actual mismatch) still refuses exactly as before — see
+    `test_diag_task1_real_candidate_with_required_execution_still_repairs` for
+    a real-data control on that.
     """
     from majorana_evals.public_benchmarks.qiskit_human_eval import build_nala_prompt
 
@@ -2084,11 +2074,7 @@ async def test_a_delivered_function_candidate_is_never_labelled_verified_pass():
     # This PR's second fix: honest "n/a" (nothing to check), not a false "fail".
     assert success_criteria["result"] == "n/a", checks
 
-    # The real, observed answer — not READY, for the reason explained above.
-    assert reviewed.value.decision is SemanticReviewDecision.CODE_REPAIR
-    assert reviewed.value.feedback["critic"]["decision"] == "ready", (
-        "the underlying model call DID say ready — _decide overrode it"
-    )
+    assert reviewed.value.decision is SemanticReviewDecision.READY, reviewed.value.feedback
 
     summary = simple_pipeline_verification_summary(
         semantic_review_decision=reviewed.value.decision,
@@ -2098,6 +2084,320 @@ async def test_a_delivered_function_candidate_is_never_labelled_verified_pass():
     assert summary["decision"] != "pass", (
         "must never be labelled PASS without an independent reference (ADR-0023)"
     )
+    assert summary["evidence_strength"] == "structural"
+    assert summary["candidate_defect_observed"] is False
+
+
+#: ai-ops 372, from the owner-approved $3 diagnostic re-run (2026-09-25, deepseek-v4-pro,
+#: pipeline commit 6ad4c8dd — this branch's own head at the time it ran). Pulled directly
+#: from the run's Postgres (run_plans/run_candidates for run_id 01a0d703-cd98-7e64-8999-
+#: 9d20bd84d44b, qiskitHumanEval/0's last-attempted run) rather than reconstructed — the
+#: model's REAL plan and REAL last candidate, byte for byte. See
+#: REVIEW-REJECTS-DIAGNOSIS.md §8.
+_DIAG_TASK0_PLAN_PAYLOAD = {
+    "domain": "quantum-circuit-construction",
+    "algorithm": "other",
+    "framework": "qiskit",
+    "parameters": {
+        "seed": None,
+        "shots": None,
+        "custom": None,
+        "optimizer": None,
+        "max_iterations": None,
+    },
+    "problem_summary": (
+        "Implement a self-contained Qiskit function create_quantum_circuit(n_qubits) that "
+        "accepts a positive integer n_qubits and returns a QuantumCircuit with exactly "
+        "n_qubits qubits and no classical bits. The function must preserve the exact "
+        "signature and docstring shown in the request, contain no example usage, print "
+        "statements, or tests, and be executable as written."
+    ),
+    "qubits_estimate": 1,
+    "success_criteria": {
+        "expected_range": None,
+        "primary_metric": "circuit_qubit_count",
+        "additional_notes": [
+            "The returned QuantumCircuit must have exactly n_qubits qubits and zero classical bits.",
+            "The function must be self-contained and preserve the requested signature and docstring.",
+        ],
+    },
+    "artifact_contract": {
+        "entry_point": "create_quantum_circuit",
+        "return_shape": "QuantumCircuit with n_qubits qubits and 0 classical bits",
+        "artifact_type": "function",
+        "measurement_policy": "none",
+        "top_level_execution": "forbidden",
+        "expected_return_type": "QuantumCircuit",
+    },
+    "verification_plan": None,
+    "algorithm_rationale": (
+        "The task is a minimal circuit-construction utility. A QuantumCircuit is "
+        "instantiated with the requested number of qubits and returned directly. No gates, "
+        "measurements, or classical registers are specified, so the circuit remains an "
+        "empty n-qubit register."
+    ),
+    "expected_output_keys": ["circuit_qubit_count", "circuit_classical_bit_count"],
+    "expected_runtime_sec": 5,
+}
+
+#: The model's real, last-attempted (revision 7) candidate for that same run — the exact
+#: source recorded in run_candidates, unedited. Independently confirmed to pass
+#: qiskitHumanEval/0's own check() (README's diagnostic scoring). Never bound RESULT or
+#: FINAL_CIRCUIT: `FrameworkProgram(Framework.QISKIT, _DIAG_TASK0_CANDIDATE_SOURCE).role
+#: is ProgramRole.UNKNOWN`, asserted below.
+_DIAG_TASK0_CANDIDATE_SOURCE = '''from qiskit import QuantumCircuit
+
+def create_quantum_circuit(n_qubits):
+    """ Generate a Quantum Circuit for the given int 'n_qubits' and return it.
+    """
+    if not isinstance(n_qubits, int) or n_qubits <= 0:
+        raise ValueError("n_qubits must be a positive integer")
+    return QuantumCircuit(n_qubits)
+'''
+
+#: qiskitHumanEval/1's real plan for the same diagnostic run (run_id
+#: 01a0d704-49cd-7513-a9f7-ece54aafba32) — top_level_execution="required", unlike task 0's
+#: "forbidden". Used below as a REAL-DATA CONTROL: this plan does NOT qualify for
+#: artifact_promises_no_executed_result, so the fixes in this PR must not, and do not,
+#: change its outcome.
+_DIAG_TASK1_PLAN_PAYLOAD = {
+    "domain": "quantum-computing",
+    "algorithm": "Bell",
+    "framework": "qiskit",
+    "parameters": {
+        "seed": None,
+        "shots": None,
+        "custom": None,
+        "optimizer": None,
+        "max_iterations": None,
+    },
+    "problem_summary": (
+        "Implement a self-contained Python function `run_bell_state_simulator()` in "
+        "Qiskit. The function must define a phi-plus Bell state circuit using a Hadamard "
+        "gate on qubit 0 followed by a CNOT with qubit 0 as control and qubit 1 as target, "
+        "transpile it, run it, and return the resulting counts dictionary."
+    ),
+    "qubits_estimate": 2,
+    "success_criteria": {
+        "expected_range": None,
+        "primary_metric": "counts",
+        "additional_notes": [
+            "The returned counts dictionary should contain keys '00' and '11' with "
+            "approximately equal probabilities.",
+            "The module-level name FINAL_CIRCUIT must be bound to the transpiled circuit object.",
+        ],
+    },
+    "artifact_contract": {
+        "entry_point": "run_bell_state_simulator",
+        "return_shape": "counts dictionary mapping bitstrings to counts",
+        "artifact_type": "function",
+        "measurement_policy": "measure_all",
+        "top_level_execution": "required",
+        "expected_return_type": "dict",
+    },
+    "verification_plan": None,
+    "algorithm_rationale": (
+        "A Bell state is created by applying a Hadamard gate to the first qubit, followed "
+        "by a CNOT gate. The final circuit object is bound to FINAL_CIRCUIT at module scope "
+        "to satisfy the execution contract."
+    ),
+    "expected_output_keys": ["counts"],
+    "expected_runtime_sec": 15,
+}
+
+#: The model's real revision-1 candidate for that run: a bare function, structurally
+#: identical in shape to task 0's (no RESULT/FINAL_CIRCUIT bound) — real evidence that the
+#: SAME shape of candidate reaches a DIFFERENT outcome once the plan's own
+#: top_level_execution says execution is required, not forbidden.
+_DIAG_TASK1_BARE_CANDIDATE_SOURCE = '''from qiskit import QuantumCircuit
+from qiskit_aer import AerSimulator
+from qiskit_ibm_runtime import Sampler
+from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
+
+def run_bell_state_simulator():
+    """ Define a phi plus bell state using Qiskit, transpile the circuit using pass manager with optimization level as 1, run it using Qiskit Sampler with the Aer simulator as backend and return the counts dictionary.
+    """
+    bell = QuantumCircuit(2)
+    bell.h(0)
+    bell.cx(0, 1)
+    bell.measure_all()
+    backend = AerSimulator()
+    pass_manager = generate_preset_pass_manager(optimization_level=1, backend=backend)
+    isa_circuit = pass_manager.run(bell)
+    sampler = Sampler(mode=backend)
+    result = sampler.run([isa_circuit], shots=1000).result()
+    return result[0].data.meas.get_counts()
+'''
+
+
+async def test_diag_task0_real_candidate_executes_cleanly_with_no_result_bound():
+    """ai-ops 372 §8, part 1 of 2: the EARLIEST gate, confirmed with the real sandbox.
+
+    Before check_contract or review ever run, `SandboxCandidateExecutor.run_candidate`
+    (runtime_ports.py) itself used to fail this candidate. `circuit_expected=False` (this
+    Plan's own artifact_contract: function, top_level_execution=forbidden) makes
+    `FrameworkProgram.trusted_observer`/`trusted_setup` BOTH the empty string, so
+    `compose_execution` runs the candidate's bare source with NO instrumentation at all —
+    no epilogue ever writes `source_fingerprint` (or `result`) to the sidecar. The very
+    next check after "did the subprocess crash" was `observation["source_fingerprint"] ==
+    candidate.source_fingerprint`, which can never hold when nothing wrote it. Confirmed
+    directly against the real diagnostic evidence (`candidate_executions.observation` for
+    qiskitHumanEval/0's run, not the trimmed `run_events` "sandbox.result" projection,
+    which drops this field): every one of its 5 executed attempts recorded
+    `exit_code=3, evidence_error="source_fingerprint_mismatch"` — the actual, confirmed
+    reason the repair loop kept regenerating byte-identical, already-correct source until
+    `candidate_not_converging` gave up on it.
+
+    Uses the REAL LocalSubprocessSandbox (not a test double) so this is an actual
+    subprocess execution of the actual recorded source, not a simulation of one.
+    """
+    from majorana_agent.models import CandidateRevision
+    from majorana_frameworks import FrameworkProgram
+    from majorana_frameworks.roles import ProgramRole
+    from majorana_contracts.plan import Plan
+    from majorana_sandbox.local import LocalSubprocessSandbox
+    from majorana_worker.runtime_ports import SandboxCandidateExecutor
+
+    program = FrameworkProgram(Framework.QISKIT, _DIAG_TASK0_CANDIDATE_SOURCE)
+    assert program.role is ProgramRole.UNKNOWN
+
+    plan = Plan.model_validate(_DIAG_TASK0_PLAN_PAYLOAD)
+    candidate = CandidateRevision(
+        candidate_id=uuid4(),
+        run_id=uuid4(),
+        tool_call_id="diag-task0",
+        revision=1,
+        plan_id=uuid4(),
+        framework=Framework.QISKIT,
+        source=program.normalized_source,
+        source_fingerprint=program.fingerprint,
+    )
+
+    output = await SandboxCandidateExecutor(LocalSubprocessSandbox()).run_candidate(candidate, plan)
+
+    assert output.exit_code == 0, output.observation
+    assert output.failure_kind is None, output.observation
+    assert output.result == {}
+    assert output.observation.get("evidence_error") != "source_fingerprint_mismatch"
+
+
+async def test_diag_task0_real_candidate_is_delivered_ready_not_code_repair():
+    """ai-ops 372 §8, part 2 of 2: end to end, from not_converging to delivered.
+
+    Drives the REAL qiskitHumanEval/0 plan and the REAL last-attempted candidate from the
+    2026-09-25 diagnostic through check_contract -> review with the real
+    SimpleIntentReviewer, ending at simple_pipeline_verification_summary. In the live run
+    this exact shape ended in run_status="failed", reason "candidate_not_converging" — the
+    repair loop regenerated byte-identical source because check_contract (fixed earlier in
+    this PR) and _decide() (fixed here) both treated a Plan that explicitly declares no
+    executed result as if something had failed.
+    """
+    task0_source = _DIAG_TASK0_CANDIDATE_SOURCE
+    generation_llm = QueueLLM(
+        [json.dumps(_DIAG_TASK0_PLAN_PAYLOAD), json.dumps({"source": task0_source})]
+    )
+    review_llm = QueueLLM(
+        [
+            json.dumps(
+                {
+                    "decision": "ready",
+                    "confidence": "high",
+                    "severity": "none",
+                    "summary": "the function returns the requested QuantumCircuit",
+                    "passed_checks": ["request_to_plan", "plan_to_source"],
+                    "residual_risks": ["AI review is advisory"],
+                }
+            )
+        ]
+    )
+    ports = ProductionSimplePipelinePorts(
+        store=MemoryAgentStore(),
+        observer=Observer(),
+        llm=generation_llm,
+        executor=Executor(),
+        reviewer=SimpleIntentReviewer(
+            llm=review_llm,
+            task_prompt="Using Qiskit, complete create_quantum_circuit(n_qubits).",
+        ),
+        converter=Converter(),
+        saver=Saver(),
+        task_prompt="Using Qiskit, complete create_quantum_circuit(n_qubits).",
+        framework=Framework.QISKIT,
+        requested_shots=100,
+        requested_seed=7,
+    )
+    run_id = uuid4()
+
+    planned = await ports.plan(run_id, None, None)
+    assert planned.value is not None
+    generated = await ports.generate(run_id, planned.value, None, None)
+    assert generated.value is not None
+    executed = await ports.run_execution(run_id, planned.value, generated.value)
+    assert executed.value is not None
+    # What the previous test independently confirmed a real sandbox run produces for
+    # this exact source+plan, post-fix: a clean, successful, empty result.
+    real_execution = executed.value.model_copy(update={"result": {}})
+
+    checked = await ports.check_contract(run_id, planned.value, generated.value, real_execution)
+    assert checked.value is not None
+    assert checked.value.passed is True, checked.value.diagnostics
+
+    reviewed = await ports.review(run_id, planned.value, generated.value, real_execution, 1)
+    assert reviewed.value is not None
+    assert reviewed.value.decision is SemanticReviewDecision.READY, reviewed.value.feedback
+
+    checks = reviewed.value.feedback["basic_checks"]
+    success_criteria = next(c for c in checks if c["method"] == "success_criteria")
+    assert success_criteria["result"] == "n/a", checks
+
+    summary = simple_pipeline_verification_summary(
+        semantic_review_decision=reviewed.value.decision,
+        recorded_checks=checks,
+        review_severity=reviewed.value.severity,
+    )
+    assert summary["decision"] in ("inconclusive",), summary
+    assert summary["decision"] != "pass"
+    assert summary["evidence_strength"] == "structural"
+    assert summary["candidate_defect_observed"] is False
+    assert "quantum correctness" in summary["unverified_claims"]
+
+
+async def test_diag_task1_real_candidate_with_required_execution_still_repairs():
+    """ai-ops 372 §8 control, real data: this PR's exemption correctly does NOT fire here.
+
+    qiskitHumanEval/1's real plan in the same diagnostic run declared
+    top_level_execution="required" (the model's own, reasonable reading of "run it... and
+    return the counts dictionary" — unlike task 0's "just build and return the circuit").
+    artifact_promises_no_executed_result is False for this plan by design, so a candidate
+    that does not satisfy the execution contract must still repair, exactly as before this
+    PR. Uses task 1's own real revision-1 candidate (structurally a bare function, same
+    shape as task 0's) to show the SAME shape of candidate reaches a DIFFERENT, correct
+    outcome once the plan's own declared intent differs — the guard is reading the plan,
+    not guessing from the source.
+    """
+    generation_llm = QueueLLM(
+        [
+            json.dumps(_DIAG_TASK1_PLAN_PAYLOAD),
+            json.dumps({"source": _DIAG_TASK1_BARE_CANDIDATE_SOURCE}),
+        ]
+    )
+    ports, *_ = _ports()
+    ports._llm = generation_llm  # noqa: SLF001 - reuse the fixture's other fakes, swap the LLM
+    run_id = uuid4()
+
+    planned = await ports.plan(run_id, None, None)
+    assert planned.value is not None
+    assert planned.value.plan.artifact_contract.top_level_execution.value == "required"
+    generated = await ports.generate(run_id, planned.value, None, None)
+    assert generated.value is not None
+    executed = await ports.run_execution(run_id, planned.value, generated.value)
+    assert executed.value is not None
+    real_execution = executed.value.model_copy(update={"result": {}})
+
+    checked = await ports.check_contract(run_id, planned.value, generated.value, real_execution)
+    assert checked.value is not None
+    assert checked.value.passed is False, "top_level_execution=required must still enforce RESULT"
+    assert any("RESULT missing key" in item for item in checked.value.diagnostics)
 
 
 async def test_basic_contract_rejects_observed_qubits_above_plan_and_lane():
