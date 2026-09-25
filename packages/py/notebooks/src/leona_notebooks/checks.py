@@ -435,6 +435,13 @@ def enforce_check_authorship(
     whose property matches one the parent had under ANOTHER id is the same check, so
     renaming a cell cannot turn Nala's check into the reader's (review of PR 1011).
 
+    For the reader, "changed" also ignores `citation` (round 2 of that review): a reader
+    who adds or edits a citation on Nala's check has not changed what it checks, so it
+    stays Nala's and `accepted` is whatever they set. Otherwise a citation alone would
+    have relabelled it `source`. For Nala a citation change IS a change, on purpose
+    (coordinator, 2026-09-25): Nala rewriting the provenance of a check a reader accepted
+    makes it Nala's unaccepted proposal again.
+
     - **actor = user with no parent** (an uploaded `.ipynb`): the file's own claim is
       honoured only when it LOWERS trust. A check the file says is Nala's stays Nala's and
       unaccepted; every other check is the reader's, accepted; a `source` label is not
@@ -443,13 +450,20 @@ def enforce_check_authorship(
     Every check cell's source is re-rendered from its property, so the comment always says
     what is actually judged.
     """
+
+    def key(prop: CheckProperty) -> str:
+        data = prop.expectation_key()
+        if actor == "user":
+            data.pop("citation", None)
+        return json.dumps(data, sort_keys=True)
+
     by_id: dict[str, CheckProperty] = {}
     by_key: dict[str, CheckProperty] = {}
     if parent is not None:
         for earlier in parent.cells:
             if earlier.property is not None:
                 by_id[earlier.id] = earlier.property
-                by_key.setdefault(_expectation_json(earlier.property), earlier.property)
+                by_key.setdefault(key(earlier.property), earlier.property)
     cells: list[Cell] = []
     for cell in new.cells:
         prop = cell.property
@@ -457,8 +471,8 @@ def enforce_check_authorship(
             cells.append(cell)
             continue
         prior = by_id.get(cell.id)
-        if prior is None or prior.expectation_key() != prop.expectation_key():
-            prior = by_key.get(_expectation_json(prop))
+        if prior is None or key(prior) != key(prop):
+            prior = by_key.get(key(prop))
         if actor == "nala":
             if prior is not None:
                 stamp = {"author": prior.author, "accepted": prior.accepted}
@@ -473,15 +487,15 @@ def enforce_check_authorship(
                 stamp = {"author": "user", "accepted": True}
         else:
             stamp = {"author": "source" if prop.author == "source" else "user", "accepted": True}
+        if stamp["author"] == "source" and not prop.citation.strip():
+            # A `source` check needs a citation (the contract). A reader who deletes the
+            # citation of a check that was `source` has made it their own.
+            stamp["author"] = "user"
         stamped = prop.model_copy(update=stamp)
         cells.append(
             cell.model_copy(update={"property": stamped, "source": check_comment(stamped)})
         )
     return new.with_cells(cells)
-
-
-def _expectation_json(prop: CheckProperty) -> str:
-    return json.dumps(prop.expectation_key(), sort_keys=True)
 
 
 def restore_checks(before: NotebookSpec, after: NotebookSpec) -> tuple[NotebookSpec, list[str]]:
@@ -2289,11 +2303,18 @@ def judge_jobs(
     teeth_cache: dict[str, CheckTeeth] | None = None,
     width_caps: Mapping[str, int] | None = None,
     clock: Callable[[], float] = time.monotonic,
+    on_start: Callable[[str, str], None] | None = None,
 ):
     """Judge `jobs` IN THIS PROCESS, yielding events as they happen:
-    `("verdict", id, JudgedCheck)` for every job first, then `("teeth", id, CheckTeeth)`
-    for each check that passed on a circuit. Verdicts before teeth, so one budget buys
-    every check a verdict before it buys any check its broken copies.
+    `("verdict", id, JudgedCheck)` for every job first, then `("teeth", id, CheckTeeth,
+    final)` for each check that passed on a circuit. Verdicts before teeth, so one budget
+    buys every check a verdict before it buys any check its broken copies. `final` is False
+    when the broken copies were cut by the clock (another dispatch may have time for them),
+    True when they were measured or refused by a size limit.
+
+    `on_start(id, phase)` is called just before each check's judgement ("verdict") and
+    its broken copies ("teeth"), so the child can tell its parent which check was running
+    if it is killed.
 
     The child process (`leona_notebooks.check_judge`) streams these to its parent; the
     in-process `apply_check_verdicts` collects them for tests and local tools.
@@ -2312,6 +2333,8 @@ def judge_jobs(
                 ),
             )
             continue
+        if on_start is not None:
+            on_start(job.id, "verdict")
         try:
             item = _judge(job.property, job.capture, width_caps=width_caps)
         except Exception as exc:  # noqa: BLE001 - one broken check must not take the rest
@@ -2329,6 +2352,8 @@ def judge_jobs(
             continue
         if item.judge is None or item.subject is None:
             continue
+        if on_start is not None:
+            on_start(job_id, "teeth")
         try:
             measured = _measure_teeth(
                 item.judge,
@@ -2343,7 +2368,8 @@ def judge_jobs(
                 status="not_measured",
                 reason=f"Testing with broken copies failed ({type(exc).__name__}).",
             )
-        yield "teeth", job_id, measured
+        cut_by_clock = measured.status == "not_measured" and clock() > deadline
+        yield "teeth", job_id, measured, not cut_by_clock
 
 
 def merge_check_verdicts(
@@ -2380,10 +2406,11 @@ def apply_check_verdicts(
     jobs, settled = plan_check_jobs(spec, report, captures)
     verdicts: dict[str, CheckVerdict] = dict(settled)
     deadline = clock() + budget_s
-    for event, job_id, payload in judge_jobs(
+    for event in judge_jobs(
         jobs, deadline=deadline, teeth_cache=teeth_cache, width_caps=width_caps, clock=clock
     ):
-        if event == "verdict":
+        kind, job_id, payload = event[0], event[1], event[2]
+        if kind == "verdict":
             verdicts[job_id] = payload.verdict
         else:
             verdicts[job_id] = verdicts[job_id].model_copy(update={"teeth": payload})
@@ -2540,13 +2567,28 @@ async def judge_checks(
     passing check whose broken copies were cut short says so in its teeth.
 
     Only one child runs at a time in a process (`_judge_slot`): a second call waits for
-    the first, and its wall clock starts when it gets the slot.
+    the first, at most `budget_s`, and its wall clock starts when it gets the slot. A call
+    that does not get the slot in time comes back `inconclusive` ("busy checking other
+    circuits"), never cached.
 
     `_argv` and `_on_event` are for tests: a stand-in child, and a look at every event.
     """
     if not jobs:
         return {}
-    async with _judge_slot():
+    slot = _judge_slot()
+    # Wait for this process's one judge slot, but no longer than this dispatch's budget
+    # (round 2 of the review of PR 1011): a queue of N dispatches used to wait about
+    # (N - 1) x 20 s with no limit.
+    try:
+        await asyncio.wait_for(slot.acquire(), timeout=max(float(budget_s), 0.0))
+    except TimeoutError:
+        return {
+            job.id: JudgedCheck(
+                _inconclusive_without_capture(job.property, _BUSY_WORDS), final=False
+            )
+            for job in jobs
+        }
+    try:
         return await _judge_checks_now(
             jobs,
             budget_s=budget_s,
@@ -2557,6 +2599,33 @@ async def judge_checks(
             _argv=_argv,
             _on_event=_on_event,
         )
+    finally:
+        slot.release()
+
+
+_BUSY_WORDS = (
+    "Leona was busy checking other circuits and did not get to this one. Run the notebook "
+    "again to check it. Nothing was decided."
+)
+
+
+#: A RETRY child is not started with less than this left of the budget: it needs about
+#: a second to import what it judges with (measured on an M1 Pro). The first child always
+#: starts.
+_MIN_CHILD_S = 1.5
+
+
+@dataclass
+class _ChildRun:
+    """What one child process delivered before it finished, was killed or died."""
+
+    results: dict[str, JudgedCheck]
+    teeth_arrived: set[str]
+    #: "done", "timeout" (the parent's clock), "memory" (the watch, SIGKILL, or a
+    #: MemoryError on stderr) or "died" (anything else).
+    outcome: str
+    #: (check id, "verdict" | "teeth") the child last said it was starting, if any.
+    running: tuple[str, str] | None
 
 
 async def _judge_checks_now(
@@ -2570,7 +2639,16 @@ async def _judge_checks_now(
     _argv: list[str] | None,
     _on_event: Callable[[dict[str, Any]], None] | None,
 ) -> dict[str, JudgedCheck]:
-    """`judge_checks` once it holds this process's judge slot."""
+    """`judge_checks` once it holds this process's judge slot.
+
+    One check's trouble stays with that check (round 2 of the review of PR 1011). When a
+    child is killed for memory, or dies, the check it said it was working on is blamed,
+    and every check it had not finished is judged again in a FRESH child, with what is
+    left of the budget. The first version filled in "ran out of memory" for every check
+    after the one that ran the child out, so one heavy check cost a dispatch all of them.
+    A timeout is not retried: the budget is gone. Nor is a child that dies before
+    starting any check: another one would die the same way.
+    """
     loop = asyncio.get_running_loop()
     kill_after = float(kill_after_s if kill_after_s is not None else budget_s)
     headroom = (
@@ -2578,6 +2656,148 @@ async def _judge_checks_now(
         if memory_headroom_bytes is not None
         else check_judge_headroom_bytes()
     )
+    started = loop.time()
+    results: dict[str, JudgedCheck] = {}
+    teeth_done: set[str] = set()
+    blamed: dict[str, tuple[str, str]] = {}
+    outcome = "done"
+
+    def still_needed(job: CheckJob) -> bool:
+        if job.id in blamed:
+            return False
+        result = results.get(job.id)
+        if result is None:
+            return True
+        verdict = result.verdict
+        return (
+            teeth
+            and verdict.status == "pass"
+            and verdict.basis == "circuit"
+            and verdict.teeth is None
+            and job.id not in teeth_done
+        )
+
+    for attempt in range(len(jobs) + 1):
+        todo = [job for job in jobs if still_needed(job)]
+        if not todo:
+            outcome = "done"
+            break
+        elapsed = loop.time() - started
+        if attempt and kill_after - elapsed < _MIN_CHILD_S:
+            outcome = "timeout"  # too little left to start a fresh child for the rest
+            break
+        run = await _run_child(
+            todo,
+            budget_s=max(float(budget_s) - elapsed, 0.5),
+            kill_after=kill_after - elapsed,
+            headroom=headroom,
+            width_caps=width_caps,
+            teeth=teeth,
+            argv=_argv,
+            on_event=_on_event,
+        )
+        for job_id, result in run.results.items():
+            if job_id not in results:
+                results[job_id] = result
+            elif job_id in run.teeth_arrived:
+                previous = results[job_id]
+                results[job_id] = JudgedCheck(
+                    previous.verdict.model_copy(update={"teeth": result.verdict.teeth}),
+                    previous.unreadable,
+                    previous.final and result.final,
+                )
+        teeth_done |= run.teeth_arrived
+        outcome = run.outcome
+        if outcome in {"done", "timeout"}:
+            break
+        if run.running is None:
+            break  # it died before starting anything: another child would too
+        blamed[run.running[0]] = (outcome, run.running[1])
+    return _fill_in(jobs, results, blamed, outcome, kill_after, teeth=teeth, teeth_done=teeth_done)
+
+
+def _fill_in(
+    jobs: list[CheckJob],
+    results: dict[str, JudgedCheck],
+    blamed: Mapping[str, tuple[str, str]],
+    outcome: str,
+    seconds: float,
+    *,
+    teeth: bool,
+    teeth_done: set[str],
+) -> dict[str, JudgedCheck]:
+    """A result for every job. A blamed check gets what happened to IT (final when it was
+    memory, a limit the check will hit again); anything else unfinished gets what stopped
+    the dispatch (never final)."""
+    filled = dict(results)
+    for job in jobs:
+        blame = blamed.get(job.id)
+        result = filled.get(job.id)
+        if blame is not None:
+            detail, teeth_reason = _stopped_words(blame[0], seconds)
+            final = blame[0] == "memory"
+            if final:
+                detail = (
+                    "Checking this ran out of memory: it needed more than one check is "
+                    "given, so Leona stopped it. The other checks were still judged. "
+                    "Nothing was decided about this one."
+                )
+                teeth_reason = (
+                    "Not tested with broken copies: testing them ran out of memory, more "
+                    "than one check is given."
+                )
+            if blame[1] == "teeth" and result is not None:
+                filled[job.id] = JudgedCheck(
+                    result.verdict.model_copy(
+                        update={"teeth": CheckTeeth(status="not_measured", reason=teeth_reason)}
+                    ),
+                    result.unreadable,
+                    final=final,
+                )
+            else:
+                filled[job.id] = JudgedCheck(
+                    _inconclusive_without_capture(job.property, detail), final=final
+                )
+            continue
+        detail, teeth_reason = _stopped_words(outcome, seconds)
+        if result is None:
+            filled[job.id] = JudgedCheck(
+                _inconclusive_without_capture(job.property, detail), final=False
+            )
+            continue
+        verdict = result.verdict
+        if (
+            teeth
+            and verdict.status == "pass"
+            and verdict.basis == "circuit"
+            and verdict.teeth is None
+            and job.id not in teeth_done
+        ):
+            filled[job.id] = JudgedCheck(
+                verdict.model_copy(
+                    update={"teeth": CheckTeeth(status="not_measured", reason=teeth_reason)}
+                ),
+                result.unreadable,
+                final=False,
+            )
+    return filled
+
+
+async def _run_child(
+    jobs: list[CheckJob],
+    *,
+    budget_s: float,
+    kill_after: float,
+    headroom: int,
+    width_caps: Mapping[str, int] | None,
+    teeth: bool,
+    argv: list[str] | None,
+    on_event: Callable[[dict[str, Any]], None] | None,
+) -> _ChildRun:
+    """Start ONE child for `jobs`, read what it delivers, and stop it at `kill_after`
+    seconds or above its memory cap. Fills nothing in."""
+    _on_event = on_event
+    loop = asyncio.get_running_loop()
     payload = json.dumps(
         {
             "jobs": [_job_payload(job) for job in jobs],
@@ -2587,9 +2807,10 @@ async def _judge_checks_now(
             "teeth": bool(teeth),
         }
     ).encode("utf-8")
-    argv = _argv or [sys.executable, "-m", "leona_notebooks.check_judge"]
+    argv = argv or [sys.executable, "-m", "leona_notebooks.check_judge"]
     results: dict[str, JudgedCheck] = {}
     teeth_arrived: set[str] = set()
+    running: list[tuple[str, str]] = []
     outcome = "died"
     started = loop.time()
     process = await asyncio.create_subprocess_exec(
@@ -2676,6 +2897,9 @@ async def _judge_checks_now(
             job_id = event.get("id")
             if not isinstance(job_id, str):
                 continue
+            if kind == "start":
+                running.append((job_id, "teeth" if event.get("phase") == "teeth" else "verdict"))
+                continue
             try:
                 if kind == "verdict":
                     raw = event.get("unreadable")
@@ -2698,7 +2922,7 @@ async def _judge_checks_now(
                     results[job_id] = JudgedCheck(
                         previous.verdict.model_copy(update={"teeth": measured}),
                         previous.unreadable,
-                        previous.final,
+                        previous.final and bool(event.get("final", True)),
                     )
                     teeth_arrived.add(job_id)
             except ValueError:
@@ -2723,30 +2947,7 @@ async def _judge_checks_now(
         killed_for_memory or process.returncode == -9 or b"MemoryError" in bytes(stderr_tail)
     ):
         outcome = "memory"  # SIGKILL is what the kernel's OOM killer sends
-    detail, teeth_reason = _stopped_words(outcome, kill_after)
-    for job in jobs:
-        result = results.get(job.id)
-        if result is None:
-            results[job.id] = JudgedCheck(
-                _inconclusive_without_capture(job.property, detail), final=False
-            )
-            continue
-        verdict = result.verdict
-        if (
-            teeth
-            and outcome != "done"
-            and verdict.status == "pass"
-            and verdict.basis == "circuit"
-            and job.id not in teeth_arrived
-        ):
-            results[job.id] = JudgedCheck(
-                verdict.model_copy(
-                    update={"teeth": CheckTeeth(status="not_measured", reason=teeth_reason)}
-                ),
-                result.unreadable,
-                final=False,
-            )
-    return results
+    return _ChildRun(results, teeth_arrived, outcome, running[-1] if running else None)
 
 
 def _job_key(job: CheckJob) -> str:
