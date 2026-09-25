@@ -129,6 +129,42 @@ class ArtifactContract(_PlanBase):
     top_level_execution: TopLevelExecution
 
 
+#: ArtifactContract.artifact_type values that name a plain callable rather than a
+#: circuit-and-report computation. See `artifact_promises_no_executed_result`.
+_NON_EXECUTING_ARTIFACT_TYPES = frozenset({ArtifactType.FUNCTION, ArtifactType.CLASS})
+
+
+def artifact_promises_no_executed_result(artifact_contract: "ArtifactContract | None") -> bool:
+    """Does the Plan's own artifact_contract say there is no RESULT to check?
+
+    ai-ops 372: ``expected_output_keys`` is schema-mandated (``min_length=1``) on
+    every Plan, and the deterministic execution contract (``check_contract`` in
+    ``majorana_worker.simple_ports``, and the sandbox setup in
+    ``majorana_worker.runtime_ports``) otherwise requires those keys to show up
+    in a module-scope ``RESULT`` the candidate binds. That is the right check for
+    "run a circuit and report what you found" — the product's default shape —
+    and the wrong one for a request whose own Plan says the deliverable is a
+    plain FUNCTION or CLASS never meant to be executed by this pipeline at all
+    (`create_quantum_circuit(n) -> QuantumCircuit` is correct without ever
+    binding RESULT; nothing about it is a defect).
+
+    The planning system prompt already tells the model to set exactly this
+    combination for that shape ("entry point and return type for a
+    function/class ... whether top-level execution is required or
+    forbidden") — this reads that same declared intent rather than guessing
+    at it from the generated source. A FUNCTION/CLASS the plan says must
+    still run (``top_level_execution=REQUIRED``, e.g. a VQE-style optimizer
+    class invoked at module scope) keeps the ordinary RESULT contract: only
+    a plan that says execution is NOT required is read as "no RESULT to
+    check here."
+    """
+    return (
+        artifact_contract is not None
+        and artifact_contract.artifact_type in _NON_EXECUTING_ARTIFACT_TYPES
+        and artifact_contract.top_level_execution is not TopLevelExecution.REQUIRED
+    )
+
+
 class PauliTerm(_PlanBase):
     """One `coefficient * PauliString` term of a Hamiltonian, as data.
 

@@ -52,6 +52,7 @@ from majorana_contracts.enums import (
     evidence_strength_of,
 )
 from majorana_contracts.plan import (
+    ArtifactContract,
     ConstraintTerm,
     ExactLinearSystemReference,
     ExactLindbladReference,
@@ -63,6 +64,7 @@ from majorana_contracts.plan import (
     ProblemTerm,
     ReferenceProblem,
     VerificationPlan,
+    artifact_promises_no_executed_result,
 )
 from majorana_verification import (
     BaselineProblemError,
@@ -355,6 +357,9 @@ _ACCEPTING_CONFIDENCES = frozenset({"high", "medium"})
 def _decide(
     output: "_IntentReviewOutput",
     deterministic_failed: list[str],
+    *,
+    basic_checks: Sequence[Mapping[str, Any]] = (),
+    artifact_contract: ArtifactContract | None = None,
 ) -> SemanticReviewDecision:
     """Turn one advisory review into an actionable next step. Never a dead end.
 
@@ -396,12 +401,41 @@ def _decide(
     among the unverified claims. That is the honest surface for this state, and it
     already exists; reaching it costs a candidate revision, which is cheaper than
     a wrong sentence on a user's screen.
+
+    ai-ops 372: `deterministic_failed` names any `basic_checks` entry that is not
+    literally `"pass"` — which includes `"n/a"` (SKIPPED: "the check did not
+    apply", never a defect — see `_success_criteria_check` and
+    `_return_contract_check`). For a candidate whose Plan already declares, via
+    `artifact_contract`, that no executed result was ever required
+    (`artifact_promises_no_executed_result`), every one of its checks is
+    legitimately `"n/a"` — there is no RESULT to check anything against. Routing
+    that to CODE_REPAIR asks the generator to fix a defect that does not exist:
+    confirmed against the real 2026-09-25 diagnostic run, where this was exactly
+    why `qiskitHumanEval/0`'s repair loop kept regenerating byte-identical source
+    until `candidate_not_converging` gave up on it, even though that source was
+    independently confirmed correct. A REAL `"fail"` (an actual mismatch, method
+    that ran and disagreed) still refuses exactly as before — this only forgives
+    `"n/a"`, and only when the Plan itself said not to expect anything else. This
+    is a delivery decision, not a verification one: `_decide` returning READY
+    here still cannot make `simple_pipeline_verification_summary` report `PASS`
+    (that function has no such branch — INCONCLUSIVE or FAIL are the only
+    options), so nothing here weakens the ADR-0023 evidence bar.
     """
 
     graded_acceptable = (
         output.severity in _ACCEPTING_SEVERITIES and output.confidence in _ACCEPTING_CONFIDENCES
     )
     if deterministic_failed or not graded_acceptable:
+        true_failures = [
+            check for check in basic_checks if check.get("result") not in ("pass", "n/a")
+        ]
+        nothing_to_repair = (
+            graded_acceptable
+            and not true_failures
+            and artifact_promises_no_executed_result(artifact_contract)
+        )
+        if nothing_to_repair and output.decision is SemanticReviewDecision.READY:
+            return SemanticReviewDecision.READY
         if output.decision is SemanticReviewDecision.REPLAN:
             return SemanticReviewDecision.REPLAN
         return SemanticReviewDecision.CODE_REPAIR
@@ -741,7 +775,17 @@ class SimpleIntentReviewer:
             }
         )
 
-        decision = _decide(output, deterministic_failed)
+        decision = _decide(
+            output,
+            deterministic_failed,
+            basic_checks=basic_checks,
+            # Only for the executed path: artifact_only (execution.was_not_run) is
+            # a different, pre-existing scenario with its own static-review
+            # routing above, and artifact_promises_no_executed_result's premise
+            # (an executed candidate whose Plan says nothing needed to run) does
+            # not apply to it.
+            artifact_contract=plan.artifact_contract if not artifact_only else None,
+        )
         failure_class, retry_target = _REVIEW_ROUTING[decision]
         return SimpleIntentReviewResult(
             decision=decision,
@@ -867,6 +911,14 @@ def _return_contract_check(result: dict[str, Any], observation: dict[str, Any]) 
 
     `n/a`, not `fail`: nothing went wrong. A circuit reported nothing because a
     circuit reports nothing.
+
+    Review round 2 (ai-ops 372): an empty, non-derived `result` used to report
+    "pass" here — technically true (an empty dict promised nothing and
+    delivered nothing), but read by a person, and by `run-outcome.ts`'s
+    `ai_review_aligned` branch, as "the program returned what it claimed."
+    A function that was never called claims nothing and returns nothing; `n/a`
+    says that plainly instead of implying a check ran and something was
+    confirmed.
     """
     if result_was_derived(observation):
         return {
@@ -877,10 +929,181 @@ def _return_contract_check(result: dict[str, Any], observation: dict[str, Any]) 
                 "result_keys": sorted(result),
             },
         }
+    if not result:
+        return {
+            "method": "return_contract",
+            "result": "n/a",
+            "details": {
+                "result_origin": "not_executed",
+                "result_keys": [],
+            },
+        }
     return {
         "method": "return_contract",
         "result": "pass",
         "details": {"result_keys": sorted(result)},
+    }
+
+
+#: A bare identifier segment: `create_quantum_circuit`, `BellRunner`, `run`. Never a
+#: call, a subscript, or an attribute chain that is not itself dotted identifiers.
+_ENTRY_POINT_SEGMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _resolve_entry_point_path(raw: str) -> list[str] | None:
+    """Parse a Plan's `entry_point` string into its dotted name segments.
+
+    ai-ops 372, review round 3: a model writes this field in whatever shape reads
+    naturally to it, not always a bare name — `create_quantum_circuit(n_qubits)`
+    (its own call signature), `BellRunner.run` (a class method), `module.name` (a
+    qualified name). This tolerates a trailing `(...)` call suffix and returns the
+    dotted segments for the caller to resolve; returns None when what is left
+    after stripping a call suffix is not a plain identifier path at all (an empty
+    string, an expression, anything with a stray character) — that is a malformed
+    *declaration*, not evidence about the *candidate*, so the caller reports `n/a`
+    rather than guessing a verdict from a value this function cannot parse.
+    """
+    text = raw.strip()
+    paren = text.find("(")
+    if paren != -1:
+        text = text[:paren].strip()
+    if not text:
+        return None
+    segments = text.split(".")
+    if not all(_ENTRY_POINT_SEGMENT.match(segment) for segment in segments):
+        return None
+    return segments
+
+
+def _module_level_defs(module: ast.Module) -> dict[str, ast.AST]:
+    """Function/class names bound at MODULE scope, structurally.
+
+    Deliberately narrower than `ast.walk`: a `def` nested inside another function
+    is not reachable as a module-level entry point (that was the round-2 checker's
+    bug — it accepted `entry_point="run"` when `run` existed only as a method
+    inside some class, which nothing at module scope can call by that bare name).
+    Control-flow wrappers (`if`/`try`/`with`/`for`/`while`) are transparent — the
+    sandbox executes the module top to bottom, so a definition inside one of them
+    still binds at module scope, the same convention
+    `majorana_frameworks.roles._bound_names` already uses. The first definition of
+    a repeated name wins, matching how Python's own module execution would leave
+    the LAST one bound — but for an entry-point *existence* check either occurrence
+    is equally real evidence the name was written, so which one wins does not
+    change the verdict.
+    """
+    found: dict[str, ast.AST] = {}
+
+    def visit(body: list[ast.stmt]) -> None:
+        for stmt in body:
+            if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                found.setdefault(stmt.name, stmt)
+            elif isinstance(stmt, ast.If):
+                visit(stmt.body)
+                visit(stmt.orelse)
+            elif isinstance(stmt, ast.Try):
+                visit(stmt.body)
+                for handler in stmt.handlers:
+                    visit(handler.body)
+                visit(stmt.orelse)
+                visit(stmt.finalbody)
+            elif isinstance(stmt, (ast.With, ast.AsyncWith, ast.For, ast.AsyncFor, ast.While)):
+                visit(stmt.body)
+                visit(getattr(stmt, "orelse", []))
+
+    visit(module.body)
+    return found
+
+
+def _class_method_names(class_node: ast.ClassDef) -> frozenset[str]:
+    """Method names defined directly in a class's own body (not a nested class's)."""
+    return frozenset(
+        stmt.name
+        for stmt in class_node.body
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef))
+    )
+
+
+def _entry_point_check(
+    source: str, artifact_contract: ArtifactContract | None
+) -> dict[str, Any] | None:
+    """Did the candidate actually define the function/class the Plan named?
+
+    ai-ops 372, review round 2 (should-fix b): nothing else in this pipeline calls
+    `entry_point` — the benchmark's own `check()` (or a real user) is what actually
+    calls it, exactly what `majorana_verification.methods.verify_return_contract`'s
+    docstring already says ("nothing observes that today"). Without this, a
+    candidate could satisfy every other check in this file while never having
+    written the requested function at all — check_contract's non-CIRCUIT branch
+    only looks at `RESULT`, and a FUNCTION/CLASS Plan with no executed result has
+    no `RESULT` to check either way (see `artifact_promises_no_executed_result`).
+
+    Returns None (not a check, not a claim either way) when the Plan names no
+    `entry_point`, or its `artifact_type` is not `FUNCTION`/`CLASS` — this check
+    does not apply to a circuit-and-report deliverable, which is checked by
+    `check_contract`'s RESULT-keys path instead.
+
+    Round 3: resolves what `entry_point` actually names, rather than requiring an
+    exact, bare, module-level identifier match. `_resolve_entry_point_path` strips
+    a trailing call suffix (`create_quantum_circuit(n_qubits)` names
+    `create_quantum_circuit`). A dotted path `A.B` passes if EITHER reading holds:
+    `A` is a module-level class defining method `B` (`BellRunner.run`), OR `B`
+    itself is bound at module scope (`module.create_quantum_circuit` — the leading
+    segment is presumed an import alias a single-file candidate would not itself
+    define, so only the last segment is actually checkable). A value that is not a
+    plain (optionally dotted, optionally called) identifier path is reported
+    `n/a`, not `fail` — that is a malformed Plan declaration, not a candidate
+    defect this pipeline can see.
+
+    A real FAIL, not `n/a`, when the path IS parseable and resolves to nothing: a
+    Plan naming an entry_point that never got written is a genuine, checkable
+    defect — this pipeline can see the name is missing without ever running the
+    candidate, the same way a syntax error is checkable without running it.
+    """
+    if artifact_contract is None or not artifact_contract.entry_point:
+        return None
+    if artifact_contract.artifact_type not in (ArtifactType.FUNCTION, ArtifactType.CLASS):
+        return None
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        # A syntax error is already a harder, earlier failure (contract_diagnostics
+        # in runtime_ports.py refuses invalid Python before this stage is ever
+        # reached) — restating it here as a second, redundant claim would be the
+        # same fact under two labels.
+        return None
+
+    segments = _resolve_entry_point_path(artifact_contract.entry_point)
+    if segments is None:
+        return {
+            "method": "entry_point_defined",
+            "result": "n/a",
+            "details": {
+                "entry_point": artifact_contract.entry_point,
+                "reason": "entry_point is not a plain (optionally dotted) identifier path",
+            },
+        }
+
+    module_defs = _module_level_defs(tree)
+    last = segments[-1]
+    found = last in module_defs
+    if not found and len(segments) >= 2:
+        class_node = module_defs.get(segments[-2])
+        if isinstance(class_node, ast.ClassDef) and last in _class_method_names(class_node):
+            found = True
+
+    if found:
+        return {
+            "method": "entry_point_defined",
+            "result": "pass",
+            "details": {"entry_point": artifact_contract.entry_point},
+        }
+    return {
+        "method": "entry_point_defined",
+        "result": "fail",
+        "details": {
+            "entry_point": artifact_contract.entry_point,
+            "reason": (f"no definition resolves {artifact_contract.entry_point!r} at module scope"),
+        },
     }
 
 
@@ -941,6 +1164,7 @@ def simple_pipeline_verification_summary(
     semantic_review_decision: SemanticReviewDecision = SemanticReviewDecision.READY,
     *,
     result_derived: bool = False,
+    result_never_executed: bool = False,
     recorded_checks: Sequence[Mapping[str, Any]],
     review_severity: str | None = None,
 ) -> dict[str, object]:
@@ -1002,6 +1226,14 @@ def simple_pipeline_verification_summary(
         # compare it against, so agreement between them is `f(x) == f(x)` — a
         # comparison that cannot fail, which is worse than no comparison.
         unverified.insert(0, "reported output (the result was derived, not returned)")
+    if result_never_executed:
+        # Review round 2 (ai-ops 372): a Plan whose artifact_contract says the
+        # deliverable is a function/class never required to run means the
+        # entry_point was written but nothing in this pipeline ever called it —
+        # `check()` scoring later is what actually exercises it, not this
+        # pipeline. Named explicitly so a reader (and run-outcome.ts, keyed off
+        # the reason_code below) never mistakes "delivered" for "ran".
+        unverified.insert(0, "function written, never called")
     if not reference_methods:
         unverified.insert(0, "quantum correctness")
     if semantic_review_decision is not SemanticReviewDecision.READY:
@@ -1033,7 +1265,11 @@ def simple_pipeline_verification_summary(
         decision=VerifierDecision.INCONCLUSIVE,
         semantic_review_decision=semantic_review_decision,
         evidence_strength=evidence_strength_of(checks),
-        reason_code=_summary_reason_code(reference_methods, semantic_review_decision),
+        reason_code=(
+            "function_written_not_called"
+            if result_never_executed and semantic_review_decision is SemanticReviewDecision.READY
+            else _summary_reason_code(reference_methods, semantic_review_decision)
+        ),
         candidate_defect_observed=False,
         failure_class=VerificationFailureClass.EVIDENCE_GAP,
         retry_target=RetryTarget.NONE,
@@ -1347,10 +1583,23 @@ class RepoReviewArtifactSaver:
             verification_summary = unexecuted_artifact_verification_summary(review)
         else:
             assert review is not None
+            # ai-ops 372, review round 3 (nit): the run row's own summary
+            # (handlers._finish_simple_pipeline) gates this the same way — a
+            # Plan whose artifact_contract does not promise a no-executed-result
+            # deliverable must never be labelled "function written, never
+            # called" just because this particular execution came back empty.
+            # That is a candidate defect on an ordinary Plan, not an unexercised
+            # function, and the two writers of this claim must not disagree.
+            plan_promises_no_result = artifact_promises_no_executed_result(plan.artifact_contract)
             verification_summary = simple_pipeline_verification_summary(
                 reference_methods,
                 review.decision,
                 result_derived=result_was_derived(execution.observation),
+                result_never_executed=(
+                    not execution.result
+                    and not result_was_derived(execution.observation)
+                    and plan_promises_no_result
+                ),
                 recorded_checks=recorded_basic_checks(review),
                 review_severity=review.severity,
             )
@@ -2502,6 +2751,17 @@ def _success_criteria_check(
         "additional_notes": plan.success_criteria.additional_notes,
     }
     if metric not in execution.result:
+        if artifact_promises_no_executed_result(plan.artifact_contract):
+            # ai-ops 372: the plan's own artifact_contract already says this
+            # deliverable is a FUNCTION/CLASS that was not required to execute —
+            # there is no RESULT to hold a primary_metric in the first place, the
+            # same "n/a, not fail: nothing went wrong" reasoning
+            # `_return_contract_check` already applies to a derived circuit result.
+            return {
+                "method": "success_criteria",
+                "result": "n/a",
+                "details": details | {"reason": "artifact_contract declares no executed result"},
+            }
         return {
             "method": "success_criteria",
             "result": "fail",
@@ -5002,11 +5262,25 @@ class ProductionSimplePipelinePorts:
                 diagnostics.append(
                     "the circuit produced no result to report" + (f": {reason}" if reason else "")
                 )
-        else:
+        elif execution.result or not artifact_promises_no_executed_result(
+            plan.plan.artifact_contract
+        ):
             missing_keys = [
                 key for key in plan.plan.expected_output_keys if key not in execution.result
             ]
             diagnostics.extend(f"RESULT missing key {key!r}" for key in missing_keys)
+        # else: the plan's own artifact_contract says this deliverable is a
+        # FUNCTION/CLASS never meant to be executed by this pipeline (ai-ops 372)
+        # AND execution.result is genuinely empty — there is no RESULT to be
+        # missing a key from, the same way a CIRCUIT "reports nothing" above. See
+        # artifact_promises_no_executed_result's docstring (majorana_contracts.plan)
+        # for why this is not a defect. `execution.result` is checked FIRST
+        # (review round 2): a candidate under a `forbidden`/`demo_only` plan that
+        # went ahead and reported something anyway — a real module-scope RESULT,
+        # or a derived one from a bound FINAL_CIRCUIT — still has its keys
+        # checked against what the Plan promised, exactly as before this PR. A
+        # Plan that says "nothing required" is not a license to report a
+        # fabricated, incomplete RESULT and have it wave through unchecked.
         if self._circuit_expected(plan.plan):
             metrics = execution.observation.get("resource_metrics")
             if execution.observation.get("resource_metrics_error"):
@@ -5145,6 +5419,9 @@ class ProductionSimplePipelinePorts:
                 _return_contract_check(execution.result, execution.observation),
                 success_criteria_check,
             ]
+            entry_point_check = _entry_point_check(candidate.source, plan.plan.artifact_contract)
+            if entry_point_check is not None:
+                fast_checks.append(entry_point_check)
             reference_checks = _reference_checks(plan.plan, execution)
             fast_checks.extend(reference_checks)
             native_consistency = _native_result_consistency_check(plan.plan, execution)
@@ -5628,4 +5905,4 @@ class ProductionSimplePipelinePorts:
         return (
             plan.artifact_contract is None
             or plan.artifact_contract.artifact_type is not ArtifactType.OTHER
-        )
+        ) and not artifact_promises_no_executed_result(plan.artifact_contract)
