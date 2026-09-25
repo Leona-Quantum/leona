@@ -19,6 +19,7 @@ import contextlib
 import json
 import os
 import re
+import time
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
@@ -60,6 +61,14 @@ QFT3_ROTATIONS = (
     "h q[1];\ncp(pi/2) q[0], q[1];\nh q[0];\n"
 )
 QFT3 = QFT3_ROTATIONS + "swap q[0], q[2];\n"
+
+
+def _doubling_chain(depth: int) -> str:
+    """`g0` is one gate; each `gN` calls `g(N-1)` twice, so `g{depth}` is 2**depth."""
+    lines = ["qubit[1] q;", "gate g0 a { h a; }"]
+    lines += [f"gate g{i} a {{ g{i - 1} a; g{i - 1} a; }}" for i in range(1, depth + 1)]
+    return HEADER + "\n".join([*lines, f"g{depth} q[0];"]) + "\n"
+
 
 STATE_BELL = {"kind": "state", "subject": "circuit", "reference": "bell"}
 UNITARY_QFT3 = {"kind": "unitary", "subject": "circuit", "reference": "qft(3)"}
@@ -153,19 +162,26 @@ async def test_a_circuit_over_the_width_ceiling_is_inconclusive_not_an_error(sco
     assert "Too large" in verdict["teeth"]["reason"]
 
 
+@pytest.fixture
+def nothing_is_built(monkeypatch):
+    """Make building a program from its syntax tree an error, for the cases the route
+    must refuse from the tree alone. If a guard regresses, the test then fails on a
+    400 instead of running the bomb it guards against: a hundred million qubits, or
+    2**12 nested gate applications, never reach Qiskit's importer from these tests."""
+    from qiskit_qasm3_import.converter import ConvertVisitor
+
+    def refuse(self, node, **_kwargs):
+        raise AssertionError("the route built a program it should have refused from its tree")
+
+    monkeypatch.setattr(ConvertVisitor, "convert", refuse)
+
+
 @pytest.mark.parametrize(
     ("qasm", "prop", "words"),
     [
         (HEADER + "qubit[100000000] q;\n", UNITARY_QFT3, "100000000 qubits"),
         (HEADER + "qubit[2*3] q;\n", UNITARY_QFT3, "size is not a number"),
-        (
-            HEADER
-            + "qubit[1] q;\ngate g0 a { h a; }\n"
-            + "".join(f"gate g{i} a {{ g{i - 1} a; g{i - 1} a; }}\n" for i in range(1, 40))
-            + "g39 q[0];\n",
-            UNITARY_QFT3,
-            "4,000 gate applications",
-        ),
+        (_doubling_chain(12), UNITARY_QFT3, "4,000 gate applications"),
         (
             HEADER + "qubit[10] q;\nctrl(9) @ x " + ", ".join(f"q[{i}]" for i in range(10)) + ";\n",
             {"kind": "state", "subject": "circuit", "reference": "uniform(10)"},
@@ -176,21 +192,17 @@ async def test_a_circuit_over_the_width_ceiling_is_inconclusive_not_an_error(sco
             {"kind": "state", "subject": "circuit", "amplitudes": {"0": 1}},
             "control flow",
         ),
-        (BELL, {"kind": "state", "subject": "circuit", "reference": "ghz(24)"}, "ghz(24)"),
-        (QFT3, {"kind": "unitary", "subject": "circuit", "reference": "qft(12)"}, "qft(12)"),
     ],
     ids=[
         "a-hundred-million-qubits",
         "register-sized-by-an-expression",
-        "gate-definitions-that-double",
+        "gate-definitions-that-double-twelve-times",
         "a-ten-qubit-controlled-gate",
         "a-billion-iteration-loop",
-        "a-24-qubit-reference-state",
-        "a-12-qubit-reference-unitary",
     ],
 )
 async def test_what_would_be_expensive_to_build_is_refused_from_the_syntax_tree(
-    scope, qasm, prop, words
+    scope, nothing_is_built, qasm, prop, words
 ):
     """Each of these is a few lines that would, if built, allocate or simulate far more
     than its length: refused as `inconclusive` before Qiskit is handed the program."""
@@ -203,11 +215,56 @@ async def test_what_would_be_expensive_to_build_is_refused_from_the_syntax_tree(
     assert verdict["teeth"]["status"] == "not_measured"
 
 
-def _doubling_chain(depth: int) -> str:
-    """`g0` is one gate; each `gN` calls `g(N-1)` twice, so `g{depth}` is 2**depth."""
-    lines = ["qubit[1] q;", "gate g0 a { h a; }"]
-    lines += [f"gate g{i} a {{ g{i - 1} a; g{i - 1} a; }}" for i in range(1, depth + 1)]
-    return HEADER + "\n".join([*lines, f"g{depth} q[0];"]) + "\n"
+async def test_nested_gate_definitions_come_back_inconclusive_fast_not_as_a_hang(
+    scope, nothing_is_built
+):
+    """The case PR 1011's review measured on the importer: nested gate definitions make
+    `qasm3.loads` itself exponential (514 characters took 8 s, about x2.2 per level).
+    Twelve doubling levels (2**12 = 4,096 gate applications) are refused from the tree,
+    and the whole request, auth and routing included, comes back well under 2 s."""
+    started = time.perf_counter()
+    async with _session_client(scope) as client:
+        response = await client.post(
+            "/v1/checks/circuit", json=_body(_doubling_chain(12), UNITARY_QFT3)
+        )
+    elapsed = time.perf_counter() - started
+    assert response.status_code == 200, response.text
+    assert response.json()["verdict"]["status"] == "inconclusive"
+    assert elapsed < 2.0, f"took {elapsed:.2f} s"
+
+
+@pytest.mark.parametrize(
+    ("qasm", "prop", "words"),
+    [
+        (BELL, {"kind": "state", "subject": "circuit", "reference": "ghz(13)"}, "ghz(13)"),
+        (QFT3, {"kind": "unitary", "subject": "circuit", "reference": "qft(9)"}, "qft(9)"),
+        (
+            BELL,
+            {
+                "kind": "state",
+                "subject": "circuit",
+                "reference_qasm": HEADER + "qubit[13] r;\nh r[0];\n",
+            },
+            "reference circuit has 13 qubits",
+        ),
+    ],
+    ids=["a-13-qubit-reference-state", "a-9-qubit-reference-unitary", "a-13-qubit-reference-qasm"],
+)
+async def test_an_expectation_wider_than_the_ceiling_is_refused_before_it_is_built(
+    scope, qasm, prop, words
+):
+    """The engine builds a library reference or a reference circuit BEFORE it compares
+    widths, so a 2-qubit circuit checked against `ghz(24)` would still allocate a
+    24-qubit state. The widths here sit one past each ceiling on purpose: if the guard
+    regressed, the engine would build a small reference and answer `fail` (width
+    mismatch), so the test goes red without allocating anything large."""
+    async with _session_client(scope) as client:
+        response = await client.post("/v1/checks/circuit", json=_body(qasm, prop))
+    assert response.status_code == 200, response.text
+    verdict = response.json()["verdict"]
+    assert verdict["status"] == "inconclusive"
+    assert words in verdict["detail"]
+    assert verdict["teeth"]["status"] == "not_measured"
 
 
 def test_the_expansion_count_is_exact_at_the_ceiling_not_merely_refusing():
