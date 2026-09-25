@@ -162,6 +162,7 @@ test("a cell with a hidden check is marked graded; a plain cell is not", () => {
     answer: null,
     answer_prompt: null,
     timeout_s: null,
+    property: null,
   };
   const views = notebookCellViews(
     [
@@ -211,6 +212,7 @@ const questionCell = (answer: unknown) => ({
   answer,
   answer_prompt: null,
   timeout_s: null,
+  property: null,
 });
 
 test("the derived answer prompt carries exactly kind, options and unit — nothing else", () => {

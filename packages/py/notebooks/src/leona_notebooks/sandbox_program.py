@@ -8,7 +8,10 @@ without a kernel:
 - `trusted_setup` defines `__leona_run_cell__`, which `exec`s one cell's source in the
   shared namespace while capturing stdout/stderr, the value of a trailing expression,
   exceptions, and any matplotlib figures the cell left open.
-- `code` is a sequence of `__leona_run_cell__(id, source, tags)` calls.
+- `code` is a sequence of `__leona_run_cell__(id, source, tags)` calls — except where a
+  `role=check` cell sits, which gets `__leona_capture_check__(id, subject, kind)`: it
+  records the subject (a circuit as OpenQASM 3, or a number) and runs nothing the check
+  says. The verdict is computed on the worker (`leona_notebooks.checks`).
 - `trusted_observer` copies the accumulated per-cell records into the protected
   observation, which the provider writes to the JSON sidecar.
 
@@ -31,7 +34,14 @@ from uuid import uuid4
 from majorana_sandbox.guard import check_python_code
 from majorana_sandbox.spec import MAX_OUTPUT_BYTES, ExecutionSpec
 
+from majorana_contracts.notebooks import MAX_CHECK_VALUE_ENTRIES
+
 from leona_notebooks import hardware
+from leona_notebooks.checks import (
+    MAX_CAPTURE_QASM_CHARS,
+    MAX_CAPTURE_QUBITS,
+    MAX_CAPTURE_TOTAL_CHARS,
+)
 from leona_notebooks.execution import (
     CellError,
     CellOutput,
@@ -386,7 +396,109 @@ def _ln_run_cell(cell_id, source, tags=()):
         cell["stderr"], _ = _ln_cap_text(err.getvalue(), _ln_cfg["text_cap"])
         _ln_harvest_figures(cell)
 
+_ln_ck_cfg = {"max_chars": __CK_MAX_CHARS__, "max_total": __CK_MAX_TOTAL__, "max_values": __CK_MAX_VALUES__, "max_qubits": __CK_MAX_QUBITS__}
+_ln_ck_state = {"chars": 0}
+_ln_float = _ln_builtins.float
+
+def _ln_ck_problem(code, detail=""):
+    return {"kind": "problem", "problem": code, "detail": _ln_str(detail)[:300]}
+
+def _ln_ck_number(x):
+    if _ln_isinstance(x, _ln_builtins.bool):
+        return None
+    if _ln_isinstance(x, _ln_builtins.complex):
+        if x.imag != 0:
+            return None
+        x = x.real
+    if not _ln_isinstance(x, (_ln_int, _ln_float)):
+        return None
+    number = _ln_float(x)
+    if number != number or number in (_ln_float("inf"), _ln_float("-inf")):
+        return "not_finite"
+    return number
+
+def _ln_ck_value(value):
+    # A number or a flat list of numbers, as plain JSON. numpy scalars and arrays are
+    # turned into Python ones with their own `tolist`; nothing else of the object is read.
+    if _ln_str(_ln_getattr(_ln_type(value), "__module__", "")).startswith("numpy") and _ln_getattr(value, "tolist", None) is not None:
+        value = value.tolist()
+    number = _ln_ck_number(value)
+    if number == "not_finite":
+        return _ln_ck_problem("not_finite")
+    if number is not None:
+        return {"kind": "value", "value": number}
+    if _ln_isinstance(value, (_ln_list, _ln_builtins.tuple)):
+        if _ln_len(value) == 0:
+            return _ln_ck_problem("empty")
+        if _ln_len(value) > _ln_ck_cfg["max_values"]:
+            return _ln_ck_problem("too_long", _ln_len(value))
+        out = []
+        for item in value:
+            number = _ln_ck_number(item)
+            if number == "not_finite":
+                return _ln_ck_problem("not_finite")
+            if number is None:
+                return _ln_ck_problem("not_a_number", "a list holding " + _ln_type(item).__name__)
+            out.append(number)
+        return {"kind": "value", "value": out}
+    return _ln_ck_problem("not_a_number", "a " + _ln_type(value).__name__)
+
+def _ln_ck_circuit(value):
+    try:
+        qiskit = _ln_builtins.__import__("qiskit", None, None, ["QuantumCircuit", "qasm3"])
+        circuit_type = qiskit.QuantumCircuit
+    except _ln_exception:
+        return _ln_ck_problem("no_qiskit")
+    if not _ln_isinstance(value, circuit_type):
+        return _ln_ck_problem("not_a_circuit", "a " + _ln_type(value).__name__)
+    qubits = _ln_int(value.num_qubits)
+    if qubits > _ln_ck_cfg["max_qubits"]:
+        return _ln_ck_problem("too_wide", qubits)
+    if value.parameters:
+        return _ln_ck_problem("unbound_parameters", ", ".join(_ln_builtins.sorted(p.name for p in value.parameters)[:5]))
+    try:
+        qasm = qiskit.qasm3.dumps(value)
+    except _ln_exception as exc:
+        return _ln_ck_problem("not_exportable", _ln_type(exc).__name__ + ": " + _ln_str(exc))
+    qasm = "".join([qasm])
+    if _ln_len(qasm) > _ln_ck_cfg["max_chars"]:
+        return _ln_ck_problem("too_large", _ln_len(qasm))
+    if _ln_ck_state["chars"] + _ln_len(qasm) > _ln_ck_cfg["max_total"]:
+        return _ln_ck_problem("over_budget")
+    _ln_ck_state["chars"] += _ln_len(qasm)
+    return {"kind": "circuit", "qasm": qasm, "num_qubits": qubits}
+
+def _ln_capture_check(cell_id, subject, kind):
+    # Where a role=check cell sits: record the subject as plain data and run nothing the
+    # check says. The verdict is computed on the worker (`leona_notebooks.checks`), so the
+    # expectation never enters this process. A capture that cannot be made is recorded as
+    # a problem, not raised: it is the check's incapacity, and it never stops the cells
+    # after it the way an exception in a code cell does.
+    cell = {"id": cell_id, "status": "ok", "stdout": "", "stderr": "", "outputs": [], "error": None, "duration_ms": 0, "execution_count": None, "note": "", "hardware_requests": [], "capture": None}
+    _ln_state["cells"].append(cell)
+    _ln_state["shown"] = _ln_builtins.set()
+    if _ln_state["stopped"]:
+        cell["status"] = "not_run"
+        cell["note"] = "an earlier cell raised"
+        return
+    _ln_state["count"] += 1
+    cell["execution_count"] = _ln_state["count"]
+    started = _ln_time.perf_counter()
+    try:
+        if subject not in _majorana_namespace:
+            cell["capture"] = _ln_ck_problem("missing")
+        elif kind == "value":
+            cell["capture"] = _ln_ck_value(_majorana_namespace[subject])
+        else:
+            cell["capture"] = _ln_ck_circuit(_majorana_namespace[subject])
+    except _ln_builtins.BaseException as exc:
+        cell["status"] = "error"
+        cell["error"] = {"ename": _ln_type(exc).__name__, "evalue": _ln_str(exc)[:2000], "traceback": []}
+    finally:
+        cell["duration_ms"] = _ln_int((_ln_time.perf_counter() - started) * 1000)
+
 _majorana_namespace["__leona_run_cell__"] = _ln_run_cell
+_majorana_namespace["__leona_capture_check__"] = _ln_capture_check
 _majorana_namespace["__leona_display__"] = _ln_display
 _majorana_namespace["display"] = _ln_display
 _majorana_namespace["get_ipython"] = lambda: None
@@ -425,6 +537,18 @@ def _hardware_setup_values() -> dict[str, str]:
     }
 
 
+def _check_setup_values() -> dict[str, str]:
+    """What the check capture in the setup is parameterised by, taken from
+    `leona_notebooks.checks` so the sandbox and the worker's read-back apply one set of
+    ceilings."""
+    return {
+        "__CK_MAX_CHARS__": repr(int(MAX_CAPTURE_QASM_CHARS)),
+        "__CK_MAX_TOTAL__": repr(int(MAX_CAPTURE_TOTAL_CHARS)),
+        "__CK_MAX_VALUES__": repr(int(MAX_CHECK_VALUE_ENTRIES)),
+        "__CK_MAX_QUBITS__": repr(int(MAX_CAPTURE_QUBITS)),
+    }
+
+
 def _default_guard(source: str) -> list[str]:
     result = check_python_code(source)
     return [] if result.ok else list(result.violations)
@@ -456,9 +580,11 @@ def compose_notebook_program(
     which is the one where their content can actually execute. An unknown `run_until`
     raises `UnknownCellError` here, before any `ExecutionSpec` exists.
     """
-    if image_budget_bytes + MAX_HARDWARE_QASM_TOTAL_CHARS >= MAX_OUTPUT_BYTES:
-        # The hardware requests' OpenQASM shares the same sidecar (hardware.py says
-        # why that budget is as tight as it is).
+    if image_budget_bytes + MAX_HARDWARE_QASM_TOTAL_CHARS + MAX_CAPTURE_TOTAL_CHARS >= (
+        MAX_OUTPUT_BYTES
+    ):
+        # The hardware requests' OpenQASM and the check cells' captured circuits share
+        # the same sidecar (hardware.py says why that budget is as tight as it is).
         raise ValueError("image budget must leave room in the evidence sidecar")
     cut = len(spec.cells) - 1
     if run_until is not None:
@@ -477,7 +603,19 @@ def compose_notebook_program(
         if index > cut:
             not_run[cell.id] = RUN_UNTIL_NOTE
             continue
-        source, reason = prepare_cell_source(cell)
+        if cell.property is not None:
+            # A check cell's source is never executed, so it is not prepared; but it is
+            # still an executable cell's raw source, and the guard still reads it.
+            source, reason = (
+                "",
+                (
+                    None
+                    if cell.runs_in_sandbox
+                    else ("execute=false" if not cell.execute else "tagged skip-execution")
+                ),
+            )
+        else:
+            source, reason = prepare_cell_source(cell)
         if reason is not None:
             skipped[cell.id] = reason
             continue
@@ -488,7 +626,14 @@ def compose_notebook_program(
     if violations:
         raise NotebookGuardError(violations)
     calls = [
-        f"__leona_run_cell__({cell.id!r}, {source!r}, {tuple(cell.tags)!r})"
+        (
+            # `subject` is a validated identifier and `kind` a closed literal; both land
+            # as `repr` literals, so neither can change the program's shape.
+            f"__leona_capture_check__({cell.id!r}, {cell.property.subject!r}, "
+            f"{cell.property.kind!r})"
+            if cell.property is not None
+            else f"__leona_run_cell__({cell.id!r}, {source!r}, {tuple(cell.tags)!r})"
+        )
         for cell, source in prepared
     ]
     code = "\n".join(calls) + "\n" if calls else "pass\n"
@@ -501,6 +646,10 @@ def compose_notebook_program(
         setup = setup.replace(placeholder, value)
     if "__HW_" in setup:  # a placeholder added to the template and not to the table
         raise RuntimeError("the notebook setup has an unfilled hardware placeholder")
+    for placeholder, value in _check_setup_values().items():
+        setup = setup.replace(placeholder, value)
+    if "__CK_" in setup:
+        raise RuntimeError("the notebook setup has an unfilled check placeholder")
     # The host function binds `_majorana_*` builtin aliases before `trusted_setup`
     # runs; the setup uses its own `_ln_*` names so a later change to that list
     # cannot silently break it. Bind them here from `builtins`.

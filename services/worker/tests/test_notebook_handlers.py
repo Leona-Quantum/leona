@@ -1133,8 +1133,10 @@ async def test_notebook_cells_attempt_counts_every_execution_dispatch(
         by_id = {c["id"]: c for c in event["cells"]}
         assert by_id["c05"]["status"] == "error"
         assert by_id["c05"]["ename"] == "NameError"
-        # No outputs/stdout/figures on this event — only status and error name/value.
-        assert set(by_id["c05"]) == {"id", "status", "ename", "evalue", "duration_ms"}
+        # No outputs/stdout/figures on this event — only status and error name/value,
+        # and a check cell's verdict status (None on every other cell).
+        assert set(by_id["c05"]) == {"id", "status", "ename", "evalue", "duration_ms", "check"}
+        assert by_id["c05"]["check"] is None
 
 
 async def test_revise_does_not_stream_draft_deltas(_fake_run_plumbing, monkeypatch):
@@ -1895,3 +1897,106 @@ async def test_the_verdict_event_survives_the_PRODUCTION_sink_validation(monkeyp
     assert not any(kind == "run.error" for kind, _ in sinks_seen), (
         "a successful grade emitted run.error — an event was rejected and swallowed"
     )
+
+
+# --------------------------------------------------------------------------- check cells
+
+CHECKED_AUTHORED = """\
+# ---
+# title: Checked by the worker
+# kind: scratch
+# ---
+# %% id=c01
+from qiskit import QuantumCircuit
+bell = QuantumCircuit(2)
+bell.h(0)
+bell.cx(0, 1)
+flipped = bell.copy()
+flipped.z(1)
+# %% id=k01 role=check property={"kind":"state","subject":"bell","reference":"bell"}
+# %% id=k02 role=check property={"kind":"state","subject":"flipped","reference":"bell"}
+# %% id=c02
+print("after the checks")
+"""
+
+
+async def test_author_run_judges_check_cells_on_the_worker_without_failing_the_version(
+    run_stores, monkeypatch
+):
+    """The execution port writes the verdicts (trusted code, after the sandbox), a
+    failing check leaves the version `ready` and the run SUCCEEDED, and the live
+    `notebook.cells` event carries each check's status."""
+    sinks: list[FakeEventSink] = []
+
+    class Recording(FakeEventSink):
+        def __init__(self, scope, session, run_id):
+            super().__init__(scope, session, run_id)
+            sinks.append(self)
+
+    monkeypatch.setattr(handlers, "RepoEventSink", Recording)
+    run_id, notebook_id, version_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    store = MemoryNotebookStore()
+    store.seed_version(notebook_id, version_id)
+
+    await nh.handle_notebook_revise(
+        Session(),
+        _author_payload(
+            run_id=run_id,
+            notebook_id=notebook_id,
+            version_id=version_id,
+            source=CHECKED_AUTHORED,
+        ),
+        llm=QueueLLM([]),
+        sandbox=LocalSubprocessSandbox(),
+        store=store,
+    )
+
+    version = store.versions[version_id]
+    assert version.status == "ready", version.error
+    assert version.report["ok"] is True
+    by_id = {cell["id"]: cell for cell in version.report["cells"]}
+    assert by_id["k01"]["status"] == "ok" and by_id["k02"]["status"] == "ok"
+    assert by_id["k01"]["check"]["status"] == "pass"
+    assert by_id["k01"]["check"]["teeth"]["status"] == "measured"
+    assert by_id["k02"]["check"]["status"] == "fail"
+    assert "wrong phase" in by_id["k02"]["check"]["detail"]
+    assert by_id["c02"]["check"] is None and by_id["c02"]["stdout"] == "after the checks\n"
+    assert run_stores[0].status is RunStatus.SUCCEEDED
+
+    [cells_event] = [payload for kind, payload in sinks[0].events if kind == "notebook.cells"]
+    live = {cell["id"]: cell["check"] for cell in cells_event["cells"]}
+    assert live == {"c01": None, "k01": "pass", "k02": "fail", "c02": None}
+    # The event validates against the contract it is emitted under.
+    from majorana_contracts.events import NotebookCells
+
+    NotebookCells.model_validate(
+        {
+            "type": "notebook.cells",
+            "run_id": str(run_id),
+            "seq": 1,
+            "ts": "2026-09-25T00:00:00Z",
+            **cells_event,
+        }
+    )
+
+
+async def test_a_check_evaluation_crash_never_takes_the_report_down(monkeypatch):
+    """`_judge_checks` is belt and braces: if judging itself breaks, the report still
+    goes out, without verdicts, rather than failing the run."""
+    from leona_notebooks.spec import NotebookSpec as Spec
+
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("judge exploded")
+
+    monkeypatch.setattr(nh, "apply_check_verdicts", broken)
+    ports = nh.ProductionNotebookPorts(
+        llm=QueueLLM([]),
+        sandbox=LocalSubprocessSandbox(),
+        sink=FakeEventSink(None, None, None),
+        response_locale="en",
+    )
+    spec = parse_source(CHECKED_AUTHORED, slug="crash")
+    assert isinstance(spec, Spec)
+    report = await ports.run_notebook(spec)
+    assert report.ok is True
+    assert all(cell.check is None for cell in report.cells)

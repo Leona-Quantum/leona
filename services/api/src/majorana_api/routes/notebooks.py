@@ -30,6 +30,7 @@ from leona_notebooks.authoring import (
     advisory_structure,
     spec_from_author_request,
 )
+from leona_notebooks.checks import enforce_check_authorship
 from leona_notebooks.source import render_source
 from leona_notebooks.templates import (
     KIND_DESCRIPTIONS,
@@ -1028,10 +1029,16 @@ async def author_notebook_version(
     against the version and never refuse the save (`leona_notebooks.authoring`).
     """
     notebook = await notebooks_repo.get_notebook(scope, session, notebook_id)
-    latest, _current = await _latest_and_current(scope, session, notebook)
+    latest, current = await _latest_and_current(scope, session, notebook)
     _assert_not_in_flight(notebook, latest)
 
-    spec = _authored_spec(body, notebook)
+    # Check authorship is stamped here, against the version the reader was editing, and
+    # never taken from the submission: a new or changed check is the reader's and
+    # accepted; an unchanged one keeps its author, and the reader may accept it (DESIGN
+    # §1.4). The worker receives the stamped spec.
+    spec = enforce_check_authorship(
+        _authored_spec(body, notebook), _parent_spec(latest, current), "user"
+    )
     request_record = {
         "author": True,
         "message": body.message,
@@ -1117,6 +1124,21 @@ async def author_notebook_version(
     )
 
 
+def _parent_spec(
+    latest: NotebookVersionRow, current: NotebookVersionRow | None
+) -> contracts.NotebookSpec | None:
+    """The spec a reader's edit is compared with for check authorship: the current
+    version's, or the newest one's when there is no current version yet. `None` when
+    neither has a spec, in which case every check in the edit counts as new."""
+    for row in (current, latest):
+        if row is not None and row.spec is not None:
+            try:
+                return contracts.NotebookSpec.model_validate(row.spec)
+            except ValueError:
+                continue
+    return None
+
+
 def _report_if_code_unchanged(
     latest: NotebookVersionRow, spec: contracts.NotebookSpec
 ) -> contracts.ExecutionReport | None:
@@ -1179,6 +1201,9 @@ async def import_notebook(
         ) from None
     if body.title:
         spec = spec.model_copy(update={"title": body.title})
+    # An upload is the reader's own: whatever authorship its metadata claims, every check
+    # in it is new to Leona and is stamped as theirs.
+    spec = enforce_check_authorship(spec, None, "user")
     source = render_source(spec)
 
     notebook, version = await notebooks_repo.create_notebook(
