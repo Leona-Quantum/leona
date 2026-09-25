@@ -180,6 +180,21 @@ def test_a_read_token_may_read_and_estimate_but_not_start_a_run():
     assert refusal.reason == token_access.INSUFFICIENT_SCOPE
 
 
+def test_a_read_token_may_plan_a_workflow_as_it_may_estimate_one():
+    """`POST /plans` (ai-ops 382, Phase B slice S2), named rather than left to the
+    generic sweeps, which prove properties of whatever the sets contain and never that
+    this route is in one. In `READ_WRITES` beside `/estimates/logical`: it evaluates the
+    planner's closed-form formulas over the numbers sent and stores nothing, which is
+    no more than a GET does, so it is not held back to `run` the way `/checks/circuit`
+    (which simulates on Leona's CPU) is.
+    """
+    template, path = "/plans", "/v1/plans"
+    assert ("POST", template) in token_access.READ_WRITES
+    assert ("POST", template) not in token_access.RUN_WRITES
+    for scopes in (READ_ONLY, READ_AND_RUN, READ_AND_HARDWARE, READ_RUN_AND_HARDWARE):
+        assert token_access.check("POST", template, path, scopes) is None
+
+
 def test_a_run_token_may_start_and_cancel_a_run():
     for method, template in sorted(token_access.RUN_WRITES):
         assert token_access.check(method, template, f"/v1{template}", READ_AND_RUN) is None
