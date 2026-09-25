@@ -127,19 +127,20 @@ async def test_the_child_gets_no_secrets_from_the_parents_environment(
     not sys.platform.startswith("linux"), reason="RLIMIT_AS is enforced on Linux only"
 )
 async def test_a_check_that_needs_more_memory_than_the_cap_is_inconclusive() -> None:
-    """A 22-qubit statevector is 64 MiB. With 16 MiB of headroom over the child's own
-    footprint, numpy's allocation is refused and the verdict says so. On macOS the kernel
-    ignores RLIMIT_AS, so this runs in CI (Linux) only."""
-    ghz = QuantumCircuit(22)
+    """An 18-qubit statevector is 4 MiB, and a judgement holds several. With 1 MiB of
+    headroom over the child's own footprint, the allocation is refused (RLIMIT_AS) or the
+    parent's watch kills the child, and either way the verdict says so. On macOS the
+    kernel ignores RLIMIT_AS, so this runs in CI (Linux) only."""
+    ghz = QuantumCircuit(18)
     ghz.h(0)
-    for target in range(1, 22):
+    for target in range(1, 18):
         ghz.cx(0, target)
     job = CheckJob(
         "big",
-        CheckProperty(kind="state", subject="ghz", reference="ghz(22)"),
+        CheckProperty(kind="state", subject="ghz", reference="ghz(18)"),
         CheckCapture.from_circuit(ghz),
     )
-    judged = await judge_checks([job], budget_s=30, memory_headroom_bytes=16 * 2**20)
+    judged = await judge_checks([job], budget_s=30, memory_headroom_bytes=1 * 2**20)
     assert judged["big"].verdict.status == "inconclusive"
     assert "ran out of memory" in judged["big"].verdict.detail
 
@@ -191,11 +192,18 @@ async def test_the_parent_kills_a_child_that_outgrows_its_memory_on_any_platform
     """The coordinator's backstop: RLIMIT_AS is ignored on macOS, so the parent also reads
     the child's resident size and kills it above footprint + headroom. The stand-in child
     touches 96 MiB against 16 MiB of headroom (light, and far from the container's limit)."""
+    samples: list[dict] = []
     started = time.monotonic()
     judged = await judge_checks(
-        _jobs(), budget_s=20, memory_headroom_bytes=16 * 2**20, _argv=[sys.executable, "-c", _GROWS]
+        _jobs(),
+        budget_s=20,
+        memory_headroom_bytes=16 * 2**20,
+        _argv=[sys.executable, "-c", _GROWS],
+        _on_event=lambda event: samples.append(event) if event.get("event") == "watch" else None,
     )
-    assert time.monotonic() - started < 15, "killed by the memory watch, not the clock"
+    assert time.monotonic() - started < 15, (
+        f"killed by the clock, not the memory watch; last watch samples: {samples[-5:]}"
+    )
     for result in judged.values():
         assert result.verdict.status == "inconclusive"
         assert "ran out of memory" in result.verdict.detail
@@ -211,15 +219,50 @@ async def test_the_same_child_within_its_headroom_is_left_alone() -> None:
         assert "ran out of memory" not in result.verdict.detail
 
 
-def test_the_headroom_defaults_to_192_mib_and_the_environment_can_change_it(
+def test_the_headroom_defaults_to_64_mib_and_the_environment_can_change_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from leona_notebooks.checks import CHECK_MEMORY_HEADROOM_BYTES, check_judge_headroom_bytes
 
     monkeypatch.delenv("LEONA_CHECK_JUDGE_HEADROOM_MB", raising=False)
-    assert CHECK_MEMORY_HEADROOM_BYTES == 192 * 2**20
-    assert check_judge_headroom_bytes() == 192 * 2**20
+    assert CHECK_MEMORY_HEADROOM_BYTES == 64 * 2**20
+    assert check_judge_headroom_bytes() == 64 * 2**20
     monkeypatch.setenv("LEONA_CHECK_JUDGE_HEADROOM_MB", "96")
     assert check_judge_headroom_bytes() == 96 * 2**20
     monkeypatch.setenv("LEONA_CHECK_JUDGE_HEADROOM_MB", "lots")
-    assert check_judge_headroom_bytes() == 192 * 2**20
+    assert check_judge_headroom_bytes() == 64 * 2**20
+
+
+async def test_a_process_never_runs_two_judge_children_at_once() -> None:
+    """The coordinator's guard: two concurrent calls against a slow stand-in child (1 s
+    each) run one after the other, so the second finishes about a second after the first
+    and the pair takes at least two seconds, not one."""
+    import asyncio
+
+    slow = [
+        sys.executable,
+        "-c",
+        "import sys, time, json; sys.stdin.read(); time.sleep(1.0); "
+        "print(json.dumps({'event': 'done'}), flush=True)",
+    ]
+    finished: list[float] = []
+
+    async def one() -> None:
+        await judge_checks(_jobs(), budget_s=10, _argv=slow)
+        finished.append(time.monotonic())
+
+    started = time.monotonic()
+    await asyncio.gather(one(), one())
+    assert time.monotonic() - started >= 1.9
+    assert abs(finished[1] - finished[0]) >= 0.9
+
+
+async def test_the_resident_size_reader_works_on_this_platform() -> None:
+    """The watch is only as good as its reader: `/proc` on Linux, `ps` on macOS. Read this
+    test process's own size, which is certainly over 10 MiB."""
+    import os
+
+    from leona_notebooks.checks import _resident_bytes
+
+    resident = await _resident_bytes(os.getpid())
+    assert resident is not None and resident > 10 * 2**20, resident

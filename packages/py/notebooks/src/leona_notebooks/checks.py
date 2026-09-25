@@ -40,6 +40,7 @@ import os
 import re
 import sys
 import time
+import weakref
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
@@ -171,18 +172,23 @@ MAX_MODIFIED_GATE_QUBITS = MUTATION_MAX_QUBITS_UNITARY
 #: gates. The child process's wall clock (`CHECK_BUDGET_S`) bounds whatever these miss.
 MAX_STATE_WORK = 1 << 29
 MAX_UNITARY_WORK = 1 << 29
-#: Memory the judging process may use on top of its own footprint after its imports. 192
-#: MiB, because the worker and the API both run in 512 MiB containers (`gcloud run services
-#: describe majorana-worker`: cpu=1000m, memory=512Mi, read by the coordinator; the API's
-#: `API_MEMORY_MI=512`), and the judge SHARES that container with the process that started
-#: it: over the container's limit, Cloud Run kills the whole instance and every job in it,
-#: not only the check. The footprint was 120 MiB resident here (M1 Pro) and the worker's
-#: own notebook module imports to 137 MiB, so 120 + 192 leaves the parent about 200 MiB.
-#: Enforced twice: RLIMIT_AS inside the child (Linux only) and the parent polling the
-#: child's resident size and killing it (`_watch_memory`, every platform). The ceilings
-#: (`CHECK_*_MAX_QUBITS`) are sized so every allowed check fits in about 150 MiB of it.
-#: `LEONA_CHECK_JUDGE_HEADROOM_MB` overrides it for one process.
-CHECK_MEMORY_HEADROOM_BYTES = 192 << 20
+#: Memory the judging process may use on top of its own footprint after its imports.
+#:
+#: 64 MiB, because the judge SHARES a 512 MiB container with the process that started it,
+#: and over the container's limit Cloud Run kills the whole instance and every job in it,
+#: not only the check. The worker is `cpu=1000m, memory=512Mi` (`gcloud run services
+#: describe majorana-worker`), and its own process already peaks near 292 MiB: Cloud
+#: Monitoring, `run.googleapis.com/container/memory/utilizations`, hourly p99 over the 3
+#: days to 2026-09-25, max 57.0% of 512 MiB, median 54% (measured by the coordinator, not
+#: here). The judge's footprint after imports was 117 to 123 MiB resident on an M1 Pro
+#: (Linux not measured). 512 - 292 - 120 leaves about 100 MiB; 64 keeps a margin for the
+#: Linux footprint being larger. The API is 512 MiB too (`API_MEMORY_MI`).
+#:
+#: Enforced twice: RLIMIT_AS inside the child (Linux only) and the parent reading the
+#: child's resident size every 50 ms and killing it (every platform). Each kind's ceiling
+#: (`CHECK_*_MAX_QUBITS` in the contract) is sized so its measured or estimated peak fits
+#: in this. `LEONA_CHECK_JUDGE_HEADROOM_MB` overrides it for one process.
+CHECK_MEMORY_HEADROOM_BYTES = 64 << 20
 #: How often the parent reads the child's resident size.
 _MEMORY_POLL_S = 0.05
 
@@ -787,6 +793,8 @@ def _bound_program(
     what = "The circuit" if side == "subject" else "The check's reference circuit"
     try:
         program = openqasm3.parse(text)
+    except MemoryError:
+        raise
     except Exception as exc:  # noqa: BLE001 - any parser failure is the program's
         raise QasmUnreadable(side, f"{what} does not parse: {_parser_words(exc)}") from None
 
@@ -2433,18 +2441,22 @@ def _child_env() -> dict[str, str]:
 
 
 async def _resident_bytes(pid: int) -> int | None:
-    """A process's resident size: `/proc` on Linux, `ps` elsewhere (a macOS dev machine,
-    where the kernel ignores RLIMIT_AS). `None` when it cannot be read."""
-    status = f"/proc/{pid}/status"
-    if os.path.exists(status):
-        try:
-            with open(status, encoding="ascii") as handle:
-                for line in handle:
-                    if line.startswith("VmRSS:"):
-                        return int(line.split()[1]) * 1024
-        except (OSError, ValueError):
-            return None
-        return None
+    """A process's resident size: `/proc/<pid>/statm`, then `/proc/<pid>/status` (Linux),
+    then `ps` (a macOS dev machine, where the kernel ignores RLIMIT_AS). `None` only when
+    none of the three can be read."""
+    try:
+        with open(f"/proc/{pid}/statm", "rb") as handle:
+            pages = int(handle.read().split()[1])
+        return pages * os.sysconf("SC_PAGE_SIZE")
+    except (OSError, ValueError, IndexError):
+        pass
+    try:
+        with open(f"/proc/{pid}/status", "rb") as handle:
+            for line in handle:
+                if line.startswith(b"VmRSS:"):
+                    return int(line.split()[1]) * 1024
+    except (OSError, ValueError, IndexError):
+        pass
     try:
         probe = await asyncio.create_subprocess_exec(
             "ps",
@@ -2484,6 +2496,24 @@ def _stopped_words(outcome: str, seconds: float) -> tuple[str, str]:
     )
 
 
+#: One judge child at a time per process (per event loop: the worker and the API each run
+#: exactly one), whatever the process's job concurrency. Two children at once would need
+#: twice the headroom the container has (`CHECK_MEMORY_HEADROOM_BYTES`). A later call
+#: waits; its own wall clock starts when it gets the slot. Keyed by loop because an
+#: asyncio primitive belongs to the loop it first waited on, and tests run many loops.
+_JUDGE_SLOTS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _judge_slot() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    slot = _JUDGE_SLOTS.get(loop)
+    if slot is None:
+        slot = _JUDGE_SLOTS[loop] = asyncio.Semaphore(1)
+    return slot
+
+
 async def judge_checks(
     jobs: list[CheckJob],
     *,
@@ -2500,7 +2530,7 @@ async def judge_checks(
 
     `budget_s` is the child's own deadline: it stops starting new work after it, giving
     every check a verdict before any check its broken copies. `kill_after_s` is the hard
-    wall clock. `memory_headroom_bytes` (default `check_judge_headroom_bytes()`, 192 MiB)
+    wall clock. `memory_headroom_bytes` (default `check_judge_headroom_bytes()`, 64 MiB)
     is the memory the child may use above its footprint after its imports, enforced
     twice: RLIMIT_AS inside the child (Linux only), and this function reading the child's
     resident size every 50 ms and killing it above footprint + headroom (every platform;
@@ -2509,10 +2539,38 @@ async def judge_checks(
     `inconclusive` with the reason ("took too long to check", "ran out of memory"), and a
     passing check whose broken copies were cut short says so in its teeth.
 
+    Only one child runs at a time in a process (`_judge_slot`): a second call waits for
+    the first, and its wall clock starts when it gets the slot.
+
     `_argv` and `_on_event` are for tests: a stand-in child, and a look at every event.
     """
     if not jobs:
         return {}
+    async with _judge_slot():
+        return await _judge_checks_now(
+            jobs,
+            budget_s=budget_s,
+            kill_after_s=kill_after_s,
+            memory_headroom_bytes=memory_headroom_bytes,
+            width_caps=width_caps,
+            teeth=teeth,
+            _argv=_argv,
+            _on_event=_on_event,
+        )
+
+
+async def _judge_checks_now(
+    jobs: list[CheckJob],
+    *,
+    budget_s: float,
+    kill_after_s: float | None,
+    memory_headroom_bytes: int | None,
+    width_caps: Mapping[str, int] | None,
+    teeth: bool,
+    _argv: list[str] | None,
+    _on_event: Callable[[dict[str, Any]], None] | None,
+) -> dict[str, JudgedCheck]:
+    """`judge_checks` once it holds this process's judge slot."""
     loop = asyncio.get_running_loop()
     kill_after = float(kill_after_s if kill_after_s is not None else budget_s)
     headroom = (
@@ -2556,10 +2614,21 @@ async def judge_checks(
     killed_for_memory: list[bool] = []
 
     async def watch_memory() -> None:
+        unreadable = 0
         while process.returncode is None:
             if memory_limit:
-                resident = await _resident_bytes(process.pid)
-                if resident is not None and resident > memory_limit[0]:
+                try:
+                    resident = await _resident_bytes(process.pid)
+                except Exception:  # noqa: BLE001 - a broken watch must say so, not vanish
+                    _log.exception("check judge memory watch failed; RLIMIT_AS still applies")
+                    return
+                if _on_event is not None:
+                    _on_event({"event": "watch", "resident": resident, "limit": memory_limit[0]})
+                if resident is None:
+                    unreadable += 1
+                    if unreadable == 20:
+                        _log.warning("check judge memory watch cannot read the child's size")
+                elif resident > memory_limit[0]:
                     killed_for_memory.append(True)
                     with contextlib.suppress(ProcessLookupError):
                         process.kill()

@@ -389,13 +389,13 @@ def test_inconclusive_is_the_checks_own_incapacity_never_a_fail() -> None:
             "does not parse",
         )
     )
-    wide = QuantumCircuit(11)
+    wide = QuantumCircuit(9)
     wide.h(0)
     cases.append(
         (
             _prop(kind="unitary", subject="qc", reference="qft(3)"),
             _circuit(wide),
-            "judges at most 10",
+            "judges at most 8",
         )
     )
     cases.append(
