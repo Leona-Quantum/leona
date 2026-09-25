@@ -1548,3 +1548,103 @@ async def test_a_save_that_changes_code_does_not_keep_the_old_outputs(client, au
             assert response.status_code == 201, response.text
             assert author_state["result_kwargs"]["report"] is None, change
             author_state["versions"][:] = [v1]
+
+
+# ------------------------------------------------------------ check-cell authorship
+
+_NALA_CHECK = {
+    "kind": "value",
+    "subject": "x",
+    "value": 1.0,
+    "citation": "arXiv:quant-ph/0000000",
+    "author": "nala",
+    "accepted": False,
+}
+
+
+def _checked_spec(*check_cells: dict) -> dict:
+    return {
+        "schema_version": 1,
+        "slug": "s",
+        "title": "Checked",
+        "kind": "scratch",
+        "cells": [{"id": "c01", "kind": "code", "source": "x = 1\n"}, *check_cells],
+    }
+
+
+def _check(cell_id: str, **prop) -> dict:
+    return {"id": cell_id, "kind": "code", "role": "check", "property": prop}
+
+
+@pytest.mark.parametrize("execute", [True, False])
+async def test_the_author_route_stamps_check_authorship_against_the_current_version(
+    client, author_state, execute
+):
+    """The reader may accept a Nala check (unchanged, accepted flips), may not relabel it
+    `source` without changing it, and owns any check they add or change."""
+    author_state["versions"][0].spec = _checked_spec(_check("k01", **_NALA_CHECK))
+    submitted = _checked_spec(
+        # unchanged property, relabelled source and accepted: the Accept button, plus a
+        # relabel the route must refuse
+        _check("k01", **{**_NALA_CHECK, "author": "source", "accepted": True}),
+        # new, and claiming to be Nala's unaccepted proposal: it is the reader's
+        _check("k02", kind="value", subject="x", value=2.0, author="nala", accepted=False),
+    )
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{author_state['notebook'].id}/versions",
+            json={"spec": submitted, "execute": execute},
+        )
+    assert response.status_code == 201, response.text
+    stored = (
+        author_state["jobs"][0]["payload"]["request"]["spec"]
+        if execute
+        else author_state["result_kwargs"]["spec"]
+    )
+    by_id = {cell["id"]: cell for cell in stored["cells"]}
+    assert (by_id["k01"]["property"]["author"], by_id["k01"]["property"]["accepted"]) == (
+        "nala",
+        True,
+    )
+    assert (by_id["k02"]["property"]["author"], by_id["k02"]["property"]["accepted"]) == (
+        "user",
+        True,
+    )
+    assert by_id["k02"]["source"] == "# check: x equals 2\n"
+
+
+async def test_an_imported_notebooks_checks_are_the_readers(client, monkeypatch):
+    from leona_notebooks.ipynb import to_ipynb
+    from leona_notebooks.spec import NotebookSpec as Spec
+
+    spec = Spec.model_validate(_checked_spec(_check("k01", **{**_NALA_CHECK, "accepted": True})))
+    ipynb = to_ipynb(spec)
+    created: dict = {}
+
+    async def fake_create_notebook(_scope, _session, **kwargs):
+        notebook = _notebook_row(slug=kwargs["slug"], title=kwargs["title"], kind=kwargs["kind"])
+        created["notebook"] = notebook
+        created["version"] = _version_row(notebook_id=notebook.id, created_by="user")
+        return notebook, created["version"]
+
+    async def fake_set_version_result(_scope, _session, _version_id, **kwargs):
+        created["result_kwargs"] = kwargs
+        version = created["version"]
+        version.status = kwargs["status"]
+        version.spec = kwargs["spec"]
+        version.ipynb = kwargs["ipynb"]
+        version.source = kwargs["source"]
+        created["notebook"].current_version_id = version.id
+        return version
+
+    async def fake_list_versions(_scope, _session, _notebook_id):
+        return [created["version"]]
+
+    monkeypatch.setattr(notebooks_repo, "create_notebook", fake_create_notebook)
+    monkeypatch.setattr(notebooks_repo, "set_version_result", fake_set_version_result)
+    monkeypatch.setattr(notebooks_repo, "list_versions", fake_list_versions)
+    async with client as c:
+        response = await c.post("/v1/notebooks/import", json={"ipynb": ipynb, "execute": False})
+    assert response.status_code == 201, response.text
+    [check] = [c for c in created["result_kwargs"]["spec"]["cells"] if c["id"] == "k01"]
+    assert (check["property"]["author"], check["property"]["accepted"]) == ("user", True)
