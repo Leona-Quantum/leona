@@ -284,7 +284,7 @@ async def test_nested_gate_definitions_come_back_inconclusive_fast_not_as_a_hang
     ("qasm", "prop", "words"),
     [
         (BELL, {"kind": "state", "subject": "circuit", "reference": "ghz(13)"}, "on 13"),
-        (QFT3, {"kind": "unitary", "subject": "circuit", "reference": "qft(9)"}, "on 9"),
+        (QFT3, {"kind": "unitary", "subject": "circuit", "reference": "qft(8)"}, "on 8"),
         (
             BELL,
             {
@@ -295,7 +295,7 @@ async def test_nested_gate_definitions_come_back_inconclusive_fast_not_as_a_hang
             "on 13",
         ),
     ],
-    ids=["a-13-qubit-reference-state", "a-9-qubit-reference-unitary", "a-13-qubit-reference-qasm"],
+    ids=["a-13-qubit-reference-state", "an-8-qubit-reference-unitary", "a-13-qubit-reference-qasm"],
 )
 async def test_an_expectation_wider_than_the_circuit_is_a_fail_and_is_never_built(
     scope, qasm, prop, words
@@ -312,6 +312,19 @@ async def test_an_expectation_wider_than_the_circuit_is_a_fail_and_is_never_buil
     assert verdict["status"] == "fail"
     assert words in verdict["detail"]
     assert verdict["teeth"]["status"] == "not_measured"
+
+
+async def test_a_reference_past_the_contracts_ceiling_is_refused_before_the_route_runs(scope):
+    """One past the unitary ceiling, the contract's own reference grammar refuses it, so
+    the request never reaches the judge: a 422, like any malformed body."""
+    prop = {
+        "kind": "unitary",
+        "subject": "circuit",
+        "reference": f"qft({CHECK_UNITARY_MAX_QUBITS + 1})",
+    }
+    async with _session_client(scope) as client:
+        response = await client.post("/v1/checks/circuit", json=_body(QFT3, prop))
+    assert response.status_code == 422
 
 
 @pytest.mark.parametrize(
