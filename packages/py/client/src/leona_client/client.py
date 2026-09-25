@@ -1,4 +1,4 @@
-"""The control-plane client: notebooks, verified runs, estimates, circuit checks, and Qapps.
+"""The control-plane client: notebooks, verified runs, estimates, plans, checks, and Qapps.
 
 One bearer-token client for everything `%nala`, the `leona-notebooks` CLI and
 `leona-mcp`'s acting tools need from the API. Generalised from
@@ -7,6 +7,8 @@ are that class, unchanged in behaviour. `run`/`estimate` methods are new in Phas
 `run_qapp` and its two lower-level halves are ai-ops 349 option 2's "call it as an
 API" endpoint. `check_circuit` is the agent connector's first headless tool (ai-ops
 382 option 1): a circuit judged against a property, with no run and nothing stored.
+`plan_workflow` is its second (Phase B slice S2): the workflow planner's pipeline and
+cited costs for a problem at the sizes given, computed by the API.
 
 Configuration is two environment variables — never a token as a constructor argument
 from untrusted input, and never a token in a log line or an exception message:
@@ -587,6 +589,38 @@ class Client:
         if assumptions is not None:
             payload["assumptions"] = assumptions
         return self._authenticated_call("POST", "/estimates/logical", payload)
+
+    # -- plans: the agent connector's plan_workflow (ai-ops 382, Phase B S2) ----
+
+    def plan_workflow(
+        self,
+        problem: str,
+        params: dict[str, float | None] | None = None,
+        choices: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """`POST /v1/plans`: the Atlas workflow planner's pipeline and cited costs.
+
+        `problem` is a planner problem id (`search`, `factoring`, `ecdlp`,
+        `ground-state`, `hamiltonian-simulation`, `linear-system`, `maxcut`,
+        `amplitude-estimation`, `phase-estimation`, `linear-ode`, `nonlinear-ode`);
+        `params` maps its parameter keys to values (None clears a stated assumption);
+        `choices` maps a stage path, as a previous answer's stages carry it, to the
+        method id to use there. Returns the raw response, like `estimate_resources`:
+        the route's models are route-local (`routes/plans.py`). The same numbers
+        `leonaqt.com/repository/plan` shows, each line with its `kind` and `source`;
+        `estimate_point` is ready to pass to `estimate_resources` as one point.
+
+        A value outside a parameter's range is refused by the API with the range in
+        words (a 422, raised here as `LeonaClientError`). Any token may call this, a
+        `read` one included: it is arithmetic, and stores nothing. This client never
+        plans locally; it has no copy of the planner (`leona_planner` is the API's).
+        """
+        payload: dict[str, Any] = {
+            "problem": problem,
+            "params": dict(params or {}),
+            "choices": dict(choices or {}),
+        }
+        return self._authenticated_call("POST", "/plans", payload)
 
     # -- checks: the agent connector's check_circuit (ai-ops 382 option 1) -----
 

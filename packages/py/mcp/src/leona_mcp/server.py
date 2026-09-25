@@ -1,10 +1,10 @@
-"""The MCP server: nine tools over the public Atlas and, with a token, runs, Qapps, checks.
+"""The MCP server: ten tools over the public Atlas and, with a token, runs, plans, checks.
 
 Run it as `leona-mcp`. It speaks MCP over stdin and stdout, opens no port, and
 makes network calls only through `leona_client` — the anonymous catalog endpoint for
 `search_methods`/`get_method`/`list_problem_areas`, and the authenticated control
 plane for `run_verified`/`get_run`/`list_my_runs`/`estimate_resources`/`run_qapp`/
-`check_circuit`.
+`check_circuit`/`plan_workflow`.
 Logging goes to stderr, because stdout carries the protocol.
 
 The acting tools (proposal 7 Phase C, ai-ops 349/362) take their token ONLY from the
@@ -26,14 +26,23 @@ beside IBM's own Qiskit MCP servers: it sends a circuit and a property to
 `POST /v1/checks/circuit` and returns Leona's verdict with its teeth, whether the check
 could tell deliberately broken copies of the circuit from the original. It never calls a
 pass "verified", and neither may the model quoting it.
+
+`plan_workflow` (ai-ops 382, Phase B slice S2; VISION §5.8 "plan") sends a problem, its
+sizes and any block choices to `POST /v1/plans` and returns the pipeline and the cited
+cost lines `leonaqt.com/repository/plan` shows for the same inputs, with a `summary`
+that quotes each number with its kind and source. The problems, parameters and choices
+its description teaches are generated from the TS planner (`plan_catalog.json`, written
+by `scripts/write-planner-fixture.ts`); this package never plans locally.
 """
 
 from __future__ import annotations
 
 import argparse
 import functools
+import json
 import logging
 import sys
+from importlib import resources
 from typing import Annotated, Any, Literal
 
 import anyio
@@ -90,7 +99,10 @@ INSTRUCTIONS = (
     "a property (a state, a unitary, a distribution or an energy) with Leona's own trusted "
     "code, stores nothing, and says whether the check could catch deliberately broken copies "
     "of the circuit; report its pass as 'checked against' what it names, never as verified. "
-    "No tool here submits hardware jobs."
+    "plan_workflow returns the pipeline of Atlas blocks and the cited cost lines Leona's "
+    "workflow planner gives for a problem at the sizes you state; quote each number with its "
+    "kind and source, and pass its estimate_point to estimate_resources for physical qubits "
+    "and runtime. No tool here submits hardware jobs."
 )
 
 SEARCH_DESCRIPTION = (
@@ -225,6 +237,63 @@ CHECK_CIRCUIT_DESCRIPTION = _NEEDS_TOKEN + (
     "reference can itself be the wrong target."
 )
 
+#: The problems, parameters and root choices `plan_workflow` describes, generated from the
+#: TS planner by `scripts/write-planner-fixture.ts` (`plannerToolCatalog`) and checked
+#: current by `apps/web/lib/workflow-planner-python-port.test.ts`. Package data, not an
+#: import: this package reaches the planner only through `POST /v1/plans`.
+PLAN_CATALOG: dict[str, Any] = json.loads(
+    resources.files("leona_mcp").joinpath("plan_catalog.json").read_text("utf-8")
+)
+PLAN_PROBLEMS: tuple[str, ...] = tuple(problem["id"] for problem in PLAN_CATALOG["problems"])
+
+
+def _plain(value: float) -> str:
+    """A range bound as a person writes it: 16384, 1e+30, 0.0016."""
+    return str(int(value)) if float(value).is_integer() and abs(value) < 1e7 else f"{value:g}"
+
+
+def _problem_words(problem: dict[str, Any]) -> str:
+    params = []
+    for spec in problem["params"]:
+        kind = "whole number" if spec["integer"] else "number"
+        words = (
+            f"{spec['key']} ({spec['label']}; {kind} {_plain(spec['min'])} to {_plain(spec['max'])}"
+        )
+        if spec["assumed"]:
+            words += f"; assumed {_plain(spec['assumed']['value'])} if left out: {spec['assumed']['reason']}"
+        params.append(words + ")")
+    root = problem["root"]
+    methods = ", ".join(
+        f"{method['id']}{' (default)' if method['id'] == root['default'] else ''}"
+        for method in root["methods"]
+    )
+    return (
+        f"'{problem['id']}': {problem['label']}. "
+        + (f"Params: {'; '.join(params)}. " if params else "No params: no numeric cost model yet. ")
+        + f"Choice at '{root['path']}': {methods}. "
+        + f'E.g. "{problem["example"]}"'
+    )
+
+
+PLAN_DESCRIPTION = _NEEDS_TOKEN + (
+    "Plans a quantum algorithm the way leonaqt.com/repository/plan does and returns the same "
+    "numbers: the pipeline of Atlas blocks that realises a problem (every stage, the method "
+    "chosen there and why, and the other methods that could fill it), and the cost lines the "
+    "planner evaluates from published formulas at your sizes. Every line carries its 'kind' "
+    "(exact, upper-bound, leading-order, numerical-estimate, published, derived, supplied, or "
+    "scaling, which is a magnitude with no constant and never a count) and its 'source' (a "
+    "paper, where in it, and a quote). A line whose parameter you did not give has value null "
+    "and says which it is 'missing'. A block with no numeric model here has its cost as the "
+    "paper states it in 'stated_cost'. 'summary' is one paragraph quoting each number with its "
+    "kind and source. 'estimate_point' is this plan's logical cost ready to pass, as one "
+    "point, to estimate_resources for physical qubits and runtime. Arithmetic only; nothing "
+    "is run or stored; any token may call it. "
+    "CHOICES: 'choices' maps a stage 'path' from a previous answer to a method id from that "
+    "stage's 'alternatives'; a choice the planner cannot follow is listed in "
+    "'ignored_choices'. A value outside a parameter's range is refused with the range. "
+    "PROBLEMS: " + " | ".join(_problem_words(problem) for problem in PLAN_CATALOG["problems"])
+)
+
 _READ_ONLY = ToolAnnotations(
     readOnlyHint=True,
     destructiveHint=False,
@@ -310,7 +379,7 @@ async def _in_thread(func: Any, /, *args: Any, **kwargs: Any) -> Any:
 
 
 def build_server(client: CatalogClient | None = None) -> FastMCP:
-    """The server with its nine tools. Tests pass a `CatalogClient` with a mock
+    """The server with its ten tools. Tests pass a `CatalogClient` with a mock
     transport for the three read-only ones; the acting tools build their own
     `leona_client.Client` per call from `LEONA_API_TOKEN`, so tests for those
     construct a `Client` directly with a fake transport instead."""
@@ -529,6 +598,39 @@ def build_server(client: CatalogClient | None = None) -> FastMCP:
         )
 
     @server.tool(
+        name="plan_workflow",
+        title="Plan a workflow and cost it from its sources",
+        description=PLAN_DESCRIPTION,
+        annotations=_AUTHENTICATED_READ_ONLY,
+    )
+    async def plan_workflow(
+        problem: Annotated[
+            Literal[PLAN_PROBLEMS],  # type: ignore[valid-type]
+            Field(description="A planner problem id; the description lists each one."),
+        ],
+        params: Annotated[
+            dict[str, float | None] | None,
+            Field(
+                description="Parameter key to value, from the problem's list. null clears an "
+                "assumed value. Leave one out to keep its assumption."
+            ),
+        ] = None,
+        choices: Annotated[
+            dict[str, str] | None,
+            Field(
+                description="Stage path (from an answer's stages) to the method id to use there."
+            ),
+        ] = None,
+        language: Annotated[
+            Literal["en", "ja"],
+            Field(description="The language of labels, notes and the summary."),
+        ] = "en",
+    ) -> dict[str, Any]:
+        client = _token_client()
+        plan = await _in_thread(client.plan_workflow, problem, params, choices)
+        return _plan_result(plan, language)
+
+    @server.tool(
         name="run_qapp",
         title="Call a published Qapp",
         description=RUN_QAPP_DESCRIPTION,
@@ -726,6 +828,126 @@ def _check_result(verdict: CheckVerdict) -> dict[str, Any]:
     data["summary"] = _check_summary(verdict)
     if verdict.teeth is None or verdict.teeth.status != "measured":
         data["teeth_note"] = _teeth_words(verdict)
+    return data
+
+
+def _in_language(value: Any, language: str) -> Any:
+    """Every `{"en": ..., "ja": ...}` in the plan reduced to the one language asked for."""
+    if isinstance(value, dict):
+        if set(value) == {"en", "ja"} and all(isinstance(v, str) for v in value.values()):
+            return value[language]
+        return {key: _in_language(item, language) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_in_language(item, language) for item in value]
+    return value
+
+
+def _number_words(value: float) -> str:
+    """A number about the way the planner page prints it: 6,190 · 2.62e9 · 0.0016.
+
+    Rounded for reading, never into a different claim: a probability of 0.99999905
+    stays 0.99999905 rather than becoming "1", because "1" says certain.
+    """
+    size = abs(value)
+    if size != 0 and (size >= 1e7 or size < 1e-3):
+        mantissa, exponent = f"{value:.2e}".split("e")
+        return f"{mantissa.rstrip('0').rstrip('.')}e{int(exponent)}"
+    if float(value).is_integer():
+        return f"{int(value):,}"
+    if size >= 100:
+        return f"{round(value):,}"
+    short = f"{value:.3g}"
+    return repr(value) if float(short).is_integer() else short
+
+
+def _cited(source: dict[str, Any] | None) -> str:
+    """`Gidney & Ekerå 2019 (arxiv:1905.09749), abstract`: enough to find the passage."""
+    if source is None:
+        return "no paper: Leona's own arithmetic"
+    surnames = [name.split()[-1] for name in source["authors"].split(",") if name.strip()]
+    if len(surnames) > 2:
+        names = f"{surnames[0]} et al."
+    else:
+        names = " & ".join(surnames) or "unknown"
+    return f"{names} {source['year']} ({source['paper_id']}), {source['locator']}"
+
+
+#: Why the planner put a method at a stage (`StageChoice` in `assemble.ts`), in words.
+_CHOICE_WORDS = {
+    "reader": "your choice",
+    "published": "the route its source used",
+    "preferred": "the planner's default",
+    "first": "the first listed, an arbitrary default",
+    "none": "nothing fills it",
+}
+
+
+def _line_words(line: dict[str, Any], sources: dict[str, Any]) -> str:
+    source = sources.get(line["source"]) if line["source"] else None
+    where = f"{line['kind']}; {_cited(source)}"
+    if line["value"] is None:
+        return f"{line['label']}: not computed, needs {', '.join(line['missing'])} [{where}]"
+    qualifier = f"{line['qualifier']} " if line.get("qualifier") else ""
+    unit = f" {line['unit']}" if line["unit"] else ""
+    number = _number_words(line["value"])
+    if line["kind"] == "scaling":
+        return f"{line['label']}: {number}, a magnitude with no constant, not a count [{where}]"
+    return f"{line['label']}: {qualifier}{number}{unit} [{where}]"
+
+
+def _plan_summary(plan: dict[str, Any]) -> str:
+    """One paragraph a model can quote: the pipeline, then every number with its kind and
+    source. Written from the answer's own fields, in the answer's language."""
+    problem = plan["problem"]["label"]
+    origins = {"reader": "given", "assumed": "assumed"}
+    given = [
+        f"{param['key']} = {_number_words(param['value'])} ({origins.get(param['origin'], param['origin'])})"
+        for param in plan["params"]
+        if param["value"] is not None
+    ]
+    root = plan["stages"][0] if plan["stages"] else None
+    head = f"Leona's workflow planner, for {problem}"
+    head += f" at {', '.join(given)}" if given else ""
+    if root and root["method"]:
+        how = _CHOICE_WORDS.get(root["choice"], root["choice"])
+        head += f": {root['capability']['label']} by {root['method']['label']} ({how})"
+        if len(plan["stages"]) > 1:
+            head += f", {len(plan['stages']) - 1} stages below it"
+    parts = [head + "."]
+    sources = plan["sources"]
+    if plan["lines"]:
+        parts.append(
+            "Costs: " + "; ".join(_line_words(line, sources) for line in plan["lines"]) + "."
+        )
+    if plan["classical"]:
+        parts.append(
+            "Classically: "
+            + "; ".join(_line_words(line, sources) for line in plan["classical"])
+            + "."
+        )
+    if plan["published"]:
+        parts.append(
+            "Published at this size: "
+            + "; ".join(_line_words(line, sources) for line in plan["published"])
+            + "."
+        )
+    parts += [note["text"] for note in plan["notes"]]
+    if plan["lines"] or plan["classical"] or plan["published"]:
+        parts.append("Figures here are rounded for reading; the lines carry exact values.")
+    if plan["estimate_point"]:
+        parts.append("For physical qubits and runtime, pass estimate_point to estimate_resources.")
+    else:
+        parts.append(
+            "There is no estimate_point: this plan states no logical qubit count together "
+            "with a Toffoli or T count, so there is nothing to turn into a machine."
+        )
+    return " ".join(parts)
+
+
+def _plan_result(plan: dict[str, Any], language: str) -> dict[str, Any]:
+    """The plan in one language, plus `summary`."""
+    data = _in_language(plan, language)
+    data["summary"] = _plan_summary(data)
     return data
 
 
