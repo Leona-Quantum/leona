@@ -15339,6 +15339,263 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
   font-size: var(--fs-12);
 }
 
+/* -- check cells (ai-ops 382): the card, its author badge, verdict and teeth meter,
+   the notebook-level summary, and the "Add a check" form -- */
+.mj-notebook-check {
+  display: grid;
+  gap: var(--sp-2);
+}
+.mj-notebook-check-statement {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-16, 1rem);
+  font-weight: 500;
+}
+.mj-notebook-check-basis {
+  margin: 0;
+  font-size: var(--fs-12);
+}
+.mj-notebook-check-author {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mj-notebook-check-author-text {
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+.mj-notebook-check-verdict {
+  display: grid;
+  gap: var(--sp-1);
+  margin-top: var(--sp-1);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-left: 3px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+}
+.mj-notebook-check-verdict[data-status="pass"] {
+  border-left-color: var(--ok);
+}
+.mj-notebook-check-verdict[data-status="fail"] {
+  border-left-color: var(--err);
+}
+.mj-notebook-check-verdict[data-status="inconclusive"] {
+  border-left-color: var(--warn);
+}
+.mj-notebook-check-verdict > p {
+  margin: 0;
+}
+.mj-notebook-check-chip {
+  display: inline-block;
+  font-weight: 600;
+  font-size: var(--fs-13);
+}
+.mj-notebook-check-chip[data-status="pass"] {
+  color: var(--ok);
+}
+.mj-notebook-check-chip[data-status="fail"] {
+  color: var(--err);
+}
+.mj-notebook-check-chip[data-status="inconclusive"] {
+  color: var(--warn);
+}
+.mj-notebook-check-checked-against {
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+.mj-notebook-check-measure {
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-notebook-check-detail {
+  color: var(--text-0);
+  font-size: var(--fs-13);
+}
+.mj-notebook-check-not-run {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-13);
+}
+.mj-notebook-check-teeth {
+  display: grid;
+  gap: var(--sp-1);
+  margin-top: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+}
+.mj-notebook-check-teeth > p {
+  margin: 0;
+  font-size: var(--fs-13);
+}
+.mj-notebook-check-teeth-caught {
+  color: var(--text-1);
+}
+.mj-notebook-check-teeth-warning {
+  color: var(--warn);
+  font-weight: 500;
+}
+.mj-notebook-check-teeth-equivalent {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-notebook-check-survivors {
+  margin: var(--sp-1) 0 0;
+  padding-left: 1.25em;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+.mj-notebook-check-disclosure {
+  margin-top: var(--sp-1);
+}
+.mj-notebook-check-disclosure summary {
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+.mj-notebook-check-qasm {
+  margin: var(--sp-2) 0;
+}
+.mj-notebook-check-fingerprint {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-12);
+  word-break: break-all;
+}
+.mj-notebook-check-summary {
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+.mj-notebook-cell-add-check {
+  margin-top: var(--sp-2);
+}
+
+/* The live view's per-check status dot (ai-ops 382) — a compact signal beside the
+   cell's own "Ran"/"Raised" pill while a run streams; the finished card above is
+   where the full verdict lives. Colour is never the only signal: `title` and the
+   sr-only text both carry the same word the chip above shows. */
+.mj-notebook-live-check-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-2);
+}
+.mj-notebook-live-check-dot[data-status="pass"] {
+  background: var(--ok);
+}
+.mj-notebook-live-check-dot[data-status="fail"] {
+  background: var(--err);
+}
+.mj-notebook-live-check-dot[data-status="inconclusive"] {
+  background: var(--warn);
+}
+
+/* -- "Add a check" (ai-ops 382): the inline form a code cell's toolbar opens -- */
+.mj-notebook-add-check {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-4) var(--sp-4) var(--sp-5);
+  border: 1px solid var(--accent);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-notebook-add-check-title {
+  margin: 0;
+  color: var(--text-0);
+  font-weight: 500;
+}
+.mj-notebook-add-check-field {
+  display: grid;
+  gap: var(--sp-1);
+  font-size: var(--fs-13);
+}
+.mj-notebook-add-check-field > span:first-child {
+  color: var(--text-1);
+}
+.mj-notebook-add-check-field input,
+.mj-notebook-add-check-field select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  outline: 0;
+  color: var(--text-0);
+  background: var(--bg-0);
+  font: inherit;
+}
+.mj-notebook-add-check-field input:focus-visible,
+.mj-notebook-add-check-field select:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.mj-notebook-add-check-hint {
+  font-size: var(--fs-12);
+}
+.mj-notebook-add-check-table {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+}
+.mj-notebook-add-check-table legend {
+  padding: 0;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  font-weight: 600;
+}
+.mj-notebook-add-check-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mj-notebook-add-check-row input {
+  box-sizing: border-box;
+  min-width: 0;
+  flex: 1 1 120px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-0);
+  background: var(--bg-1);
+  font: inherit;
+}
+.mj-notebook-add-check-errors {
+  padding: var(--sp-3);
+  border: 1px solid var(--err);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--err) 10%, var(--bg-0));
+  color: var(--err);
+  font-size: var(--fs-13);
+}
+.mj-notebook-add-check-errors p {
+  margin: 0 0 var(--sp-1);
+  font-weight: 500;
+}
+.mj-notebook-add-check-errors ul {
+  margin: 0;
+  padding-left: 1.25em;
+}
+.mj-notebook-add-check-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+
 /* -- the review panel (a <details>, so "Nala's review" collapses) -- */
 .mj-notebook-review {
   padding: var(--sp-4);

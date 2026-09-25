@@ -4,6 +4,13 @@ import type { NotebookDiffCellStatus, NotebookDiffHeaderField } from "./notebook
 import type { NotebookMastery } from "./notebook-mastery";
 import type { CellRunChip } from "./notebook-ide";
 import type { NotebookLintCopy } from "./notebook-lint";
+import type {
+  CheckAuthorBadge,
+  CheckKind,
+  CheckStatus,
+  CheckSummaryCounts,
+  ReferenceFamily,
+} from "./notebook-checks";
 import type { PublicLocale } from "./public-locale";
 
 type NotebookKind = components["schemas"]["NotebookKind"];
@@ -4824,6 +4831,308 @@ export const NOTEBOOK_HARDWARE_COPY: Record<PublicLocale, {
     credentialMissing: "実機で実行するには、IBM QuantumのAPIキーを接続してください。ジョブはあなた自身のIBMアカウントで実行されます。",
     credentialLink: "IBMのキーを追加する",
     earlierVersion: (seq) => `この結果は、同じ回路を実行したこのノートブックのバージョン${seq}のものです。`,
+  },
+};
+
+/**
+ * Check cells (ai-ops 382, `plans/platform-vision-20260924/phase-a/DESIGN.md` §1–2): the
+ * card's statement, author badge, verdict and teeth meter, the "Add a check" form, and the
+ * notebook-level summary line. Kept as its own export, the same shape as
+ * `NOTEBOOK_HARDWARE_COPY` above, rather than folded into `notebooks` — one cohesive
+ * feature's copy, read once from `components/notebook-check-card.tsx` and
+ * `components/notebook-add-check-form.tsx`.
+ *
+ * `checked_against`, `measure` and `detail` are never wrapped here: they are the worker's
+ * own diagnostic sentences (`CheckVerdict`, `leona_notebooks.checks`), rendered verbatim —
+ * the same rule `notebook-view.tsx` already applies to `grade.message`/`grade.hint`.
+ */
+export const NOTEBOOK_CHECK_COPY: Record<PublicLocale, {
+  basisLabel: Record<"circuit" | "value", string>;
+  authorNalaProposed: string;
+  authorNalaCiting: (citation: string) => string;
+  authorNotAccepted: string;
+  authorAcceptedByYou: string;
+  authorUser: string;
+  authorSource: (citation: string) => string;
+  accept: string;
+  accepting: string;
+  acceptFailed: string;
+  statusChip: Record<CheckStatus, string>;
+  notRunYet: string;
+  checkedAgainst: (text: string) => string;
+  teethLabel: string;
+  teethTooltip: string;
+  teethCaught: (caught: number, mutants: number) => string;
+  teethSurvivorsLabel: (count: number) => string;
+  teethEquivalentLeftOut: (count: number) => string;
+  teethNoTeethWarning: string;
+  teethNotMeasured: (reason: string) => string;
+  qasmDisclosureLabel: string;
+  qasmCopy: string;
+  qasmCopied: string;
+  qasmCopyFailed: string;
+  fingerprintLabel: string;
+  summaryLabel: string;
+  summary: (counts: CheckSummaryCounts) => string;
+
+  addCheck: string;
+  addCheckTitle: string;
+  kindLabel: string;
+  kindOption: Record<CheckKind, string>;
+  subjectLabel: string;
+  subjectPlaceholder: string;
+  expectationModeLabel: string;
+  expectationModeOption: { reference: string; amplitudes: string };
+  referenceLabel: string;
+  referenceFamilyOption: Record<ReferenceFamily, string>;
+  referenceQubitsLabel: string;
+  amplitudesLabel: string;
+  probabilitiesLabel: string;
+  bitstringLabel: string;
+  amplitudeValueLabel: string;
+  probabilityValueLabel: string;
+  addRow: string;
+  removeRow: string;
+  hamiltonianLabel: string;
+  pauliLabel: string;
+  coefficientLabel: string;
+  addTerm: string;
+  targetLabel: string;
+  targetOption: { ground: string; number: string };
+  targetValueLabel: string;
+  valueLabel: string;
+  valuePlaceholder: string;
+  toleranceLabel: string;
+  toleranceDefaultHint: (value: string) => string;
+  statementLabel: string;
+  submit: string;
+  submitting: string;
+  cancel: string;
+  validationHeading: string;
+  /** `draftCheckStatement`'s labels — the auto-drafted sentence in the statement field. */
+  statement: {
+    state: (subject: string, reference: string) => string;
+    stateAmplitudes: (subject: string) => string;
+    unitary: (subject: string, reference: string) => string;
+    distribution: (subject: string) => string;
+    energyGround: (subject: string) => string;
+    energyTarget: (subject: string, target: string) => string;
+    value: (subject: string, value: string) => string;
+    subjectFallback: string;
+  };
+}> = {
+  en: {
+    basisLabel: {
+      circuit: "Checked from the circuit",
+      value: "Checked from the value your code produced",
+    },
+    authorNalaProposed: "Proposed by Nala",
+    authorNalaCiting: (citation) => `Proposed by Nala, citing ${citation}`,
+    authorNotAccepted: "not accepted yet",
+    authorAcceptedByYou: "accepted by you",
+    authorUser: "Written by you",
+    authorSource: (citation) => `From ${citation}`,
+    accept: "Accept",
+    accepting: "Accepting…",
+    acceptFailed: "This check could not be accepted. Try again.",
+    statusChip: { pass: "Pass", fail: "Fail", inconclusive: "Inconclusive" },
+    notRunYet: "Not run yet",
+    checkedAgainst: (text) => `Checked against ${text}`,
+    teethLabel: "Teeth",
+    teethTooltip:
+      "Leona changed the circuit on purpose in small ways. A good check fails on the changed versions.",
+    teethCaught: (caught, mutants) =>
+      `Caught ${caught} of ${mutants} change${mutants === 1 ? "" : "s"} that alter the circuit's output`,
+    teethSurvivorsLabel: (count) => `Not caught (${count})`,
+    teethEquivalentLeftOut: (count) =>
+      count === 1
+        ? "1 change that doesn't alter the output was left out."
+        : `${count} changes that don't alter the output were left out.`,
+    teethNoTeethWarning: "This check could not tell a broken circuit from this one.",
+    teethNotMeasured: (reason) => `Teeth not measured: ${reason}`,
+    qasmDisclosureLabel: "The circuit this check judged",
+    qasmCopy: "Copy",
+    qasmCopied: "Copied",
+    qasmCopyFailed: "Copy failed. Select the code and copy it manually.",
+    fingerprintLabel: "Fingerprint",
+    summaryLabel: "Checks in this notebook",
+    summary: (counts) => {
+      const parts: string[] = [];
+      if (counts.pass) parts.push(`${counts.pass} pass`);
+      if (counts.fail) parts.push(`${counts.fail} fail`);
+      if (counts.inconclusive) parts.push(`${counts.inconclusive} inconclusive`);
+      if (counts.notRun) parts.push(`${counts.notRun} not run`);
+      const noun = counts.total === 1 ? "check" : "checks";
+      const verdictText = parts.length > 0 ? parts.join(", ") : "not run yet";
+      const proposed =
+        counts.proposedUnaccepted > 0 ? ` · ${counts.proposedUnaccepted} proposed by Nala, not yet accepted` : "";
+      return `${counts.total} ${noun}: ${verdictText}${proposed}`;
+    },
+
+    addCheck: "Add a check",
+    addCheckTitle: "Add a check",
+    kindLabel: "What kind of check",
+    kindOption: {
+      state: "A state the circuit prepares",
+      unitary: "The circuit's unitary",
+      distribution: "A measured distribution",
+      energy: "An energy",
+      value: "A plain value",
+    },
+    subjectLabel: "Which variable",
+    subjectPlaceholder: "e.g. qc",
+    expectationModeLabel: "Compare against",
+    expectationModeOption: { reference: "A known state", amplitudes: "Specific amplitudes" },
+    referenceLabel: "Reference",
+    referenceFamilyOption: {
+      bell: "Bell state (Phi+)",
+      "bell:phi-": "Bell state (Phi-)",
+      "bell:psi+": "Bell state (Psi+)",
+      "bell:psi-": "Bell state (Psi-)",
+      ghz: "GHZ state",
+      w: "W state",
+      uniform: "Uniform superposition",
+      qft: "Quantum Fourier transform",
+      iqft: "Inverse quantum Fourier transform",
+    },
+    referenceQubitsLabel: "Qubits",
+    amplitudesLabel: "Amplitudes",
+    probabilitiesLabel: "Probabilities",
+    bitstringLabel: "Bitstring",
+    amplitudeValueLabel: "Amplitude",
+    probabilityValueLabel: "Probability",
+    addRow: "Add a row",
+    removeRow: "Remove",
+    hamiltonianLabel: "Hamiltonian terms",
+    pauliLabel: "Pauli string",
+    coefficientLabel: "Coefficient",
+    addTerm: "Add a term",
+    targetLabel: "Compare against",
+    targetOption: { ground: "The exact ground state energy", number: "A number" },
+    targetValueLabel: "Target energy",
+    valueLabel: "Expected value",
+    valuePlaceholder: "e.g. 0.5 or 0.5, 1.2",
+    toleranceLabel: "Tolerance",
+    toleranceDefaultHint: (value) => `Default for this kind: ${value}`,
+    statementLabel: "Statement",
+    submit: "Add check",
+    submitting: "Adding…",
+    cancel: "Cancel",
+    validationHeading: "This check cannot be added yet:",
+    statement: {
+      state: (subject, reference) => `Check that ${subject} prepares ${reference}.`,
+      stateAmplitudes: (subject) => `Check that ${subject}'s state matches the given amplitudes.`,
+      unitary: (subject, reference) => `Check that ${subject}'s unitary matches ${reference}.`,
+      distribution: (subject) => `Check that ${subject}'s measured distribution matches the given probabilities.`,
+      energyGround: (subject) => `Check the energy of ${subject} against the exact ground state energy.`,
+      energyTarget: (subject, target) => `Check the energy of ${subject} against ${target || "the target"}.`,
+      value: (subject, value) => `Check that ${subject} equals ${value || "the expected value"}.`,
+      subjectFallback: "the subject",
+    },
+  },
+  ja: {
+    basisLabel: {
+      circuit: "回路から確認しました",
+      value: "コードが出した値から確認しました",
+    },
+    authorNalaProposed: "Nalaが提案",
+    authorNalaCiting: (citation) => `Nalaが提案(出典: ${citation})`,
+    authorNotAccepted: "まだ承認されていません",
+    authorAcceptedByYou: "あなたが承認済み",
+    authorUser: "あなたが作成",
+    authorSource: (citation) => `出典: ${citation}`,
+    accept: "承認する",
+    accepting: "承認しています…",
+    acceptFailed: "このチェックを承認できませんでした。もう一度お試しください。",
+    statusChip: { pass: "合格", fail: "不合格", inconclusive: "判定不能" },
+    notRunYet: "まだ実行されていません",
+    checkedAgainst: (text) => `照合対象: ${text}`,
+    teethLabel: "検出力",
+    teethTooltip:
+      "Nalaは回路をわざと少しだけ変えたバージョンを作ります。良いチェックは、変えたバージョンでは不合格になります。",
+    teethCaught: (caught, mutants) => `${mutants}件中${caught}件の、出力を変える変更を検出しました`,
+    teethSurvivorsLabel: (count) => `検出できなかったもの (${count}件)`,
+    teethEquivalentLeftOut: (count) => `出力を変えない変更${count}件は集計から除外しました。`,
+    teethNoTeethWarning: "このチェックは、壊れた回路とこの回路を区別できませんでした。",
+    teethNotMeasured: (reason) => `検出力は測定していません: ${reason}`,
+    qasmDisclosureLabel: "このチェックが判定した回路",
+    qasmCopy: "コピー",
+    qasmCopied: "コピーしました",
+    qasmCopyFailed: "コピーできませんでした。コードを選択してコピーしてください。",
+    fingerprintLabel: "フィンガープリント",
+    summaryLabel: "このノートブックのチェック",
+    summary: (counts) => {
+      const parts: string[] = [];
+      if (counts.pass) parts.push(`合格${counts.pass}件`);
+      if (counts.fail) parts.push(`不合格${counts.fail}件`);
+      if (counts.inconclusive) parts.push(`判定不能${counts.inconclusive}件`);
+      if (counts.notRun) parts.push(`未実行${counts.notRun}件`);
+      const verdictText = parts.length > 0 ? parts.join("、") : "まだ実行されていません";
+      const proposed =
+        counts.proposedUnaccepted > 0 ? ` ・ Nala提案で未承認のもの${counts.proposedUnaccepted}件` : "";
+      return `チェック${counts.total}件: ${verdictText}${proposed}`;
+    },
+
+    addCheck: "チェックを追加",
+    addCheckTitle: "チェックを追加",
+    kindLabel: "チェックの種類",
+    kindOption: {
+      state: "回路が準備する状態",
+      unitary: "回路のユニタリ",
+      distribution: "測定分布",
+      energy: "エネルギー",
+      value: "単純な値",
+    },
+    subjectLabel: "対象の変数",
+    subjectPlaceholder: "例: qc",
+    expectationModeLabel: "照合方法",
+    expectationModeOption: { reference: "既知の状態", amplitudes: "個別の振幅" },
+    referenceLabel: "参照",
+    referenceFamilyOption: {
+      bell: "ベル状態 (Φ+)",
+      "bell:phi-": "ベル状態 (Φ-)",
+      "bell:psi+": "ベル状態 (Ψ+)",
+      "bell:psi-": "ベル状態 (Ψ-)",
+      ghz: "GHZ状態",
+      w: "W状態",
+      uniform: "一様重ね合わせ",
+      qft: "量子フーリエ変換",
+      iqft: "逆量子フーリエ変換",
+    },
+    referenceQubitsLabel: "量子ビット数",
+    amplitudesLabel: "振幅",
+    probabilitiesLabel: "確率",
+    bitstringLabel: "ビット列",
+    amplitudeValueLabel: "振幅",
+    probabilityValueLabel: "確率",
+    addRow: "行を追加",
+    removeRow: "削除",
+    hamiltonianLabel: "ハミルトニアン項",
+    pauliLabel: "パウリ文字列",
+    coefficientLabel: "係数",
+    addTerm: "項を追加",
+    targetLabel: "照合方法",
+    targetOption: { ground: "厳密な基底状態エネルギー", number: "数値" },
+    targetValueLabel: "目標エネルギー",
+    valueLabel: "期待される値",
+    valuePlaceholder: "例: 0.5 または 0.5, 1.2",
+    toleranceLabel: "許容誤差",
+    toleranceDefaultHint: (value) => `この種類の既定値: ${value}`,
+    statementLabel: "文",
+    submit: "チェックを追加する",
+    submitting: "追加しています…",
+    cancel: "キャンセル",
+    validationHeading: "このチェックはまだ追加できません:",
+    statement: {
+      state: (subject, reference) => `${subject}が${reference}を準備することを確認する。`,
+      stateAmplitudes: (subject) => `${subject}の状態が指定した振幅と一致することを確認する。`,
+      unitary: (subject, reference) => `${subject}のユニタリが${reference}と一致することを確認する。`,
+      distribution: (subject) => `${subject}の測定分布が指定した確率と一致することを確認する。`,
+      energyGround: (subject) => `${subject}のエネルギーを厳密な基底状態エネルギーと照合する。`,
+      energyTarget: (subject, target) => `${subject}のエネルギーを${target || "目標値"}と照合する。`,
+      value: (subject, value) => `${subject}が${value || "期待される値"}と等しいことを確認する。`,
+      subjectFallback: "対象",
+    },
   },
 };
 
