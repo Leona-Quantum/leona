@@ -18,6 +18,7 @@ the child's memory cap is not enforced.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import os
@@ -30,14 +31,15 @@ from types import SimpleNamespace
 import anyio
 import httpx
 import pytest
-from leona_notebooks.checks import (
-    CHECK_BUDGET_S,
-    MAX_CAPTURE_QASM_CHARS,
-    MUTATION_MAX_QUBITS_STATE,
-    MUTATION_MAX_QUBITS_UNITARY,
-)
-from majorana_contracts import MAX_CIRCUIT_CHECK_QASM_CHARS, Scope
+from leona_notebooks.checks import CHECK_BUDGET_S, MAX_CAPTURE_QASM_CHARS
+from majorana_contracts import MAX_CIRCUIT_CHECK_QASM_CHARS, CheckProperty, CheckVerdict, Scope
 from majorana_contracts.enums import Role
+from majorana_contracts.notebooks import (
+    CHECK_DISTRIBUTION_MAX_QUBITS,
+    CHECK_STATE_MAX_QUBITS,
+    CHECK_UNITARY_MAX_QUBITS,
+    MAX_CHECK_HAMILTONIAN_QUBITS,
+)
 from majorana_contracts.tokens import TOKEN_PREFIX
 
 from majorana_api import circuit_check
@@ -110,21 +112,49 @@ def test_the_circuit_ceiling_is_the_notebook_capture_ceiling():
     assert MAX_CIRCUIT_CHECK_QASM_CHARS == MAX_CAPTURE_QASM_CHARS
 
 
-def test_the_route_spends_no_more_than_a_notebook_run_and_judges_only_what_it_can_mutate():
+def test_the_route_spends_no_more_than_a_notebook_run_and_fits_one_child_in_the_instance():
     assert circuit_check.CIRCUIT_CHECK_BUDGET_S <= CHECK_BUDGET_S
     assert circuit_check.CIRCUIT_CHECK_BUDGET_S <= circuit_check.CIRCUIT_CHECK_KILL_AFTER_S
-    # Under the client's 60 s urllib timeout, with room for a queue of one.
+    # Under the client's 60 s urllib timeout.
     assert circuit_check.CIRCUIT_CHECK_KILL_AFTER_S <= 20
-    assert circuit_check.MAX_QUBITS == {
-        "state": MUTATION_MAX_QUBITS_STATE,
-        "distribution": MUTATION_MAX_QUBITS_STATE,
-        "energy": 10,
-        "unitary": MUTATION_MAX_QUBITS_UNITARY,
-    }
-    # One child at a time per API process: ~145 MiB app + ~120 MiB child + 150 MiB
-    # headroom fits a 512 MiB instance once (API_MEMORY_MI=512 in infra/fleet.env).
+    # 302 MiB (production p99 max) + ~120 MiB child + headroom must stay under 512 MiB.
+    assert circuit_check.CHILD_MEMORY_HEADROOM_BYTES <= 64 * 2**20
+    # One child at a time per API process, and a short wait before a 503, not a queue.
     assert checks_routes.CIRCUIT_CHECK_CONCURRENCY == 1
-    assert circuit_check.CHILD_MEMORY_HEADROOM_BYTES <= 150 * 2**20
+    assert checks_routes.CIRCUIT_CHECK_SLOT_WAIT_S <= 2.0
+
+
+def test_the_route_states_the_contracts_ceilings_and_adds_none_of_its_own():
+    assert circuit_check.CEILINGS == {
+        "state": CHECK_STATE_MAX_QUBITS,
+        "distribution": CHECK_DISTRIBUTION_MAX_QUBITS,
+        "energy": MAX_CHECK_HAMILTONIAN_QUBITS,
+        "unitary": CHECK_UNITARY_MAX_QUBITS,
+    }
+
+
+async def test_the_route_passes_the_engine_no_width_caps_so_it_inherits_its_ceilings(
+    monkeypatch,
+):
+    """Spied rather than inferred from a verdict: the call that reaches the engine
+    carries no `width_caps` (so a later, lower engine ceiling applies here too), the
+    route's budget, kill and memory headroom."""
+    seen: list[dict] = []
+    real = circuit_check.judge_checks
+
+    async def spy(jobs, **kwargs):
+        seen.append(kwargs)
+        return await real(jobs, **kwargs)
+
+    monkeypatch.setattr(circuit_check, "judge_checks", spy)
+    prop = CheckProperty(kind="state", subject="circuit", reference="bell")
+    verdict = await circuit_check.judge_circuit(BELL, prop)
+    assert verdict.status == "pass"
+    [kwargs] = seen
+    assert not kwargs.get("width_caps")
+    assert kwargs["budget_s"] == circuit_check.CIRCUIT_CHECK_BUDGET_S
+    assert kwargs["kill_after_s"] == circuit_check.CIRCUIT_CHECK_KILL_AFTER_S
+    assert kwargs["memory_headroom_bytes"] == circuit_check.CHILD_MEMORY_HEADROOM_BYTES
 
 
 # --------------------------------------------------------------------------- session caller
@@ -174,7 +204,9 @@ async def test_a_qft_missing_its_final_swap_fails_with_that_diagnosis(scope):
 
 
 async def test_a_circuit_over_the_width_ceiling_is_inconclusive_not_an_error(scope):
-    wide = HEADER + f"qubit[{MUTATION_MAX_QUBITS_STATE + 1}] q;\nh q[0];\n"
+    """One qubit past the contract's state ceiling, refused from the syntax tree (the
+    register is never built), so the test allocates nothing wide."""
+    wide = HEADER + f"qubit[{CHECK_STATE_MAX_QUBITS + 1}] q;\nh q[0];\n"
     async with _session_client(scope) as client:
         response = await client.post(
             "/v1/checks/circuit",
@@ -183,10 +215,10 @@ async def test_a_circuit_over_the_width_ceiling_is_inconclusive_not_an_error(sco
     assert response.status_code == 200
     verdict = response.json()["verdict"]
     assert verdict["status"] == "inconclusive"
-    # The route's ceiling (width_caps), not the engine's default of 24 for a state check.
+    assert verdict["qubits"] == CHECK_STATE_MAX_QUBITS + 1
     assert (
-        f"has {MUTATION_MAX_QUBITS_STATE + 1} qubits; this check judges at most "
-        f"{MUTATION_MAX_QUBITS_STATE}"
+        f"has {CHECK_STATE_MAX_QUBITS + 1} qubits; this check judges at most "
+        f"{CHECK_STATE_MAX_QUBITS}"
     ) in verdict["detail"]
     assert verdict["teeth"]["status"] == "not_measured"
     assert verdict["teeth"]["reason"]
@@ -271,9 +303,8 @@ async def test_an_expectation_wider_than_the_circuit_is_a_fail_and_is_never_buil
     """The engine reads an expectation's width (from the library name, or the reference
     circuit's syntax tree) BEFORE it builds the expectation. Wider than a narrower circuit
     is a real disagreement, so a `fail` naming both widths, not an `inconclusive`. The
-    widths sit one past each ceiling on purpose: if the width check regressed, the child
-    would build a small reference and answer the same `fail` in different words, so the
-    wording is what these pin, and nothing large is ever allocated."""
+    widths are kept small (13 qubits at most) so that even a regressed width check would
+    build nothing large."""
     async with _session_client(scope) as client:
         response = await client.post("/v1/checks/circuit", json=_body(qasm, prop))
     assert response.status_code == 200, response.text
@@ -343,6 +374,61 @@ async def test_the_per_account_ceiling_answers_429_before_any_judging(scope, mon
     assert second.json()["reason"] == "check_rate_limited"
     assert second.headers["Retry-After"]
     assert calls == ["judged"]  # the refused one cost no CPU
+
+
+async def test_a_second_check_while_one_is_judging_gets_a_503_not_a_second_child(
+    scope, monkeypatch
+):
+    """Two concurrent requests against a slow fake judge. The first holds the one slot;
+    the second waits `CIRCUIT_CHECK_SLOT_WAIT_S` and is refused with a 503, a
+    `Retry-After` and a plain sentence, instead of starting a second child that could run
+    the instance out of memory. Once the first finishes, the slot is free again."""
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls: list[str] = []
+    verdict = CheckVerdict(status="pass", basis="circuit", checked_against="the fake")
+
+    async def slow_judge(qasm, prop, **_kwargs):
+        calls.append("judge")
+        started.set()
+        await release.wait()
+        return verdict
+
+    monkeypatch.setattr(checks_routes, "judge_circuit", slow_judge)
+    monkeypatch.setattr(checks_routes, "CIRCUIT_CHECK_SLOT_WAIT_S", 0.2)
+    async with _session_client(scope) as client:
+        first = asyncio.create_task(client.post("/v1/checks/circuit", json=_body(BELL, STATE_BELL)))
+        await asyncio.wait_for(started.wait(), 5)
+        # Bounded: were the slot not enforced, this request would reach the slow judge and
+        # wait on `release` forever; bounded, that regression is a red test, not a hang.
+        second = await asyncio.wait_for(
+            client.post("/v1/checks/circuit", json=_body(BELL, STATE_BELL)), 5
+        )
+        release.set()
+        first_response = await asyncio.wait_for(first, 5)
+        third = await client.post("/v1/checks/circuit", json=_body(BELL, STATE_BELL))
+
+    assert second.status_code == 503
+    assert second.json()["title"] == checks_routes.BUSY_REFUSAL
+    assert second.json()["reason"] == "check_judge_busy"
+    assert second.headers["Retry-After"] == str(checks_routes.CIRCUIT_CHECK_RETRY_AFTER_S)
+    assert first_response.status_code == 200
+    assert third.status_code == 200  # the slot was released, not leaked
+    assert calls == ["judge", "judge"]  # the refused request never reached the judge
+
+
+async def test_a_judge_that_raises_releases_the_slot(scope, monkeypatch):
+    """The slot is released on the way out of an error too: a leaked slot would turn
+    every later check on the instance into a 503."""
+
+    async def unreadable(qasm, prop, **_kwargs):
+        raise circuit_check.QasmUnreadable("The circuit does not parse: made up")
+
+    monkeypatch.setattr(checks_routes, "judge_circuit", unreadable)
+    async with _session_client(scope) as client:
+        for _ in range(3):
+            response = await client.post("/v1/checks/circuit", json=_body(BELL, STATE_BELL))
+            assert response.status_code == 400
 
 
 async def test_no_credential_is_a_401():
