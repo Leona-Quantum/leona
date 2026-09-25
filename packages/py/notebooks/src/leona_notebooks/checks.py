@@ -29,11 +29,16 @@ module for its authorship or text helpers (the API, `source.py`, `ipynb.py`) sta
 from __future__ import annotations
 
 import ast
+import asyncio
 import cmath
+import contextlib
 import hashlib
 import json
+import logging
 import math
+import os
 import re
+import sys
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -42,9 +47,12 @@ from typing import TYPE_CHECKING, Any, Literal
 from majorana_contracts.notebooks import (
     CHECK_EXPRESSION_CONSTANTS,
     CHECK_EXPRESSION_FUNCTIONS,
+    CHECK_STATE_MAX_QUBITS,
     CHECK_STATE_REFERENCE_RE,
+    CHECK_UNITARY_MAX_QUBITS,
     CHECK_UNITARY_REFERENCE_RE,
     MAX_CHECK_EXPRESSION_CHARS,
+    MAX_CHECK_HAMILTONIAN_QUBITS,
     MAX_CHECK_VALUE_ENTRIES,
     MAX_CHECK_VERDICT_QASM_CHARS,
     CheckProperty,
@@ -59,6 +67,8 @@ if TYPE_CHECKING:
     import numpy as np
     from qiskit import QuantumCircuit
 
+_log = logging.getLogger("leona_notebooks.checks")
+
 __all__ = [
     "CHECK_BUDGET_S",
     "MAX_CAPTURE_QASM_CHARS",
@@ -66,10 +76,16 @@ __all__ = [
     "MAX_MUTANTS",
     "MUTATION_MAX_QUBITS_STATE",
     "MUTATION_MAX_QUBITS_UNITARY",
+    "CHECK_MEMORY_HEADROOM_BYTES",
     "CheckCapture",
+    "CheckJob",
     "ExpressionError",
+    "JudgedCheck",
     "Mutant",
+    "QasmUnreadable",
+    "Unreadable",
     "apply_check_verdicts",
+    "apply_check_verdicts_isolated",
     "captures_from_observation",
     "captures_from_sandbox_result",
     "check_comment",
@@ -78,7 +94,11 @@ __all__ = [
     "enforce_check_authorship",
     "evaluate_check",
     "evaluate_expression",
+    "judge_checks",
+    "judge_jobs",
+    "merge_check_verdicts",
     "mutants",
+    "plan_check_jobs",
     "reference_description",
     "restore_checks",
 ]
@@ -122,8 +142,43 @@ MAX_CAPTURE_TOTAL_CHARS = 128_000
 #: Widest circuit the sandbox bothers exporting: `STATEVECTOR_MAX_QUBITS`, restated so the
 #: sandbox half of this feature needs no import from the verification package.
 MAX_CAPTURE_QUBITS = 24
+#: How many times the capture decomposes a circuit OpenQASM 3 cannot write (a sub-circuit
+#: appended as an instruction) before giving up and calling it not exportable.
+MAX_CAPTURE_DECOMPOSE_PASSES = 3
 #: A flattened subject with more gates than this is judged but not mutation-tested.
 MUTATION_MAX_GATES = 4_000
+#: Most gate applications a program may expand to once every gate definition is unrolled
+#: and every register-wide call broadcast, counted on the syntax tree BEFORE Qiskit's
+#: importer builds anything (`_bound_program`). The importer's cost grows with this count:
+#: 4,000 plain gates on 10 qubits (88,021 characters) imported in 0.59 s here, and a
+#: 398-character program whose definitions double at each of 12 levels (4,096
+#: applications) took 0.36 s (review of PR 1011, which also measured depth 16: 8.2 s).
+MAX_EXPANDED_OPERATIONS = MUTATION_MAX_GATES
+#: Deepest chain of gate definitions calling one another that is read at all.
+MAX_GATE_NESTING = 12
+#: Most classical bits a program may declare. A check reads at most 24 bits of outcome.
+MAX_DECLARED_CLBITS = 1_024
+#: Widest gate call carrying a `ctrl`, `negctrl` or `pow` modifier. Qiskit simulates such
+#: a gate as one dense matrix over all its qubits.
+MAX_MODIFIED_GATE_QUBITS = MUTATION_MAX_QUBITS_UNITARY
+#: Cost guards, applied BEFORE simulating anything (the subject, a reference circuit, a
+#: batch of mutants). Work is gates x 2**n for a statevector and gates x 4**n for a
+#: unitary. Measured here (M1 Pro, one process) at 10 qubits: about 19 ns per unit of
+#: statevector work (2,000 random gates) and about 11 ns per unit of unitary work (100
+#: gates). Nothing wider was run (owner's resource rule), so the time these allow is an
+#: ESTIMATE from those two figures: about 10 s for a statevector at the limit, about 6 s
+#: for a unitary. A 24-qubit GHZ state (24 gates) fits; a 10-qubit unitary gets about 500
+#: gates. The child process's wall clock (`CHECK_BUDGET_S`) bounds whatever these miss.
+MAX_STATE_WORK = 1 << 29
+MAX_UNITARY_WORK = 1 << 29
+#: Address space the judging process may add on top of its own footprint after its imports
+#: (RLIMIT_AS; Linux enforces it, macOS does not). The footprint itself (Python, Qiskit,
+#: numpy, scipy and the verification package) was 120 MiB resident here; a 24-qubit
+#: statevector is 256 MiB, and a judgement holds two or three at once. The worker's own
+#: memory size is not in this repository (`deploy.yml` passes no `--memory` for
+#: majorana-worker); the verification package's 2026-07-23 stress run simulated 26 qubits,
+#: a 1 GiB statevector, on it, which is the evidence that 1 GiB of headroom fits.
+CHECK_MEMORY_HEADROOM_BYTES = 1 << 30
 
 _EQUIVALENT_TOLERANCE = 1e-9
 
@@ -264,9 +319,8 @@ def describe_expectation(prop: CheckProperty) -> str:
     if prop.reference is not None:
         return reference_description(prop.reference)
     if prop.reference_qasm is not None:
-        return "the reference circuit written in the check (OpenQASM 3), its " + (
-            "output state" if prop.kind == "state" else "unitary"
-        )
+        what = "output state" if prop.kind == "state" else "unitary"
+        return f"the {what} of the reference circuit written in the check (OpenQASM 3)"
     if prop.amplitudes is not None:
         return "the amplitudes written in the check: " + _mapping_words(
             prop.amplitudes, lambda key: f"amplitude of {_ket(key)}"
@@ -278,7 +332,7 @@ def describe_expectation(prop: CheckProperty) -> str:
     if prop.kind == "energy":
         width = len(next(iter(prop.hamiltonian or {"": 0})))
         if prop.target == "ground":
-            return f"the exact ground energy of the check's {width}-qubit Hamiltonian"
+            return f"the exact ground energy of the {width}-qubit Hamiltonian written in the check"
         return f"the energy {prop.target} written in the check"
     if isinstance(prop.value, list):
         return f"the {len(prop.value)} numbers written in the check"
@@ -299,14 +353,13 @@ def describe_property(prop: CheckProperty) -> str:
             f"{prop.subject} equals {'[' + shown + ']' if isinstance(prop.value, list) else shown}"
         )
     what = describe_expectation(prop)
-    verbs = {
-        "state": "prepares",
-        "unitary": "implements",
-        "distribution": "measures to",
-        "energy": "reaches",
-        "value": "equals",
-    }
-    return f"{prop.subject} {verbs[prop.kind]} {what}"
+    # No possessives on the variable name: "counts's measured distribution" reads as a typo.
+    if prop.kind == "distribution":
+        return f"the measured distribution of {prop.subject} matches {what}"
+    if prop.kind == "energy":
+        return f"the energy of the state {prop.subject} prepares matches {what}"
+    verb = "prepares" if prop.kind == "state" else "implements"
+    return f"{prop.subject} {verb} {what}"
 
 
 def check_comment(prop: CheckProperty) -> str:
@@ -351,28 +404,46 @@ def enforce_check_authorship(
       and the reader may set `accepted` (the Accept button). So a Nala check cannot be
       relabelled `source` without changing it.
 
-    "Changed" ignores `author` and `accepted` (`CheckProperty.expectation_key`). Every check
-    cell's source is re-rendered from its property, so the comment always says what is
-    actually judged.
+    "Changed" ignores `author` and `accepted` (`CheckProperty.expectation_key`). A check
+    whose property matches one the parent had under ANOTHER id is the same check, so
+    renaming a cell cannot turn Nala's check into the reader's (review of PR 1011).
+
+    - **actor = user with no parent** (an uploaded `.ipynb`): the file's own claim is
+      honoured only when it LOWERS trust. A check the file says is Nala's stays Nala's and
+      unaccepted; every other check is the reader's, accepted; a `source` label is not
+      taken from a file, since that is exactly the claim a hand-edited export would make.
+
+    Every check cell's source is re-rendered from its property, so the comment always says
+    what is actually judged.
     """
-    before: dict[str, CheckProperty] = {}
+    by_id: dict[str, CheckProperty] = {}
+    by_key: dict[str, CheckProperty] = {}
     if parent is not None:
-        before = {cell.id: cell.property for cell in parent.cells if cell.property is not None}
+        for earlier in parent.cells:
+            if earlier.property is not None:
+                by_id[earlier.id] = earlier.property
+                by_key.setdefault(_expectation_json(earlier.property), earlier.property)
     cells: list[Cell] = []
     for cell in new.cells:
         prop = cell.property
         if prop is None:
             cells.append(cell)
             continue
-        prior = before.get(cell.id)
-        unchanged = prior is not None and prior.expectation_key() == prop.expectation_key()
+        prior = by_id.get(cell.id)
+        if prior is None or prior.expectation_key() != prop.expectation_key():
+            prior = by_key.get(_expectation_json(prop))
         if actor == "nala":
-            if unchanged and prior is not None:
+            if prior is not None:
                 stamp = {"author": prior.author, "accepted": prior.accepted}
             else:
                 stamp = {"author": "nala", "accepted": False}
-        elif unchanged and prior is not None:
+        elif prior is not None:
             stamp = {"author": prior.author, "accepted": prop.accepted}
+        elif parent is None:
+            if prop.author == "nala":
+                stamp = {"author": "nala", "accepted": False}
+            else:
+                stamp = {"author": "user", "accepted": True}
         else:
             stamp = {"author": "source" if prop.author == "source" else "user", "accepted": True}
         stamped = prop.model_copy(update=stamp)
@@ -380,6 +451,10 @@ def enforce_check_authorship(
             cell.model_copy(update={"property": stamped, "source": check_comment(stamped)})
         )
     return new.with_cells(cells)
+
+
+def _expectation_json(prop: CheckProperty) -> str:
+    return json.dumps(prop.expectation_key(), sort_keys=True)
 
 
 def restore_checks(before: NotebookSpec, after: NotebookSpec) -> tuple[NotebookSpec, list[str]]:
@@ -457,6 +532,15 @@ class CheckCapture:
             return cls(kind="value", value=tuple(float(item) for item in value))
         return cls(kind="value", value=float(value))
 
+    def size(self) -> int:
+        """Characters this capture takes in the evidence sidecar (its JSON length)."""
+        if self.kind == "circuit":
+            return len(self.qasm)
+        if self.kind == "value":
+            value = list(self.value) if isinstance(self.value, tuple) else self.value
+            return len(json.dumps(value))
+        return 0
+
     @classmethod
     def from_record(cls, raw: Any) -> CheckCapture:
         if not isinstance(raw, dict):
@@ -511,18 +595,24 @@ def captures_from_observation(
     wanted = {cell.id for cell in spec.cells if cell.role == CellRole.CHECK}
     captures: dict[str, CheckCapture] = {}
     total = 0
-    for raw in block.get("cells", []) or []:
-        if not isinstance(raw, dict) or raw.get("id") not in wanted or "capture" not in raw:
-            continue
-        if raw.get("capture") is None:
-            continue
-        capture = CheckCapture.from_record(raw.get("capture"))
-        if capture.kind == "circuit":
-            if total + len(capture.qasm) > MAX_CAPTURE_TOTAL_CHARS:
+    records = block.get("cells", [])
+    for raw in records if isinstance(records, list) else []:
+        try:
+            cell_id = raw.get("id") if isinstance(raw, dict) else None
+            if not isinstance(cell_id, str) or cell_id not in wanted or cell_id in captures:
+                continue
+            if raw.get("capture") is None:
+                continue
+            capture = CheckCapture.from_record(raw.get("capture"))
+            # Circuits and values share one budget, as they share one sidecar.
+            size = capture.size()
+            if total + size > MAX_CAPTURE_TOTAL_CHARS:
                 capture = CheckCapture(kind="problem", problem="over_budget")
             else:
-                total += len(capture.qasm)
-        captures[str(raw["id"])] = capture
+                total += size
+            captures[cell_id] = capture
+        except Exception:  # noqa: BLE001 - one malformed record must not cost the others
+            continue
     return captures
 
 
@@ -544,8 +634,8 @@ _PROBLEM_WORDS: dict[str, str] = {
     "worker had nothing to read.",
     "too_large": "`{subject}` is too long to judge: its OpenQASM is over "
     f"{MAX_CAPTURE_QASM_CHARS:,} characters.",
-    "over_budget": "This notebook's checks together captured more than "
-    f"{MAX_CAPTURE_TOTAL_CHARS:,} characters of OpenQASM, so this one was left out.",
+    "over_budget": "This notebook's checks together recorded more than "
+    f"{MAX_CAPTURE_TOTAL_CHARS:,} characters of circuits and values, so this one was left out.",
     "no_qiskit": "Qiskit is not available where the notebook ran, so no circuit could be read.",
     "not_a_number": "`{subject}` is {detail}, not a number or a list of numbers.",
     "not_finite": "`{subject}` holds a value that is not a finite number (NaN or infinity).",
@@ -560,15 +650,360 @@ def _problem_sentence(prop: CheckProperty, capture: CheckCapture) -> str:
         return (
             f"The sandbox could not record `{prop.subject}` ({capture.detail or capture.problem})."
         )
-    a_kind = ("an " if prop.kind[0] in "aeiou" else "a ") + prop.kind
+    a_kind = ("an " if prop.kind[0] in "aeio" else "a ") + prop.kind  # "a unitary"
     return template.format(subject=prop.subject, detail=capture.detail or "?", a_kind=a_kind)
 
 
-# --------------------------------------------------------------------------- judgement
+# --------------------------------------------------------------------------- reading OpenQASM
+
+
+class QasmUnreadable(Exception):
+    """An OpenQASM program that does not parse, or that Qiskit's importer refuses.
+
+    `side` says whose program it was: the captured `subject`, or the check's `reference`
+    circuit. A notebook check turns this into an `inconclusive` verdict; the connector
+    route (`POST /v1/checks/circuit`) answers 400 with `message`, which carries the
+    parser's own words (line and column when the grammar was the problem).
+    """
+
+    def __init__(self, side: Literal["subject", "reference"], message: str) -> None:
+        super().__init__(message)
+        self.side = side
+        self.message = message
 
 
 class _Inconclusive(Exception):
     """The check cannot judge this subject. Its message is shown to the reader."""
+
+
+def _parser_words(exc: BaseException) -> str:
+    """The parser's own account of what it could not read, in one line.
+
+    `openqasm3.parse` raises an EMPTY `QASM3ParsingError` for a grammar error: the message
+    lives on the ANTLR `RecognitionException` a cause or two down, as the offending token
+    and its position. Lexer errors and the importer's refusals carry their text directly.
+    Written by the connector lane (`circuit_check.py`, PR 1014) and moved here so the
+    route and the worker say the same thing.
+    """
+    if isinstance(exc, RecursionError):
+        return "it nests brackets or expressions too deeply to read"
+    text = " ".join(str(exc).split())
+    if not text:
+        cause: BaseException | None = exc.__cause__
+        while cause is not None and not text:
+            candidates = [cause, *(arg for arg in cause.args if isinstance(arg, BaseException))]
+            for candidate in candidates:
+                token = getattr(candidate, "offendingToken", None)
+                if token is not None and getattr(token, "line", None) is not None:
+                    shown = "end of input" if token.text == "<EOF>" else repr(token.text)
+                    text = f"L{token.line}:C{token.column}: unexpected {shown}"
+                    break
+            cause = cause.__cause__
+    return (text or type(exc).__name__)[:500]
+
+
+_CONTROL_FLOW_NODES = frozenset(
+    {
+        "BranchingStatement",
+        "WhileLoop",
+        "ForInLoop",
+        "SwitchStatement",
+        "Box",
+        "BreakStatement",
+        "ContinueStatement",
+        "EndStatement",
+    }
+)
+_STATEMENT_WORDS = {
+    "AliasStatement": "a `let` alias",
+    "ClassicalAssignment": "a classical assignment",
+    "ConstantDeclaration": "a `const` declaration",
+    "ExpressionStatement": "a bare expression",
+    "ExternDeclaration": "an `extern` declaration",
+    "SubroutineDefinition": "a `def` subroutine",
+    "ReturnStatement": "a `return` statement",
+    "CalibrationDefinition": "a `defcal` calibration",
+    "CalibrationGrammarDeclaration": "a `defcalgrammar` declaration",
+    "CalibrationStatement": "a `cal` block",
+    "Pragma": "a `pragma`",
+}
+
+
+@dataclass(frozen=True)
+class _Bounded:
+    """What `_bound_program` read off the syntax tree, before anything was built."""
+
+    program: Any  # openqasm3.ast.Program
+    qubits: int
+    operations: int
+
+
+def _bound_program(
+    text: str, *, side: Literal["subject", "reference"], max_qubits: int
+) -> _Bounded:
+    """Parse `text` to a syntax tree and refuse what would be expensive to build.
+
+    Qiskit's importer expands every gate definition eagerly, so a few hundred characters of
+    definitions that each call the previous one twice cost it exponential time (review of
+    PR 1011: depth 12, 398 characters, 0.36 s; depth 16, 514 characters, 8.2 s). This walks
+    the tree instead, counting gate applications by memoised sums over the definitions
+    (times broadcast width, times control count), and refuses before the importer runs.
+    Only literals it can read off the tree are counted; a size it cannot bound is refused
+    rather than guessed. The walk is the connector lane's `_bound_source` (PR 1014), moved
+    into the engine so both callers share it.
+
+    Raises `QasmUnreadable` for a program that does not parse, `_Inconclusive` for one a
+    check cannot judge.
+    """
+    import openqasm3
+    from openqasm3 import ast
+
+    what = "The circuit" if side == "subject" else "The check's reference circuit"
+    try:
+        program = openqasm3.parse(text)
+    except Exception as exc:  # noqa: BLE001 - any parser failure is the program's
+        raise QasmUnreadable(side, f"{what} does not parse: {_parser_words(exc)}") from None
+
+    registers: dict[str, int] = {}
+    gate_sizes: dict[str, int] = {}
+    gate_depths: dict[str, int] = {}
+    declared = 0
+    clbits = 0
+    physical = -1
+    operations = 0
+
+    def literal(node: Any) -> int | None:
+        return node.value if isinstance(node, ast.IntegerLiteral) else None
+
+    def unbounded(words: str) -> _Inconclusive:
+        return _Inconclusive(
+            f"{what} {words}, so Leona cannot tell how large it is before building it. "
+            "Write register sizes and modifier counts as plain numbers."
+        )
+
+    def note_physical(operand: Any) -> None:
+        nonlocal physical
+        name = getattr(operand, "name", None)
+        if isinstance(name, str) and name.startswith("$") and name[1:].isdigit():
+            physical = max(physical, int(name[1:]))
+
+    def operand_width(operand: Any) -> int:
+        note_physical(operand)
+        if isinstance(operand, ast.Identifier):
+            return registers.get(operand.name, 1)
+        if isinstance(operand, ast.IndexedIdentifier):
+            single = all(
+                isinstance(index, list)
+                and len(index) == 1
+                and isinstance(index[0], ast.IntegerLiteral)
+                for index in operand.indices
+            )
+            return 1 if single else registers.get(operand.name.name, 1)
+        return 1
+
+    def broadcast(operands: Any) -> int:
+        return max((operand_width(operand) for operand in operands), default=1)
+
+    def call_cost(node: Any, name: str | None, operands: list[Any], in_gate: bool) -> int:
+        base = gate_sizes.get(name, 1) if name is not None else 1
+        factor = 1
+        for modifier in getattr(node, "modifiers", None) or []:
+            kind = modifier.modifier.name
+            if kind in {"ctrl", "negctrl"}:
+                count = 1 if modifier.argument is None else literal(modifier.argument)
+                if count is None:
+                    raise unbounded("has a ctrl modifier whose count is not a number")
+                factor *= count + 1
+            if kind in {"ctrl", "negctrl", "pow"} and len(operands) > MAX_MODIFIED_GATE_QUBITS:
+                raise _Inconclusive(
+                    f"{what} applies a controlled or powered gate to {len(operands)} qubits. "
+                    "Qiskit simulates such a gate as one dense matrix, and Leona builds those "
+                    f"up to {MAX_MODIFIED_GATE_QUBITS} qubits."
+                )
+        return base * factor * (1 if in_gate else broadcast(operands))
+
+    def too_complex() -> _Inconclusive:
+        return _Inconclusive(
+            f"{what} is too complex to check: it expands to more than "
+            f"{MAX_EXPANDED_OPERATIONS:,} gate applications once its gate definitions are "
+            "unrolled, or nests them more than "
+            f"{MAX_GATE_NESTING} deep."
+        )
+
+    def add(count: int) -> None:
+        nonlocal operations
+        operations += count
+        if operations > MAX_EXPANDED_OPERATIONS:
+            raise too_complex()
+
+    for statement in program.statements:
+        if isinstance(statement, ast.QubitDeclaration):
+            size = 1 if statement.size is None else literal(statement.size)
+            if size is None:
+                raise unbounded("declares a qubit register whose size is not a number")
+            registers[statement.qubit.name] = size
+            declared += size
+    if declared > max_qubits:
+        raise _Inconclusive(
+            f"{what} has {declared} qubits; this check judges at most {max_qubits}."
+        )
+
+    for statement in program.statements:
+        name = type(statement).__name__
+        if isinstance(statement, ast.Include | ast.QubitDeclaration | ast.IODeclaration):
+            continue  # an input parameter is refused later as unbound, in words
+        if isinstance(statement, ast.ClassicalDeclaration):
+            if isinstance(statement.type, ast.BitType):
+                size = 1 if statement.type.size is None else literal(statement.type.size)
+                if size is None:
+                    raise unbounded("declares a bit register whose size is not a number")
+                clbits += size
+                if clbits > MAX_DECLARED_CLBITS:
+                    raise _Inconclusive(
+                        f"{what} declares {clbits} classical bits; a check reads at most "
+                        f"{MAX_DECLARED_CLBITS}."
+                    )
+                if statement.init_expression is not None:
+                    add(1)
+            continue
+        if isinstance(statement, ast.QuantumGateDefinition):
+            size = 0
+            depth = 1
+            for inner in statement.body:
+                if isinstance(inner, ast.QuantumGate):
+                    callee = inner.name.name
+                    size += call_cost(inner, callee, inner.qubits, True)
+                    depth = max(depth, gate_depths.get(callee, 0) + 1)
+                elif isinstance(inner, ast.QuantumPhase):
+                    size += call_cost(inner, None, inner.qubits, True)
+                else:
+                    size += 1
+                if size > MAX_EXPANDED_OPERATIONS or depth > MAX_GATE_NESTING:
+                    raise too_complex()
+            gate_sizes[statement.name.name] = max(size, 1)
+            gate_depths[statement.name.name] = depth
+            continue
+        if isinstance(statement, ast.QuantumGate):
+            add(call_cost(statement, statement.name.name, statement.qubits, False))
+            continue
+        if isinstance(statement, ast.QuantumPhase):
+            add(call_cost(statement, None, statement.qubits, False))
+            continue
+        if isinstance(statement, ast.QuantumMeasurementStatement):
+            add(broadcast([statement.measure.qubit]))
+            continue
+        if isinstance(statement, ast.QuantumReset):
+            add(broadcast([statement.qubits]))
+            continue
+        if isinstance(statement, ast.QuantumBarrier | ast.DelayInstruction):
+            add(broadcast(statement.qubits))
+            continue
+        if name in _CONTROL_FLOW_NODES:
+            raise _Inconclusive(
+                f"{what} uses classical control flow (if, while, for, switch or box), so it "
+                "has no single output state to check."
+            )
+        raise _Inconclusive(
+            f"{what} uses {_STATEMENT_WORDS.get(name, name)}, which a circuit check does "
+            "not read. Write the circuit as Qiskit's qasm3.dumps writes it."
+        )
+    width = declared + (physical + 1)
+    if width > max_qubits:
+        raise _Inconclusive(f"{what} has {width} qubits; this check judges at most {max_qubits}.")
+    return _Bounded(program=program, qubits=width, operations=operations)
+
+
+def _convert(bounded: _Bounded, *, side: Literal["subject", "reference"]) -> QuantumCircuit:
+    """Build the circuit from an already-bounded tree with Qiskit's importer."""
+    from qiskit_qasm3_import import convert
+
+    what = "The circuit" if side == "subject" else "The check's reference circuit"
+    try:
+        return convert(bounded.program)
+    except MemoryError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - the importer's refusal is the program's
+        raise QasmUnreadable(
+            side, f"{what} could not be read by Qiskit's importer: {_parser_words(exc)}"
+        ) from None
+
+
+def _without_leading_resets(circuit: QuantumCircuit) -> QuantumCircuit:
+    """The circuit without any reset that comes before every other operation on its qubit.
+
+    A reset on a fresh qubit does nothing (the qubit is already |0⟩), and some builders
+    and exporters write one at the top. Only those are removed: a reset after anything
+    has touched its qubit is real, and the incapacity rule still refuses it.
+    """
+    touched: set[int] = set()
+    kept = circuit.copy_empty_like()
+    changed = False
+    for instruction in circuit.data:
+        indices = [circuit.find_bit(qubit).index for qubit in instruction.qubits]
+        if instruction.operation.name == "reset" and not touched.intersection(indices):
+            changed = True
+            continue
+        if instruction.operation.name != "barrier":
+            touched.update(indices)
+        kept.append(instruction.operation, list(instruction.qubits), list(instruction.clbits))
+    return kept if changed else circuit
+
+
+def _load(
+    text: str, *, side: Literal["subject", "reference"], max_qubits: int
+) -> tuple[QuantumCircuit, QuantumCircuit]:
+    """(the circuit, the circuit without its final measurements), bounded, built and
+    checked for the statevector path's incapacities, in that order."""
+    from majorana_verification.statevector import (
+        StatevectorIncapable,
+        _reject_statevector_incapable,
+    )
+
+    what = "The circuit" if side == "subject" else "The check's reference circuit"
+    bounded = _bound_program(text, side=side, max_qubits=max_qubits)
+    circuit = _convert(bounded, side=side)
+    if circuit.num_qubits > max_qubits:  # the tree's count is an estimate; this is exact
+        raise _Inconclusive(
+            f"{what} has {circuit.num_qubits} qubits; this check judges at most {max_qubits}."
+        )
+    circuit = _without_leading_resets(circuit)
+    if circuit.parameters:
+        names = ", ".join(sorted(p.name for p in circuit.parameters)[:5])
+        raise _Inconclusive(
+            f"{what} still has unbound parameters ({names}). Bind them with "
+            "assign_parameters before the check."
+        )
+    stripped = circuit.remove_final_measurements(inplace=False)
+    try:
+        _reject_statevector_incapable(stripped)
+    except StatevectorIncapable:
+        raise _Inconclusive(
+            f"{what} measures or resets a qubit before its end, or uses classical control "
+            "flow, so it has no single output state to check."
+        ) from None
+    return circuit, stripped
+
+
+def _gate_count(circuit: QuantumCircuit) -> int:
+    return sum(1 for item in circuit.data if item.operation.name not in {"barrier", "measure"})
+
+
+def _work(circuit: QuantumCircuit, *, unitary: bool) -> int:
+    """The cost guard's unit: gates x 2**n for a statevector, gates x 4**n for a unitary."""
+    return max(_gate_count(circuit), 1) * (4 if unitary else 2) ** circuit.num_qubits
+
+
+def _guard_cost(circuit: QuantumCircuit, *, unitary: bool, what: str = "The circuit") -> None:
+    limit = MAX_UNITARY_WORK if unitary else MAX_STATE_WORK
+    if _work(circuit, unitary=unitary) > limit:
+        raise _Inconclusive(
+            f"{what} is too large to check in the time Leona gives one check: "
+            f"{circuit.num_qubits} qubits and {_gate_count(circuit):,} gates"
+            + (" for an exact unitary." if unitary else ".")
+        )
+
+
+# --------------------------------------------------------------------------- judgement
 
 
 def _basis(prop: CheckProperty) -> Literal["circuit", "value"]:
@@ -637,7 +1072,7 @@ _REVERSED_WORDS = (
 class _Subject:
     """The parsed subject circuit and what every judgement of it shares."""
 
-    circuit: QuantumCircuit  # as parsed, measurements included
+    circuit: QuantumCircuit  # as built, measurements included, leading resets removed
     stripped: QuantumCircuit  # final measurements removed
     qasm: str
     fingerprint: str
@@ -646,17 +1081,24 @@ class _Subject:
 @dataclass
 class _Judge:
     """One property's expectation, precomputed once, applied to the subject and to every
-    mutant alike — so the teeth are measured with exactly the judgement the verdict used."""
+    mutant alike, so the teeth are measured with exactly the judgement the verdict used."""
 
     prop: CheckProperty
     checked_against: str
     #: circuit (measurement-stripped) -> behaviour (statevector data or unitary matrix).
     behaviour: Callable[[QuantumCircuit], np.ndarray]
-    #: behaviour -> (passed, measure text, score).
+    #: behaviour -> (passed, measure text).
     judge: Callable[[np.ndarray], tuple[bool, str]]
     #: behaviour -> diagnosis on a fail.
     diagnose: Callable[[np.ndarray], str]
+    #: (original behaviour, mutant behaviour) -> whether NO check of this kind could tell
+    #: them apart. Such a mutant is excluded from the teeth, not counted against the check.
+    same: Callable[[np.ndarray, np.ndarray], bool]
     unitary: bool = False
+
+
+def _same_state(a: np.ndarray, b: np.ndarray) -> bool:
+    return _fidelity(a, b) >= 1.0 - _EQUIVALENT_TOLERANCE
 
 
 def _statevector(circuit: QuantumCircuit) -> np.ndarray:
@@ -673,31 +1115,10 @@ def _unitary(circuit: QuantumCircuit) -> np.ndarray:
     return np.asarray(Operator(circuit).data)
 
 
-def _parse_subject(qasm: str) -> _Subject:
-    from majorana_verification.statevector import (
-        StatevectorIncapable,
-        _reject_statevector_incapable,
-    )
+def _load_subject(qasm: str, *, max_qubits: int) -> _Subject:
     from qiskit import qasm3
 
-    try:
-        circuit = qasm3.loads(qasm)
-    except Exception as exc:  # noqa: BLE001 - any parser failure is the check's incapacity
-        raise _Inconclusive(f"The worker could not read the circuit's OpenQASM ({exc}).") from None
-    if circuit.parameters:
-        names = ", ".join(sorted(p.name for p in circuit.parameters)[:5])
-        raise _Inconclusive(
-            f"The circuit still has unbound parameters ({names}). Bind them with "
-            "assign_parameters before the check."
-        )
-    stripped = circuit.remove_final_measurements(inplace=False)
-    try:
-        _reject_statevector_incapable(stripped)
-    except StatevectorIncapable:
-        raise _Inconclusive(
-            "This circuit measures or resets a qubit before its end, or uses classical "
-            "control flow, so it has no single output state to check."
-        ) from None
+    circuit, stripped = _load(qasm, side="subject", max_qubits=max_qubits)
     normalised = qasm3.dumps(circuit)
     return _Subject(
         circuit=circuit,
@@ -705,6 +1126,14 @@ def _parse_subject(qasm: str) -> _Subject:
         qasm=qasm,
         fingerprint=hashlib.sha256(normalised.encode("utf-8")).hexdigest(),
     )
+
+
+_LIBRARY_WIDTH = re.compile(r"^(?:ghz|w|uniform|qft|iqft)\((\d+)\)$")
+
+
+def _library_width(reference: str) -> int:
+    match = _LIBRARY_WIDTH.match(reference)
+    return int(match.group(1)) if match else 2  # bell and its variants
 
 
 def _reference_circuit(reference: str) -> QuantumCircuit:
@@ -759,42 +1188,23 @@ def _reference_state(reference: str) -> np.ndarray:
     return _statevector(_reference_circuit(reference))
 
 
-def _reference_qasm_circuit(qasm: str) -> QuantumCircuit:
-    from majorana_verification.statevector import (
-        StatevectorIncapable,
-        _reject_statevector_incapable,
-    )
-    from qiskit import qasm3
+def _kind_ceiling(prop: CheckProperty, width_caps: Mapping[str, int] | None) -> int:
+    """The widest subject this check judges: the kind's own ceiling, lowered (never
+    raised) by a caller's cap. The connector route passes lower caps, because its instance
+    has 512 MiB in all."""
+    from majorana_verification.statevector import IDEAL_DISTRIBUTION_MAX_QUBITS
 
-    try:
-        circuit = qasm3.loads(qasm).remove_final_measurements(inplace=False)
-    except Exception as exc:  # noqa: BLE001
-        raise _Inconclusive(f"The check's reference circuit does not parse ({exc}).") from None
-    if circuit.parameters:
-        raise _Inconclusive("The check's reference circuit has unbound parameters.")
-    try:
-        _reject_statevector_incapable(circuit)
-    except StatevectorIncapable:
-        raise _Inconclusive(
-            "The check's reference circuit measures mid-circuit or uses control flow."
-        ) from None
-    return circuit
-
-
-def _width_ceiling(prop: CheckProperty) -> tuple[int, str]:
-    from majorana_verification.hamiltonian import EXACT_DIAG_MAX_QUBITS
-    from majorana_verification.statevector import (
-        IDEAL_DISTRIBUTION_MAX_QUBITS,
-        STATEVECTOR_MAX_QUBITS,
-        UNITARY_MAX_QUBITS,
-    )
-
-    return {
-        "state": (STATEVECTOR_MAX_QUBITS, "a state check"),
-        "unitary": (UNITARY_MAX_QUBITS, "a unitary check"),
-        "distribution": (IDEAL_DISTRIBUTION_MAX_QUBITS, "a distribution check"),
-        "energy": (EXACT_DIAG_MAX_QUBITS, "an energy check"),
+    ceiling = {
+        "state": CHECK_STATE_MAX_QUBITS,
+        # 20, not 24: a distribution is a dict with one entry per outcome, and the
+        # verification package measured 24 qubits at 62 s to build it.
+        "distribution": IDEAL_DISTRIBUTION_MAX_QUBITS,
+        "energy": MAX_CHECK_HAMILTONIAN_QUBITS,
+        "unitary": CHECK_UNITARY_MAX_QUBITS,
     }[prop.kind]
+    if width_caps and prop.kind in width_caps:
+        ceiling = min(ceiling, int(width_caps[prop.kind]))
+    return ceiling
 
 
 class _WidthMismatch(Exception):
@@ -802,31 +1212,63 @@ class _WidthMismatch(Exception):
     disagreement about the program, so a FAIL, never an inconclusive."""
 
 
-def _state_judge(prop: CheckProperty, subject: _Subject) -> _Judge:
+def _expected_width(prop: CheckProperty) -> tuple[int | None, _Bounded | None]:
+    """How many qubits the expectation is on, read WITHOUT building it: from the library
+    name, the bitstring length, the Pauli string, or the reference program's syntax tree.
+    `None` for a distribution, whose width is a question about classical bits."""
+    if prop.kind == "distribution":
+        return None, None
+    if prop.amplitudes is not None:
+        return len(next(iter(prop.amplitudes))), None
+    if prop.hamiltonian is not None:
+        return len(next(iter(prop.hamiltonian))), None
+    if prop.reference is not None:
+        return _library_width(prop.reference), None
+    ceiling = CHECK_UNITARY_MAX_QUBITS if prop.kind == "unitary" else CHECK_STATE_MAX_QUBITS
+    bounded = _bound_program(prop.reference_qasm or "", side="reference", max_qubits=ceiling)
+    return bounded.qubits, bounded
+
+
+def _reference_program(bounded: _Bounded | None, *, unitary: bool) -> QuantumCircuit:
+    """The check's own reference circuit, built from its already-bounded tree."""
+    from majorana_verification.statevector import (
+        StatevectorIncapable,
+        _reject_statevector_incapable,
+    )
+
+    assert bounded is not None
+    what = "The check's reference circuit"
+    circuit = _without_leading_resets(_convert(bounded, side="reference"))
+    if circuit.parameters:
+        raise _Inconclusive(f"{what} has unbound parameters.")
+    circuit = circuit.remove_final_measurements(inplace=False)
+    try:
+        _reject_statevector_incapable(circuit)
+    except StatevectorIncapable:
+        raise _Inconclusive(f"{what} measures mid-circuit or uses control flow.") from None
+    _guard_cost(circuit, unitary=unitary, what=what)
+    return circuit
+
+
+def _state_judge(prop: CheckProperty, subject: _Subject, bounded: _Bounded | None) -> _Judge:
     import numpy as np
 
     n = subject.stripped.num_qubits
     if prop.amplitudes is not None:
-        width = len(next(iter(prop.amplitudes)))
-        if width != n:
-            raise _WidthMismatch(f"The circuit has {n} qubits; the expected state is on {width}.")
         try:
-            expected = _vector_from_mapping(prop.amplitudes, width)
+            expected = _vector_from_mapping(prop.amplitudes, n)
         except ExpressionError as exc:
             raise _Inconclusive(f"The check's amplitudes cannot be read: {exc}") from None
     elif prop.reference is not None:
         expected = _reference_state(prop.reference)
     else:
-        expected = _statevector(_reference_qasm_circuit(prop.reference_qasm or ""))
+        expected = _statevector(_reference_program(bounded, unitary=False))
     norm = float(np.vdot(expected, expected).real)
     if not math.isclose(norm, 1.0, abs_tol=1e-6):
         raise _Inconclusive(
             f"The expected amplitudes are not a unit vector (their squared norm is "
-            f"{norm:.6g}); write them with the normalisation, for example 1/sqrt(2)."
+            f"{norm:.6g}). Write them with the normalisation, for example 1/sqrt(2)."
         )
-    width = int(round(math.log2(len(expected))))
-    if width != n:
-        raise _WidthMismatch(f"The circuit has {n} qubits; the expected state is on {width}.")
     tolerance = float(prop.tolerance or 0.0)
     digits = _digits(tolerance)
 
@@ -846,6 +1288,7 @@ def _state_judge(prop: CheckProperty, subject: _Subject) -> _Judge:
         behaviour=_statevector,
         judge=judge,
         diagnose=diagnose,
+        same=_same_state,
     )
 
 
@@ -897,18 +1340,14 @@ def _phase_diagnosis(expected: np.ndarray, actual: np.ndarray, n: int) -> str:
     )
 
 
-def _unitary_judge(prop: CheckProperty, subject: _Subject) -> _Judge:
-    import numpy as np
+def _unitary_judge(prop: CheckProperty, subject: _Subject, bounded: _Bounded | None) -> _Judge:
     from majorana_verification.statevector import _phase_align_distance
 
     n = subject.stripped.num_qubits
     if prop.reference is not None:
         reference = _unitary(_reference_circuit(prop.reference))
     else:
-        reference = _unitary(_reference_qasm_circuit(prop.reference_qasm or ""))
-    width = int(round(math.log2(reference.shape[0])))
-    if width != n:
-        raise _WidthMismatch(f"The circuit has {n} qubits; the reference acts on {width}.")
+        reference = _unitary(_reference_program(bounded, unitary=True))
     tolerance = float(prop.tolerance or 0.0)
 
     def judge(actual: np.ndarray) -> tuple[bool, str]:
@@ -920,36 +1359,39 @@ def _unitary_judge(prop: CheckProperty, subject: _Subject) -> _Judge:
         )
 
     def diagnose(actual: np.ndarray) -> str:
-        close = lambda candidate: _phase_align_distance(reference, candidate) <= tolerance  # noqa: E731
-        if close(actual.conj().T):
+        # Row and column permutations by indexing, never by multiplying 2**n x 2**n
+        # permutation matrices: that is 8**n work per candidate (review of PR 1011).
+        def close(candidate: np.ndarray) -> bool:
+            return _phase_align_distance(reference, candidate) <= tolerance
+
+        adjoint = actual.conj().T
+        if close(adjoint):
             return (
                 "It matches the inverse (the adjoint) of the reference. A QFT and an "
-                "inverse QFT are easy to swap: check which one this circuit should be, "
+                "inverse QFT are easy to swap. Check which one this circuit should be, "
                 "and the sign of every controlled-phase angle."
             )
         if n > 1:
             perm = _reverse_permutation(n)
-            flipped = np.eye(2**n)[perm]
-            if close(flipped @ actual) or close(actual @ flipped):
+            if close(actual[perm, :]) or close(actual[:, perm]):
                 return (
                     "It matches up to a reversal of the qubit order on one side. A QFT "
                     "written without its final swaps does exactly this."
                 )
-            if close(flipped @ actual @ flipped):
+            if close(actual[perm][:, perm]):
                 return (
                     "It matches with the whole circuit's qubit order reversed. Qiskit "
                     "counts q0 as the least significant qubit."
                 )
-            if (
-                close(flipped @ actual.conj().T @ flipped)
-                or close(flipped @ actual.conj().T)
-                or close(actual.conj().T @ flipped)
-            ):
+            if close(adjoint[perm][:, perm]) or close(adjoint[perm, :]) or close(adjoint[:, perm]):
                 return "It matches the inverse of the reference with the qubit order reversed."
         distance = _phase_align_distance(reference, actual)
         return (
             f"It differs from the reference: the largest entry of the difference is {distance:.3g}."
         )
+
+    def same(a: np.ndarray, b: np.ndarray) -> bool:
+        return _phase_align_distance(a, b) <= _EQUIVALENT_TOLERANCE
 
     return _Judge(
         prop=prop,
@@ -959,15 +1401,17 @@ def _unitary_judge(prop: CheckProperty, subject: _Subject) -> _Judge:
         behaviour=_unitary,
         judge=judge,
         diagnose=diagnose,
+        same=same,
         unitary=True,
     )
 
 
-def _distribution_judge(prop: CheckProperty, subject: _Subject) -> _Judge:
+def _distribution_judge(prop: CheckProperty, subject: _Subject, bounded: _Bounded | None) -> _Judge:
     import numpy as np
     from majorana_verification.statevector import _keyed_marginal_distribution, measurement_map
     from qiskit.quantum_info import Statevector
 
+    del bounded
     assert prop.probabilities is not None
     width = len(next(iter(prop.probabilities)))
     try:
@@ -990,13 +1434,13 @@ def _distribution_judge(prop: CheckProperty, subject: _Subject) -> _Judge:
         if width not in {len(measured), circuit.num_clbits}:
             raise _WidthMismatch(
                 f"The circuit reports {circuit.num_clbits} classical bits "
-                f"({len(measured)} measured); the check's probabilities have {width}."
+                f"({len(measured)} measured). The check's probabilities have {width}."
             )
     else:
         key_width = circuit.num_qubits
         if width != key_width:
             raise _WidthMismatch(
-                f"The circuit has {key_width} qubits and measures none; the check's "
+                f"The circuit has {key_width} qubits and measures none. The check's "
                 f"probabilities have {width} bits."
             )
     tolerance = float(prop.tolerance or 0.0)
@@ -1043,31 +1487,34 @@ def _distribution_judge(prop: CheckProperty, subject: _Subject) -> _Judge:
         )
         return f"The largest differences are {shown}."
 
+    def same(a: np.ndarray, b: np.ndarray) -> bool:
+        # A mutant that leaves the MEASURED distribution unchanged (a phase no measurement
+        # sees, a gate on a qubit nobody measures) cannot be caught by any distribution
+        # check, so it is equivalent here, even though its state differs (review of PR 1011).
+        return tvd(distribution(a), distribution(b)) <= _EQUIVALENT_TOLERANCE
+
     return _Judge(
         prop=prop,
         checked_against=describe_expectation(prop) + " (ideal, exact; no sampling)",
         behaviour=_statevector,
         judge=judge,
         diagnose=diagnose,
+        same=same,
     )
 
 
-def _energy_judge(prop: CheckProperty, subject: _Subject) -> _Judge:
+def _energy_judge(prop: CheckProperty, subject: _Subject, bounded: _Bounded | None) -> _Judge:
     import numpy as np
-    from majorana_verification.hamiltonian import hamiltonian_matrix
+    from qiskit.quantum_info import SparsePauliOp
 
+    del bounded
     assert prop.hamiltonian is not None
-    n = subject.stripped.num_qubits
     width = len(next(iter(prop.hamiltonian)))
-    if width != n:
-        raise _WidthMismatch(f"The circuit has {n} qubits; the Hamiltonian acts on {width}.")
-    # Qiskit's convention (q0 is the RIGHTMOST character, as in SparsePauliOp). Passing the
-    # strings to `hamiltonian_matrix` unchanged is right for a Qiskit statevector: that
-    # module's leftmost character is its most significant Kronecker factor, which is
-    # q_{n-1} in Qiskit's indexing. Pinned by `test_energy_uses_qiskit_pauli_order`.
-    matrix = hamiltonian_matrix(
-        [(coefficient, term) for term, coefficient in prop.hamiltonian.items()]
-    )
+    # Qiskit's convention (q0 is the RIGHTMOST character), so `SparsePauliOp` takes the
+    # strings unchanged. It gives the same matrix as `majorana_verification.hamiltonian`
+    # (checked in `test_energy_uses_qiskit_pauli_order`) in 0.012 s instead of 2.8 s for the
+    # contract's widest Hamiltonian (10 qubits, 256 terms; measured on an M1 Pro).
+    matrix = SparsePauliOp.from_list(list(prop.hamiltonian.items())).to_matrix()
     spectrum = np.linalg.eigvalsh(matrix)
     ground = float(spectrum[0])
     target = ground if prop.target == "ground" else float(prop.target or 0.0)
@@ -1093,7 +1540,7 @@ def _energy_judge(prop: CheckProperty, subject: _Subject) -> _Judge:
             ):
                 return (
                     f"The circuit's energy {value:.6f} matches an EXCITED level, {nearest:.6f}, "
-                    f"not the ground energy {ground:.6f}: it prepares an excited state. Widen "
+                    f"not the ground energy {ground:.6f}. It prepares an excited state. Widen "
                     "the ansatz or restart the optimiser from other parameters."
                 )
             return (
@@ -1102,11 +1549,11 @@ def _energy_judge(prop: CheckProperty, subject: _Subject) -> _Judge:
                 "so the state is a superposition of several levels. Check that the circuit "
                 "uses the optimised parameters."
             )
-        return f"The circuit's energy is {value:.6f}; the check expects {target:.6f}."
+        return f"The circuit's energy is {value:.6f}. The check expects {target:.6f}."
 
     words = (
-        f"the exact ground energy of the check's {width}-qubit Hamiltonian, {ground:.6f} "
-        "(from diagonalising it)"
+        f"the exact ground energy of the {width}-qubit Hamiltonian written in the check, "
+        f"{ground:.6f} (from diagonalising it)"
         if prop.target == "ground"
         else describe_expectation(prop)
     )
@@ -1116,6 +1563,7 @@ def _energy_judge(prop: CheckProperty, subject: _Subject) -> _Judge:
         behaviour=_statevector,
         judge=judge,
         diagnose=diagnose,
+        same=_same_state,
     )
 
 
@@ -1135,6 +1583,7 @@ class _Judged:
     judge: _Judge | None = None
     subject: _Subject | None = None
     behaviour: Any = None
+    unreadable: Unreadable | None = None
 
 
 def _judge_value(prop: CheckProperty, capture: CheckCapture) -> CheckVerdict:
@@ -1144,17 +1593,22 @@ def _judge_value(prop: CheckProperty, capture: CheckCapture) -> CheckVerdict:
     against = describe_expectation(prop) + f", within {tolerance:g}"
     teeth = CheckTeeth(
         status="not_measured",
-        reason="A value check has no circuit to break; Leona does not mutate code yet.",
+        reason="A value check has no circuit to break, and Leona does not break code yet.",
     )
     if isinstance(expected, list) != isinstance(actual, tuple):
-        shape = lambda v: (  # noqa: E731
-            f"a list of {len(v)} numbers" if isinstance(v, list | tuple) else "one number"
-        )
+
+        def shape(value: Any) -> str:
+            return (
+                f"a list of {len(value)} numbers"
+                if isinstance(value, list | tuple)
+                else "one number"
+            )
+
         return CheckVerdict(
             status="fail",
             basis="value",
             checked_against=against,
-            detail=f"The code produced {shape(actual)}; the check expects {shape(expected)}.",
+            detail=f"The code produced {shape(actual)}. The check expects {shape(expected)}.",
             teeth=teeth,
         )
     if isinstance(expected, list):
@@ -1164,7 +1618,7 @@ def _judge_value(prop: CheckProperty, capture: CheckCapture) -> CheckVerdict:
                 status="fail",
                 basis="value",
                 checked_against=against,
-                detail=f"The code produced {len(actual)} numbers; the check expects {len(expected)}.",
+                detail=f"The code produced {len(actual)} numbers. The check expects {len(expected)}.",
                 teeth=teeth,
             )
         differences = [abs(a - e) for a, e in zip(actual, expected, strict=True)]
@@ -1179,14 +1633,14 @@ def _judge_value(prop: CheckProperty, capture: CheckCapture) -> CheckVerdict:
             detail = (
                 "It matches with the list in reverse order."
                 if reversed_ok
-                else f"Entry {index} is {actual[index]:.6g}; the check expects {expected[index]:.6g}."
+                else f"Entry {index} is {actual[index]:.6g}. The check expects {expected[index]:.6g}."
             )
     else:
         assert isinstance(actual, float) and expected is not None
         worst = abs(actual - float(expected))
         passed = worst <= tolerance
         detail = (
-            "" if passed else f"The code produced {actual:.10g}; the check expects {expected:.10g}."
+            "" if passed else f"The code produced {actual:.10g}. The check expects {expected:.10g}."
         )
     return CheckVerdict(
         status="pass" if passed else "fail",
@@ -1198,7 +1652,15 @@ def _judge_value(prop: CheckProperty, capture: CheckCapture) -> CheckVerdict:
     )
 
 
-def _judge(prop: CheckProperty, capture: CheckCapture) -> _Judged:
+_OUT_OF_MEMORY_WORDS = (
+    "Leona ran out of memory while checking this, so it stopped. The circuit is too large "
+    "for the memory one check is given."
+)
+
+
+def _judge(
+    prop: CheckProperty, capture: CheckCapture, *, width_caps: Mapping[str, int] | None = None
+) -> _Judged:
     """The verdict without teeth. Never raises: anything unexpected is `inconclusive`."""
     basis = _basis(prop)
     if capture.kind == "problem":
@@ -1230,15 +1692,30 @@ def _judge(prop: CheckProperty, capture: CheckCapture) -> _Judged:
         )
     qasm_shown = capture.qasm if len(capture.qasm) <= MAX_CHECK_VERDICT_QASM_CHARS else None
     subject: _Subject | None = None
+
+    def inconclusive(detail: str) -> CheckVerdict:
+        return CheckVerdict(
+            status="inconclusive",
+            basis="circuit",
+            checked_against=describe_expectation(prop),
+            detail=detail,
+            qubits=subject.stripped.num_qubits if subject else None,
+            subject_fingerprint=subject.fingerprint if subject else None,
+            subject_qasm=qasm_shown,
+        )
+
     try:
-        subject = _parse_subject(capture.qasm)
-        ceiling, label = _width_ceiling(prop)
+        # Order matters, and each step is cheap next to the one after it: read the subject
+        # off its syntax tree and bound it, build it, compare widths WITHOUT building the
+        # expectation, guard the simulation's cost, and only then simulate anything.
+        subject = _load_subject(capture.qasm, max_qubits=_kind_ceiling(prop, width_caps))
         width = subject.stripped.num_qubits
-        if width > ceiling:
-            raise _Inconclusive(
-                f"The circuit has {width} qubits; {label} simulates at most {ceiling}."
-            )
-        judge = _JUDGES[prop.kind](prop, subject)
+        expected_width, bounded = _expected_width(prop)
+        if expected_width is not None and expected_width != width:
+            what = "the Hamiltonian acts on" if prop.kind == "energy" else "the expectation is on"
+            raise _WidthMismatch(f"The circuit has {width} qubits, and {what} {expected_width}.")
+        _guard_cost(subject.stripped, unitary=prop.kind == "unitary")
+        judge = _JUDGES[prop.kind](prop, subject, bounded)
         behaviour = judge.behaviour(subject.stripped)
         passed, measure = judge.judge(behaviour)
         verdict = CheckVerdict(
@@ -1264,18 +1741,12 @@ def _judge(prop: CheckProperty, capture: CheckCapture) -> _Judged:
                 subject_qasm=qasm_shown,
             )
         )
+    except QasmUnreadable as exc:
+        return _Judged(inconclusive(exc.message), unreadable=Unreadable(exc.side, exc.message))
     except _Inconclusive as exc:
-        return _Judged(
-            CheckVerdict(
-                status="inconclusive",
-                basis="circuit",
-                checked_against=describe_expectation(prop),
-                detail=str(exc),
-                qubits=subject.stripped.num_qubits if subject else None,
-                subject_fingerprint=subject.fingerprint if subject else None,
-                subject_qasm=qasm_shown,
-            )
-        )
+        return _Judged(inconclusive(str(exc)))
+    except MemoryError:
+        return _Judged(inconclusive(_OUT_OF_MEMORY_WORDS))
 
 
 def evaluate_check(
@@ -1284,17 +1755,21 @@ def evaluate_check(
     *,
     deadline: float | None = None,
     teeth_cache: dict[str, CheckTeeth] | None = None,
+    width_caps: Mapping[str, int] | None = None,
 ) -> CheckVerdict:
-    """Judge one check against what the sandbox captured, and, if it passes on a circuit,
-    measure its teeth. `deadline` is a `time.monotonic()` value shared by every check in a
-    run; `teeth_cache` lets repeated runs of an unchanged subject skip re-mutating it."""
+    """Judge one check in THIS process, and, if it passes on a circuit, measure its teeth.
+
+    For tests and local tools. The worker and the connector route never call this
+    directly: they go through `judge_checks`, which runs the same code in a child process
+    that can be killed. `deadline` is a `time.monotonic()` value shared by every check in
+    a run; `teeth_cache` lets repeated runs of an unchanged subject skip re-mutating it."""
     try:
-        judged = _judge(prop, capture)
+        judged = _judge(prop, capture, width_caps=width_caps)
     except Exception as exc:  # noqa: BLE001 - a bug here must not read as a verdict
         return CheckVerdict(
             status="inconclusive",
             basis=_basis(prop),
-            detail=f"The worker could not judge this check ({type(exc).__name__}).",
+            detail=f"Leona could not judge this check ({type(exc).__name__}).",
         )
     return _with_teeth(judged, deadline=deadline, teeth_cache=teeth_cache)
 
@@ -1577,10 +2052,8 @@ def _measure_teeth(
     *,
     deadline: float | None,
     cache: dict[str, CheckTeeth] | None,
+    clock: Callable[[], float] = time.monotonic,
 ) -> CheckTeeth:
-    import numpy as np
-    from majorana_verification.statevector import _phase_align_distance
-
     key = _teeth_key(judge.prop, subject.fingerprint)
     if cache is not None and key in cache:
         return cache[key]
@@ -1590,8 +2063,19 @@ def _measure_teeth(
         return CheckTeeth(
             status="not_measured",
             reason=(
-                f"Too large to mutation-test: {width} qubits, and Leona mutation-tests "
-                f"{'unitary' if judge.unitary else 'state'} checks up to {ceiling}."
+                f"Too large to test with broken copies: {width} qubits, and Leona does this "
+                f"for {'unitary' if judge.unitary else 'state'} checks up to {ceiling}."
+            ),
+        )
+    if MAX_MUTANTS * _work(subject.stripped, unitary=judge.unitary) > (
+        MAX_UNITARY_WORK if judge.unitary else MAX_STATE_WORK
+    ):
+        return CheckTeeth(
+            status="not_measured",
+            reason=(
+                f"Too large to test with broken copies in the time one check gets: "
+                f"{MAX_MUTANTS} copies of {_gate_count(subject.stripped):,} gates on "
+                f"{width} qubits."
             ),
         )
     flat = _flatten(subject.circuit)
@@ -1599,7 +2083,10 @@ def _measure_teeth(
     if gates > MUTATION_MAX_GATES:
         return CheckTeeth(
             status="not_measured",
-            reason=f"Too large to mutation-test: {gates} gates (the limit is {MUTATION_MAX_GATES}).",
+            reason=(
+                f"Too large to test with broken copies: {gates:,} gates "
+                f"(the limit is {MUTATION_MAX_GATES:,})."
+            ),
         )
     groups = _all_candidates(flat)
     possible = sum(len(group) for group in groups.values())
@@ -1609,26 +2096,27 @@ def _measure_teeth(
             reason="This circuit has no gate Leona knows how to break.",
         )
     chosen = _select(groups, MAX_MUTANTS)
-    tried = equivalent = caught = 0
+    tried = equivalent = caught = could_not_run = 0
     survivors: list[str] = []
     for candidate in chosen:
-        if deadline is not None and time.monotonic() > deadline:
+        if deadline is not None and clock() > deadline:
             return CheckTeeth(
                 status="not_measured",
-                reason="The time budget for checks in this run ran out before this one "
-                "could be mutation-tested.",
+                reason="The time for checks in this run ran out before this one could be "
+                "tested with broken copies.",
             )
-        mutant = candidate.mutant()
-        stripped = mutant.circuit.remove_final_measurements(inplace=False)
         try:
-            behaviour = judge.behaviour(stripped)
-        except Exception:  # noqa: BLE001 - a mutant the simulator refuses is not evidence
+            mutant = candidate.mutant()
+            behaviour = judge.behaviour(mutant.circuit.remove_final_measurements(inplace=False))
+        except MemoryError:
+            return CheckTeeth(
+                status="not_measured",
+                reason="Leona ran out of memory while testing this check with broken copies.",
+            )
+        except Exception:  # noqa: BLE001 - counted below, never silently dropped
+            could_not_run += 1
             continue
-        if judge.unitary:
-            same = _phase_align_distance(original, behaviour) <= _EQUIVALENT_TOLERANCE
-        else:
-            same = float(abs(np.vdot(original, behaviour)) ** 2) >= 1.0 - _EQUIVALENT_TOLERANCE
-        if same:
+        if judge.same(original, behaviour):
             equivalent += 1
             continue
         tried += 1
@@ -1638,14 +2126,20 @@ def _measure_teeth(
                 survivors.append(mutant.description)
         else:
             caught += 1
+    unrunnable = (
+        f" {could_not_run} broken {'copy' if could_not_run == 1 else 'copies'} could not be run."
+        if could_not_run
+        else ""
+    )
     if tried == 0:
         teeth = CheckTeeth(
             status="not_measured",
             reason=(
-                "Every broken copy Leona could make behaves exactly like this circuit, so "
-                "there was nothing for the check to catch."
+                "Every broken copy Leona could make behaves exactly like this circuit as far "
+                "as this kind of check can see, so there was nothing for it to catch." + unrunnable
             ),
             equivalent=equivalent,
+            could_not_run=could_not_run,
         )
     else:
         reason = (
@@ -1653,21 +2147,179 @@ def _measure_teeth(
             "deterministically."
             if len(chosen) < possible
             else ""
-        )
+        ) + unrunnable
         teeth = CheckTeeth(
             status="measured",
-            reason=reason,
+            reason=reason.strip(),
             mutants=tried,
             equivalent=equivalent,
             caught=caught,
             survivors=survivors,
+            could_not_run=could_not_run,
         )
     if cache is not None:
         cache[key] = teeth
     return teeth
 
 
-# --------------------------------------------------------------------------- a whole report
+# --------------------------------------------------------------------------- jobs
+
+
+@dataclass(frozen=True)
+class Unreadable:
+    """Which program did not parse (or was refused by Qiskit's importer), in the parser's
+    own words. Kept apart from `inconclusive` so the connector route can answer 400."""
+
+    side: Literal["subject", "reference"]
+    message: str
+
+
+@dataclass(frozen=True)
+class CheckJob:
+    """One check to judge: its property, and what the sandbox (or a caller) captured."""
+
+    id: str
+    property: CheckProperty
+    capture: CheckCapture
+
+
+@dataclass(frozen=True)
+class JudgedCheck:
+    """A verdict, and whether the subject or reference did not parse.
+
+    `final` is False when the verdict (or its teeth) was filled in because the judging
+    process was stopped: such a result says nothing about the circuit and is not cached.
+    """
+
+    verdict: CheckVerdict
+    unreadable: Unreadable | None = None
+    final: bool = True
+
+
+def _inconclusive_without_capture(prop: CheckProperty, detail: str) -> CheckVerdict:
+    return CheckVerdict(
+        status="inconclusive",
+        basis=_basis(prop),
+        checked_against=describe_expectation(prop),
+        detail=detail,
+    )
+
+
+def plan_check_jobs(
+    spec: NotebookSpec, report: ExecutionReport, captures: Mapping[str, CheckCapture]
+) -> tuple[list[CheckJob], dict[str, CheckVerdict]]:
+    """Split a run's check cells into the ones there is something to judge (jobs) and the
+    ones already settled without judging: not run, skipped, their capture raised, or
+    nothing was captured. Those are `inconclusive` with the reason."""
+    check_cells = {cell.id: cell for cell in spec.cells if cell.role == CellRole.CHECK}
+    jobs: list[CheckJob] = []
+    settled: dict[str, CheckVerdict] = {}
+    for result in report.cells:
+        cell = check_cells.get(result.id)
+        if cell is None or cell.property is None:
+            continue
+        prop = cell.property
+        if result.status in {"not_run", "skipped"}:
+            reason = result.note or ("not run" if result.status == "not_run" else "skipped")
+            settled[result.id] = _inconclusive_without_capture(
+                prop, f"This check did not run: {reason}."
+            )
+            continue
+        if result.status == "error":
+            what = f"{result.error.ename}: {result.error.evalue}" if result.error else "an error"
+            settled[result.id] = _inconclusive_without_capture(
+                prop, f"Recording `{prop.subject}` failed ({what[:300]})."
+            )
+            continue
+        capture = captures.get(result.id)
+        if capture is None:
+            settled[result.id] = _inconclusive_without_capture(
+                prop, "The sandbox recorded nothing for this check."
+            )
+            continue
+        jobs.append(CheckJob(result.id, prop, capture))
+    return jobs, settled
+
+
+def judge_jobs(
+    jobs: list[CheckJob],
+    *,
+    deadline: float,
+    teeth: bool = True,
+    teeth_cache: dict[str, CheckTeeth] | None = None,
+    width_caps: Mapping[str, int] | None = None,
+    clock: Callable[[], float] = time.monotonic,
+):
+    """Judge `jobs` IN THIS PROCESS, yielding events as they happen:
+    `("verdict", id, JudgedCheck)` for every job first, then `("teeth", id, CheckTeeth)`
+    for each check that passed on a circuit. Verdicts before teeth, so one budget buys
+    every check a verdict before it buys any check its broken copies.
+
+    The child process (`leona_notebooks.check_judge`) streams these to its parent; the
+    in-process `apply_check_verdicts` collects them for tests and local tools.
+    """
+    judged: dict[str, _Judged] = {}
+    for job in jobs:
+        if clock() > deadline:
+            yield (
+                "verdict",
+                job.id,
+                JudgedCheck(
+                    _inconclusive_without_capture(
+                        job.property, "The time for checks in this run ran out before this one."
+                    ),
+                    final=False,
+                ),
+            )
+            continue
+        try:
+            item = _judge(job.property, job.capture, width_caps=width_caps)
+        except Exception as exc:  # noqa: BLE001 - one broken check must not take the rest
+            item = _Judged(
+                _inconclusive_without_capture(
+                    job.property, f"Leona could not judge this check ({type(exc).__name__})."
+                )
+            )
+        judged[job.id] = item
+        yield "verdict", job.id, JudgedCheck(item.verdict, item.unreadable)
+    if not teeth:
+        return
+    for job_id, item in judged.items():
+        if item.verdict.status != "pass" or item.verdict.basis != "circuit":
+            continue
+        if item.judge is None or item.subject is None:
+            continue
+        try:
+            measured = _measure_teeth(
+                item.judge,
+                item.subject,
+                item.behaviour,
+                deadline=deadline,
+                cache=teeth_cache,
+                clock=clock,
+            )
+        except Exception as exc:  # noqa: BLE001
+            measured = CheckTeeth(
+                status="not_measured",
+                reason=f"Testing with broken copies failed ({type(exc).__name__}).",
+            )
+        yield "teeth", job_id, measured
+
+
+def merge_check_verdicts(
+    report: ExecutionReport, verdicts: Mapping[str, CheckVerdict]
+) -> ExecutionReport:
+    """`report` with each verdict on its cell. Never changes `ok` or any cell's `status`:
+    a failing check does not fail the notebook."""
+    if not verdicts:
+        return report
+    cells: list[CellResult] = [
+        result.model_copy(update={"check": verdicts[result.id]})
+        if result.id in verdicts
+        else result
+        for result in report.cells
+    ]
+    return report.model_copy(update={"cells": cells})
 
 
 def apply_check_verdicts(
@@ -1678,95 +2330,295 @@ def apply_check_verdicts(
     budget_s: float = CHECK_BUDGET_S,
     teeth_cache: dict[str, CheckTeeth] | None = None,
     clock: Callable[[], float] = time.monotonic,
+    width_caps: Mapping[str, int] | None = None,
 ) -> ExecutionReport:
-    """`report` with `CellResult.check` set on every check cell. Blocking and CPU-bound:
-    the worker runs it with `asyncio.to_thread`.
+    """`report` with `CellResult.check` set on every check cell, judged IN THIS PROCESS.
 
-    Every verdict is judged first and the teeth second, so one run's budget buys every
-    check a verdict before it buys any check a mutation test. A check that did not run
-    (skipped, not reached, its capture failed) is `inconclusive` with the reason. Never
-    changes `ok` or any cell's `status`: a failing check does not fail the notebook.
+    For tests and local tools only. Nothing here can stop a judgement that runs long or
+    allocates too much, which is why the worker uses `apply_check_verdicts_isolated`.
     """
-    check_cells = {cell.id: cell for cell in spec.cells if cell.role == CellRole.CHECK}
-    if not check_cells:
-        return report
+    jobs, settled = plan_check_jobs(spec, report, captures)
+    verdicts: dict[str, CheckVerdict] = dict(settled)
     deadline = clock() + budget_s
-    judged: dict[str, _Judged] = {}
-    for result in report.cells:
-        cell = check_cells.get(result.id)
-        if cell is None or cell.property is None:
-            continue
-        prop = cell.property
-        if result.status in {"not_run", "skipped"}:
-            reason = result.note or ("not run" if result.status == "not_run" else "skipped")
-            judged[result.id] = _Judged(
-                CheckVerdict(
-                    status="inconclusive",
-                    basis=_basis(prop),
-                    checked_against=describe_expectation(prop),
-                    detail=f"This check did not run: {reason}.",
-                )
-            )
-            continue
-        if result.status == "error":
-            what = f"{result.error.ename}: {result.error.evalue}" if result.error else "an error"
-            judged[result.id] = _Judged(
-                CheckVerdict(
-                    status="inconclusive",
-                    basis=_basis(prop),
-                    checked_against=describe_expectation(prop),
-                    detail=f"Recording `{prop.subject}` failed ({what[:300]}).",
-                )
-            )
-            continue
-        capture = captures.get(result.id)
-        if capture is None:
-            judged[result.id] = _Judged(
-                CheckVerdict(
-                    status="inconclusive",
-                    basis=_basis(prop),
-                    checked_against=describe_expectation(prop),
-                    detail="The sandbox recorded nothing for this check.",
-                )
-            )
-            continue
-        if clock() > deadline:
-            judged[result.id] = _Judged(
-                CheckVerdict(
-                    status="inconclusive",
-                    basis=_basis(prop),
-                    checked_against=describe_expectation(prop),
-                    detail="The time budget for checks in this run ran out before this one.",
-                )
-            )
-            continue
+    for event, job_id, payload in judge_jobs(
+        jobs, deadline=deadline, teeth_cache=teeth_cache, width_caps=width_caps, clock=clock
+    ):
+        if event == "verdict":
+            verdicts[job_id] = payload.verdict
+        else:
+            verdicts[job_id] = verdicts[job_id].model_copy(update={"teeth": payload})
+    return merge_check_verdicts(report, verdicts)
+
+
+# --------------------------------------------------------------------------- the child process
+#
+# Every check of a dispatch is judged in ONE child process (`python -m
+# leona_notebooks.check_judge`) with a hard wall clock and a memory cap, so nothing a check
+# does can hang or kill the worker, which is one instance running every user's jobs (review
+# of PR 1011). `asyncio.to_thread` could not do this: a thread cannot be killed, and it
+# shared the default executor with QPU submission and polling. The connector route
+# (`POST /v1/checks/circuit`) calls `judge_checks` too.
+
+
+def _job_payload(job: CheckJob) -> dict[str, Any]:
+    capture = job.capture
+    value = list(capture.value) if isinstance(capture.value, tuple) else capture.value
+    return {
+        "id": job.id,
+        "property": job.property.model_dump(mode="json"),
+        "capture": {
+            "kind": capture.kind,
+            "qasm": capture.qasm,
+            "value": value,
+            "problem": capture.problem,
+            "detail": capture.detail,
+        },
+    }
+
+
+def _child_env() -> dict[str, str]:
+    """The child's whole environment. Nothing of the parent's is passed but the path to
+    Python and its packages: the worker's environment holds database and provider
+    credentials, and the child reads untrusted OpenQASM. One thread per library keeps the
+    child's CPU and address space to one core's worth."""
+    env = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "LANG": "C.UTF-8",
+        "PYTHONHASHSEED": "0",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "OMP_NUM_THREADS": "1",
+        "OPENBLAS_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1",
+        "VECLIB_MAXIMUM_THREADS": "1",
+        "NUMEXPR_NUM_THREADS": "1",
+        "RAYON_NUM_THREADS": "1",
+        "QISKIT_PARALLEL": "FALSE",
+    }
+    for name in ("PYTHONPATH", "VIRTUAL_ENV", "HOME"):
+        if os.environ.get(name):
+            env[name] = os.environ[name]
+    return env
+
+
+def _stopped_words(outcome: str, seconds: float) -> tuple[str, str]:
+    """(verdict detail, teeth reason) for a check the child never finished."""
+    if outcome == "timeout":
+        return (
+            f"This took too long to check, so Leona stopped after {seconds:g} seconds. "
+            "Nothing was decided.",
+            f"Not tested with broken copies: this run's checks took too long, so Leona "
+            f"stopped after {seconds:g} seconds.",
+        )
+    return (
+        "The process checking this stopped before it finished. It most likely ran out of "
+        "memory. Nothing was decided.",
+        "Not tested with broken copies: the process checking it stopped before it "
+        "finished, most likely because it ran out of memory.",
+    )
+
+
+async def judge_checks(
+    jobs: list[CheckJob],
+    *,
+    budget_s: float = CHECK_BUDGET_S,
+    kill_after_s: float | None = None,
+    memory_headroom_bytes: int = CHECK_MEMORY_HEADROOM_BYTES,
+    width_caps: Mapping[str, int] | None = None,
+    teeth: bool = True,
+    _argv: list[str] | None = None,
+    _on_event: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, JudgedCheck]:
+    """Judge every job in ONE child process that is killed at `kill_after_s` (default
+    `budget_s`), and return a result for every job, whatever happened to the child.
+
+    `budget_s` is the child's own deadline: it stops starting new work after it, giving
+    every check a verdict before any check its broken copies. `kill_after_s` is the hard
+    wall clock. `memory_headroom_bytes` is the address space the child may add after its
+    imports (RLIMIT_AS; enforced on Linux, ignored by macOS). `width_caps` lowers the
+    widest subject judged per kind, never raises it. A check the child never finished is
+    `inconclusive` with the reason ("took too long to check", "ran out of memory"), and a
+    passing check whose broken copies were cut short says so in its teeth.
+
+    `_argv` and `_on_event` are for tests: a stand-in child, and a look at every event.
+    """
+    if not jobs:
+        return {}
+    loop = asyncio.get_running_loop()
+    kill_after = float(kill_after_s if kill_after_s is not None else budget_s)
+    payload = json.dumps(
+        {
+            "jobs": [_job_payload(job) for job in jobs],
+            "budget_s": float(budget_s),
+            "memory_headroom_bytes": int(memory_headroom_bytes),
+            "width_caps": dict(width_caps or {}),
+            "teeth": bool(teeth),
+        }
+    ).encode("utf-8")
+    argv = _argv or [sys.executable, "-m", "leona_notebooks.check_judge"]
+    results: dict[str, JudgedCheck] = {}
+    teeth_arrived: set[str] = set()
+    outcome = "died"
+    started = loop.time()
+    process = await asyncio.create_subprocess_exec(
+        *argv,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=_child_env(),
+        limit=1 << 22,
+    )
+    stderr_tail = bytearray()
+
+    async def drain_stderr() -> None:
+        assert process.stderr is not None
+        while chunk := await process.stderr.read(4096):
+            stderr_tail.extend(chunk)
+            del stderr_tail[:-4096]
+
+    stderr_task = asyncio.create_task(drain_stderr())
+    try:
+        assert process.stdin is not None and process.stdout is not None
         try:
-            judged[result.id] = _judge(prop, capture)
-        except Exception as exc:  # noqa: BLE001 - one broken check must not take the rest
-            judged[result.id] = _Judged(
-                CheckVerdict(
-                    status="inconclusive",
-                    basis=_basis(prop),
-                    detail=f"The worker could not judge this check ({type(exc).__name__}).",
-                )
-            )
-    verdicts: dict[str, CheckVerdict] = {}
-    for cell_id, item in judged.items():
-        try:
-            verdicts[cell_id] = _with_teeth(item, deadline=deadline, teeth_cache=teeth_cache)
-        except Exception as exc:  # noqa: BLE001
-            verdicts[cell_id] = item.verdict.model_copy(
-                update={
-                    "teeth": CheckTeeth(
-                        status="not_measured",
-                        reason=f"Mutation testing failed on the worker ({type(exc).__name__}).",
+            process.stdin.write(payload)
+            await asyncio.wait_for(process.stdin.drain(), kill_after)
+            process.stdin.close()
+        except (BrokenPipeError, ConnectionResetError, TimeoutError):
+            pass
+        while True:
+            remaining = kill_after - (loop.time() - started)
+            if remaining <= 0:
+                outcome = "timeout"
+                break
+            try:
+                line = await asyncio.wait_for(process.stdout.readline(), remaining)
+            except TimeoutError:
+                outcome = "timeout"
+                break
+            if not line:
+                break
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            if _on_event is not None:
+                _on_event(event)
+            kind = event.get("event")
+            if kind == "done":
+                outcome = "done"
+                break
+            job_id = event.get("id")
+            if not isinstance(job_id, str):
+                continue
+            try:
+                if kind == "verdict":
+                    raw = event.get("unreadable")
+                    unreadable = (
+                        Unreadable(
+                            side="reference" if raw.get("side") == "reference" else "subject",
+                            message=str(raw.get("message") or "")[:500],
+                        )
+                        if isinstance(raw, dict)
+                        else None
                     )
-                }
+                    results[job_id] = JudgedCheck(
+                        CheckVerdict.model_validate(event.get("verdict")),
+                        unreadable,
+                        final=bool(event.get("final", True)),
+                    )
+                elif kind == "teeth" and job_id in results:
+                    measured = CheckTeeth.model_validate(event.get("teeth"))
+                    previous = results[job_id]
+                    results[job_id] = JudgedCheck(
+                        previous.verdict.model_copy(update={"teeth": measured}),
+                        previous.unreadable,
+                        previous.final,
+                    )
+                    teeth_arrived.add(job_id)
+            except ValueError:
+                continue  # a malformed event is dropped; the job is filled in below
+    finally:
+        if process.returncode is None:
+            with contextlib.suppress(ProcessLookupError):
+                process.kill()
+        await process.wait()
+        stderr_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await stderr_task
+    if outcome != "done" and stderr_tail:
+        _log.warning(
+            "check judge stopped (%s, exit %s): %s",
+            outcome,
+            process.returncode,
+            bytes(stderr_tail[-1000:]).decode("utf-8", "replace"),
+        )
+    detail, teeth_reason = _stopped_words(outcome, kill_after)
+    for job in jobs:
+        result = results.get(job.id)
+        if result is None:
+            results[job.id] = JudgedCheck(
+                _inconclusive_without_capture(job.property, detail), final=False
             )
-    cells: list[CellResult] = [
-        result.model_copy(update={"check": verdicts[result.id]})
-        if result.id in verdicts
-        else result
-        for result in report.cells
-    ]
-    return report.model_copy(update={"cells": cells})
+            continue
+        verdict = result.verdict
+        if (
+            teeth
+            and outcome != "done"
+            and verdict.status == "pass"
+            and verdict.basis == "circuit"
+            and job.id not in teeth_arrived
+        ):
+            results[job.id] = JudgedCheck(
+                verdict.model_copy(
+                    update={"teeth": CheckTeeth(status="not_measured", reason=teeth_reason)}
+                ),
+                result.unreadable,
+                final=False,
+            )
+    return results
+
+
+def _job_key(job: CheckJob) -> str:
+    payload = _job_payload(job)
+    payload.pop("id")
+    payload["property"] = job.property.expectation_key()
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+async def apply_check_verdicts_isolated(
+    spec: NotebookSpec,
+    report: ExecutionReport,
+    captures: Mapping[str, CheckCapture],
+    *,
+    cache: dict[str, JudgedCheck] | None = None,
+    budget_s: float = CHECK_BUDGET_S,
+    memory_headroom_bytes: int = CHECK_MEMORY_HEADROOM_BYTES,
+) -> ExecutionReport:
+    """What the worker calls after every dispatch: `report` with a verdict on every check
+    cell, judged in one killable child process (`judge_checks`).
+
+    `cache` holds finished results by (the check's expectation, the capture), for the life
+    of one run. A generation dispatches the same notebook several times (the first run,
+    each repair's rerun, the grader audit's two runs); a check whose subject did not change
+    is not judged again, and when nothing changed no child is started at all.
+    """
+    jobs, settled = plan_check_jobs(spec, report, captures)
+    verdicts: dict[str, CheckVerdict] = dict(settled)
+    pending: list[CheckJob] = []
+    for job in jobs:
+        hit = cache.get(_job_key(job)) if cache is not None else None
+        if hit is not None:
+            verdicts[job.id] = hit.verdict
+        else:
+            pending.append(job)
+    if pending:
+        judged = await judge_checks(
+            pending, budget_s=budget_s, memory_headroom_bytes=memory_headroom_bytes
+        )
+        for job in pending:
+            result = judged[job.id]
+            verdicts[job.id] = result.verdict
+            if cache is not None and result.final:
+                cache[_job_key(job)] = result
+    return merge_check_verdicts(report, verdicts)
