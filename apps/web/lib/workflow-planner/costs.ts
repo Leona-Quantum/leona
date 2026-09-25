@@ -587,6 +587,7 @@ function maxcutCosts(params: ParamValues, root: Stage | null): CostReport {
     source: "farhi-qaoa",
     note: { en: "U(C,γ) is one ZZ phase per edge, applied once per layer.", ja: "U(C,γ) は辺ごとに 1 つの ZZ 位相で、各層に 1 回かけます。" },
     missing: missing(params, ["edges", "layers"]),
+    counts: { ops: ["RZZ"], note: "one RZZ per edge, per layer — Farhi et al.'s U(C,γ). Leona's qaoa_maxcut_layer block builds exactly one layer's worth." },
   });
   const oneQubit = line({
     id: "qaoa-mixer",
@@ -598,6 +599,10 @@ function maxcutCosts(params: ParamValues, root: Stage | null): CostReport {
     source: "farhi-qaoa",
     note: { en: "n Hadamards for |s⟩, then U(B,β) is one X rotation per node per layer.", ja: "|s⟩ のためのアダマール n 個と、各層で頂点ごとに 1 つの X 回転 U(B,β) です。" },
     missing: missing(params, ["nodes", "layers"]),
+    counts: {
+      ops: ["H", "RX"],
+      note: "n Hadamards preparing |s⟩ plus one RX(2β) per node per layer — Farhi et al.'s U(B,β). Leona's qaoa_maxcut_layer block builds only the mixer's RX rotations; the initial |s⟩ layer is a separate hadamard_layer block — see block-audit.ts.",
+    },
   });
   report.lines.push(qubits, twoQubit, oneQubit);
   report.logical = { ...EMPTY_LOGICAL, logicalQubits: qubits };
@@ -729,6 +734,10 @@ function phaseEstimationCosts(params: ParamValues, root: Stage | null): CostRepo
     source: "cemm-counting-register",
     note: { en: "m Hadamards and m(m−1)/2 controlled phase rotations, counted from the network the paper draws.", ja: "論文の回路図から数えた、アダマール m 個と制御位相回転 m(m−1)/2 個です。" },
     missing: needs,
+    counts: {
+      ops: ["H", "CP"],
+      note: "the network the source draws for the inverse QFT: m Hadamards, m(m−1)/2 controlled-phase rotations. It does not include the network's own final swap step (Leona's qft_inverse block adds ⌊m/2⌋ SWAPs to reorder the output register) — see block-audit.ts.",
+    },
   });
   report.lines.push(register, uses, qft);
   report.logical = { ...EMPTY_LOGICAL, logicalQubits: register, queries: uses };
