@@ -50,7 +50,6 @@ function reportWith(status: "ok" | "error" = "ok") {
         note: "",
         check: null,
         hardware_requests: [{ qasm: QASM, shots: 256, num_qubits: 2, label: "bell pair" }],
-        check: null,
       },
     ],
   };
