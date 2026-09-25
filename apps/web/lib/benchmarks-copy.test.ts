@@ -10,7 +10,12 @@ import test from "node:test";
 
 import { BENCHMARKS_COPY, BENCHMARKS_HARNESS_URL } from "./benchmarks-copy.ts";
 import { QISKIT_HUMANEVAL_CEILING, QISKIT_HUMANEVAL_CONTROLS, QISKIT_HUMANEVAL_RUNS } from "./benchmarks/qiskit-humaneval.ts";
-import { completedRunFacts, formatTemplate, headlineFacts } from "./benchmarks/qiskit-humaneval-view.ts";
+import {
+  completedRunFacts,
+  firstAndLatestCompletedFacts,
+  formatTemplate,
+  headlineFacts,
+} from "./benchmarks/qiskit-humaneval-view.ts";
 import type { PublicLocale } from "./public-locale.ts";
 
 /** Any character from a Japanese script — hiragana, katakana, or a CJK ideograph. */
@@ -94,19 +99,51 @@ for (const locale of LOCALES) {
   test(`${locale}: the pending headline copy names no number at all`, () => {
     const copy = BENCHMARKS_COPY[locale];
     assert.doesNotMatch(copy.headline.pendingTitle, /\d/, "the pending title must not carry a digit");
-    // pendingBodyTemplate carries only {date}, which is a calendar date, not a score.
-    const filled = formatTemplate(copy.headline.pendingBodyTemplate, { date: QISKIT_HUMANEVAL_RUNS[1].date ?? "" });
+    // pendingBodyTemplate carries only {date}, which is a calendar date, not a
+    // score — a fixed test date, since both shipped runs are complete now and
+    // neither run's own `date` is standing in for "whenever a future run is
+    // still pending".
+    const filled = formatTemplate(copy.headline.pendingBodyTemplate, { date: "2099-01-01" });
     assertNoLeftoverTokens(filled, `${locale} pending headline body`);
+  });
+
+  test(`${locale}: the history "what changed" line fills from both runs' real facts and the ceiling`, () => {
+    const copy = BENCHMARKS_COPY[locale];
+    const comparison = firstAndLatestCompletedFacts(QISKIT_HUMANEVAL_RUNS);
+    assert.ok(comparison, "both shipped runs are complete, so a comparison must exist");
+    const filled = formatTemplate(copy.history.changeTemplate, {
+      ...CEILING_VARS,
+      firstPassed: comparison.first.passed,
+      firstTotal: comparison.first.total,
+      firstPct: comparison.first.passRatePct,
+      firstOfGradable: comparison.first.passedOfGradable,
+      latestPassed: comparison.latest.passed,
+      latestTotal: comparison.latest.total,
+      latestPct: comparison.latest.passRatePct,
+      latestOfGradable: comparison.latest.passedOfGradable,
+    });
+    assertNoLeftoverTokens(filled, `${locale} history change line`);
+    assert.ok(filled.includes(String(comparison.first.passed)), "must quote the first run's real pass count");
+    assert.ok(filled.includes(String(comparison.latest.passed)), "must quote the latest run's real pass count");
+    assert.ok(filled.includes("68"), "the first run's 68 passes must appear literally");
+    assert.ok(filled.includes("85"), "the second run's 85 passes must appear literally");
   });
 }
 
-test("the first completed run's facts, used above, still match the README's published figures", () => {
-  const facts = completedRunFacts(QISKIT_HUMANEVAL_RUNS[0]);
-  assert.ok(facts);
-  assert.equal(facts.passed, 68);
-  assert.equal(facts.total, 151);
-  assert.equal(facts.passedOfGradable, 64);
-  assert.equal(facts.gradable, 106);
+test("both completed runs' facts, used above, still match each README's published figures", () => {
+  const first = completedRunFacts(QISKIT_HUMANEVAL_RUNS[0]);
+  assert.ok(first);
+  assert.equal(first.passed, 68);
+  assert.equal(first.total, 151);
+  assert.equal(first.passedOfGradable, 64);
+  assert.equal(first.gradable, 106);
+
+  const second = completedRunFacts(QISKIT_HUMANEVAL_RUNS[1]);
+  assert.ok(second);
+  assert.equal(second.passed, 85);
+  assert.equal(second.total, 151);
+  assert.equal(second.passedOfGradable, 75);
+  assert.equal(second.gradable, 106);
 });
 
 test("japanese copy actually reads as Japanese, not a copy-pasted English fallback", () => {
@@ -118,7 +155,8 @@ test("japanese copy actually reads as Japanese, not a copy-pasted English fallba
     ja.ceiling.bodyTemplate,
     ja.controls.bodyTemplate,
     ja.history.body,
-    ja.history.change,
+    ja.history.changeTemplate,
+    ja.history.notesTitle,
     ...ja.limits.items,
     ja.source.body,
   ]) {

@@ -9,7 +9,9 @@ import {
 } from "../../../lib/benchmarks/qiskit-humaneval";
 import {
   completedRunFacts,
+  firstAndLatestCompletedFacts,
   formatTemplate,
+  formatWallTimeHours,
   isRunPendingForDisplay,
   latestCompletedRun,
 } from "../../../lib/benchmarks/qiskit-humaneval-view";
@@ -36,10 +38,11 @@ export async function generateMetadata({ params }: { params: Promise<{ locale: s
  * `lib/benchmarks/qiskit-humaneval.ts` (the data file, sourced from the
  * run's own report JSON) through `lib/benchmarks/qiskit-humaneval-view.ts`
  * (pure arithmetic, no invented figures) — never typed directly into this
- * component or into `lib/benchmarks-copy.ts`'s prose. The pending second run
- * has every number field `null`, and `latestCompletedRun`/`completedRunFacts`
- * refuse to produce a number for it, so this page cannot render one either;
- * it renders the fixed "re-run in progress" copy instead.
+ * component or into `lib/benchmarks-copy.ts`'s prose. Both runs are complete
+ * as of the 2026-09-25 re-run; a future run added with `pending: true` and
+ * every number field `null` renders as "Re-run in progress" instead of a
+ * number — `latestCompletedRun`/`completedRunFacts`/`isRunPendingForDisplay`
+ * refuse to produce a figure for it, so this page cannot invent one either.
  */
 export default async function BenchmarksPage({
   params,
@@ -51,6 +54,7 @@ export default async function BenchmarksPage({
   const ceiling = QISKIT_HUMANEVAL_CEILING;
   const headlineRun = latestCompletedRun(QISKIT_HUMANEVAL_RUNS);
   const headline = headlineRun ? completedRunFacts(headlineRun) : null;
+  const comparison = firstAndLatestCompletedFacts(QISKIT_HUMANEVAL_RUNS);
   const ceilingVars = {
     totalTasks: ceiling.totalTasks,
     gradableTasks: ceiling.gradableTasks,
@@ -178,17 +182,39 @@ export default async function BenchmarksPage({
                         </>
                       )}
                       <td>{run.spendUsd === null ? copy.history.notAvailable : `$${run.spendUsd.toFixed(2)}`}</td>
-                      <td>{run.wallTimeHours === null ? copy.history.notAvailable : `${run.wallTimeHours}h`}</td>
+                      <td>{run.wallTimeHours === null ? copy.history.notAvailable : `${formatWallTimeHours(run.wallTimeHours)}h`}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-          <p className="mj-benchmarks-history-change">
-            <strong>{copy.history.columns.changed}: </strong>
-            {copy.history.change}
-          </p>
+          {comparison ? (
+            <p className="mj-benchmarks-history-change">
+              <strong>{copy.history.columns.changed}: </strong>
+              {formatTemplate(copy.history.changeTemplate, {
+                ...ceilingVars,
+                firstPassed: comparison.first.passed,
+                firstTotal: comparison.first.total,
+                firstPct: comparison.first.passRatePct,
+                firstOfGradable: comparison.first.passedOfGradable,
+                latestPassed: comparison.latest.passed,
+                latestTotal: comparison.latest.total,
+                latestPct: comparison.latest.passRatePct,
+                latestOfGradable: comparison.latest.passedOfGradable,
+              })}
+            </p>
+          ) : null}
+          <div className="mj-benchmarks-history-notes">
+            <h3>{copy.history.notesTitle}</h3>
+            <ul>
+              {QISKIT_HUMANEVAL_RUNS.map((run) => (
+                <li key={`notes-${run.date}-${run.label}`}>
+                  <strong>{run.label}:</strong> {run.notes}
+                </li>
+              ))}
+            </ul>
+          </div>
         </section>
       </Reveal>
 

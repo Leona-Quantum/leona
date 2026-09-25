@@ -30,7 +30,8 @@ export const BENCHMARKS_COPY: Record<PublicLocale, {
     columns: { run: string; date: string; model: string; passed: string; ofGradableTemplate: string; spend: string; wallTime: string; changed: string };
     pendingStatus: string;
     notAvailable: string;
-    change: string;
+    changeTemplate: string;
+    notesTitle: string;
   };
   limits: { title: string; items: string[] };
   source: { title: string; body: string; linkLabel: string };
@@ -81,13 +82,14 @@ export const BENCHMARKS_COPY: Record<PublicLocale, {
       },
       pendingStatus: "Re-run in progress",
       notAvailable: "—",
-      change:
-        "PR 1010 fixed three checks in Nala's review step that were treating code as failed for reasons that did not apply to how the task was written, even when the code had already passed the benchmark's own test. A real failure still blocks delivery after the fix.",
+      changeTemplate:
+        "PR 1010 fixed three checks in Nala's review step that were treating delivered-but-correct code as failed for reasons that did not apply to how the task was written; a real failure still blocks delivery after the fix. The score moved from {firstPassed} of {firstTotal} ({firstPct}%) to {latestPassed} of {latestTotal} ({latestPct}%), and from {firstOfGradable} to {latestOfGradable} of the {gradableTasks} gradable tasks. Each run is measured once, so part of that change may be sampling rather than the fix itself.",
+      notesTitle: "Notes on each run",
     },
     limits: {
       title: "What this score does not show",
       items: [
-        "Each score above comes from one run. We have not yet run the benchmark twice to see how much the score moves on its own.",
+        "Each score above is from one run. Run-to-run variance for this benchmark is not measured, so repeating either run could land on a different number.",
         "Model output varies between runs of the same code. In one internal check, a task that had passed in an earlier run failed on a later run with nothing about the code changed.",
         "{gradableTasks} is the highest score physically possible in this sandbox, not the highest score physically possible for the model. See \"Why {gradableTasks}, not {totalTasks}\" above.",
       ],
@@ -143,13 +145,14 @@ export const BENCHMARKS_COPY: Record<PublicLocale, {
       },
       pendingStatus: "再実行中",
       notAvailable: "—",
-      change:
-        "PR 1010は、Nalaのレビュー段階にあった3つのチェックを修正しました。これらは、コードがベンチマーク自身のテストに合格していても、課題の書き方とは無関係の理由で不合格として扱っていました。修正後も、実際に誤っているコードは引き続き不合格になります。",
+      changeTemplate:
+        "PR 1010は、Nalaのレビュー段階にあった3つのチェックを修正しました。これらは、コードがベンチマーク自身のテストに合格していても、課題の書き方とは無関係の理由で不合格として扱っていました。修正後も、実際に誤っているコードは引き続き不合格になります。スコアは{firstTotal}件中{firstPassed}件（{firstPct}%）から{latestTotal}件中{latestPassed}件（{latestPct}%）へ、合格しうる{gradableTasks}件中では{firstOfGradable}件から{latestOfGradable}件へ変わりました。各回は1回のみの測定のため、この変化の一部は修正の効果ではなくサンプリングによるものである可能性があります。",
+      notesTitle: "各回についての補足",
     },
     limits: {
       title: "このスコアが示さないこと",
       items: [
-        "上記のスコアはいずれも1回の実行によるものです。ベンチマークを2回実行してスコア自体がどれだけ変動するかは、まだ確認していません。",
+        "上記のスコアは、いずれも1回の実行によるものです。このベンチマークの実行ごとのばらつきは測定していないため、同じ条件で再実行しても同じ数字になるとは限りません。",
         "同じコードでも、モデルの出力は実行のたびに変わります。社内での確認では、あるタスクが前回の実行では合格していたにもかかわらず、コードを変更しないまま再実行すると不合格になったことがありました。",
         "{gradableTasks}という数字は、このサンドボックスで物理的に到達しうる最高点であり、モデルの限界を示すものではありません。詳細は上記「{totalTasks}件中{gradableTasks}件である理由」をご覧ください。",
       ],
