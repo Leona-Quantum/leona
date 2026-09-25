@@ -8,9 +8,12 @@ proves the same token outcomes against real Postgres; it is skipped wherever
 `DATABASE_URL` is unset, which is every developer machine, so this file is the one that
 runs on them.
 
-Circuits here are at most 13 qubits and mostly 2-3: the cases that would be expensive to
-judge (a hundred million qubits, 2**40 gate applications) are refused from the program's
-syntax tree before anything is built, which is exactly what those tests pin.
+Judging happens in the check engine's child process (`judge_checks`). Every test here runs
+with every OpenQASM parser in THIS process made to raise (`_this_process_never_parses`),
+which is the rule: the API never parses a caller's program itself. Circuits are at most 13
+qubits and mostly 2-3; the refusal cases are sized so that even a regressed guard would
+build something small (a hundred thousand qubits, not a hundred million), because on macOS
+the child's memory cap is not enforced.
 """
 
 from __future__ import annotations
@@ -33,7 +36,7 @@ from leona_notebooks.checks import (
     MUTATION_MAX_QUBITS_STATE,
     MUTATION_MAX_QUBITS_UNITARY,
 )
-from majorana_contracts import MAX_CIRCUIT_CHECK_QASM_CHARS, CheckProperty, Scope
+from majorana_contracts import MAX_CIRCUIT_CHECK_QASM_CHARS, Scope
 from majorana_contracts.enums import Role
 from majorana_contracts.tokens import TOKEN_PREFIX
 
@@ -78,6 +81,26 @@ def _body(qasm: str, prop: dict) -> dict:
     return {"qasm": qasm, "property": prop}
 
 
+@pytest.fixture(autouse=True)
+def _this_process_never_parses(monkeypatch):
+    """Every OpenQASM 3 parser this test process could reach raises if called, for every
+    test in this file. The route's judging happens in the engine's child process, which
+    these patches cannot reach, so the tests pass only while that stays true: a route
+    that parsed the caller's program in the API process (where a slow path cannot be
+    killed) would fail every test here, not just one."""
+    import openqasm3
+    import qiskit.qasm3
+    import qiskit_qasm3_import
+
+    def refuse(*_args, **_kwargs):
+        raise AssertionError("the API process parsed a caller's OpenQASM itself")
+
+    monkeypatch.setattr(openqasm3, "parse", refuse)
+    monkeypatch.setattr(qiskit_qasm3_import, "parse", refuse)
+    monkeypatch.setattr(qiskit_qasm3_import, "convert", refuse)
+    monkeypatch.setattr(qiskit.qasm3, "loads", refuse)
+
+
 # --------------------------------------------------------------------------- the limits
 
 
@@ -89,14 +112,19 @@ def test_the_circuit_ceiling_is_the_notebook_capture_ceiling():
 
 def test_the_route_spends_no_more_than_a_notebook_run_and_judges_only_what_it_can_mutate():
     assert circuit_check.CIRCUIT_CHECK_BUDGET_S <= CHECK_BUDGET_S
+    assert circuit_check.CIRCUIT_CHECK_BUDGET_S <= circuit_check.CIRCUIT_CHECK_KILL_AFTER_S
+    # Under the client's 60 s urllib timeout, with room for a queue of one.
+    assert circuit_check.CIRCUIT_CHECK_KILL_AFTER_S <= 20
     assert circuit_check.MAX_QUBITS == {
         "state": MUTATION_MAX_QUBITS_STATE,
         "distribution": MUTATION_MAX_QUBITS_STATE,
-        "energy": MUTATION_MAX_QUBITS_STATE,
+        "energy": 10,
         "unitary": MUTATION_MAX_QUBITS_UNITARY,
     }
-    # One judging slot per API process (one vCPU, API_CPU=1 in infra/fleet.env).
+    # One child at a time per API process: ~145 MiB app + ~120 MiB child + 150 MiB
+    # headroom fits a 512 MiB instance once (API_MEMORY_MI=512 in infra/fleet.env).
     assert checks_routes.CIRCUIT_CHECK_CONCURRENCY == 1
+    assert circuit_check.CHILD_MEMORY_HEADROOM_BYTES <= 150 * 2**20
 
 
 # --------------------------------------------------------------------------- session caller
@@ -155,31 +183,19 @@ async def test_a_circuit_over_the_width_ceiling_is_inconclusive_not_an_error(sco
     assert response.status_code == 200
     verdict = response.json()["verdict"]
     assert verdict["status"] == "inconclusive"
-    assert verdict["qubits"] == MUTATION_MAX_QUBITS_STATE + 1
-    assert f"up to {MUTATION_MAX_QUBITS_STATE} qubits" in verdict["detail"]
-    assert "notebook" in verdict["detail"]
+    # The route's ceiling (width_caps), not the engine's default of 24 for a state check.
+    assert (
+        f"has {MUTATION_MAX_QUBITS_STATE + 1} qubits; this check judges at most "
+        f"{MUTATION_MAX_QUBITS_STATE}"
+    ) in verdict["detail"]
     assert verdict["teeth"]["status"] == "not_measured"
-    assert "Too large" in verdict["teeth"]["reason"]
-
-
-@pytest.fixture
-def nothing_is_built(monkeypatch):
-    """Make building a program from its syntax tree an error, for the cases the route
-    must refuse from the tree alone. If a guard regresses, the test then fails on a
-    400 instead of running the bomb it guards against: a hundred million qubits, or
-    2**12 nested gate applications, never reach Qiskit's importer from these tests."""
-    from qiskit_qasm3_import.converter import ConvertVisitor
-
-    def refuse(self, node, **_kwargs):
-        raise AssertionError("the route built a program it should have refused from its tree")
-
-    monkeypatch.setattr(ConvertVisitor, "convert", refuse)
+    assert verdict["teeth"]["reason"]
 
 
 @pytest.mark.parametrize(
     ("qasm", "prop", "words"),
     [
-        (HEADER + "qubit[100000000] q;\n", UNITARY_QFT3, "100000000 qubits"),
+        (HEADER + "qubit[100000] q;\n", UNITARY_QFT3, "100000 qubits"),
         (HEADER + "qubit[2*3] q;\n", UNITARY_QFT3, "size is not a number"),
         (_doubling_chain(12), UNITARY_QFT3, "4,000 gate applications"),
         (
@@ -194,7 +210,7 @@ def nothing_is_built(monkeypatch):
         ),
     ],
     ids=[
-        "a-hundred-million-qubits",
+        "a-hundred-thousand-qubits",
         "register-sized-by-an-expression",
         "gate-definitions-that-double-twelve-times",
         "a-ten-qubit-controlled-gate",
@@ -202,10 +218,11 @@ def nothing_is_built(monkeypatch):
     ],
 )
 async def test_what_would_be_expensive_to_build_is_refused_from_the_syntax_tree(
-    scope, nothing_is_built, qasm, prop, words
+    scope, qasm, prop, words
 ):
     """Each of these is a few lines that would, if built, allocate or simulate far more
-    than its length: refused as `inconclusive` before Qiskit is handed the program."""
+    than its length: refused as `inconclusive` by the engine's syntax-tree bound in the
+    child, before Qiskit's importer is handed the program."""
     async with _session_client(scope) as client:
         response = await client.post("/v1/checks/circuit", json=_body(qasm, prop))
     assert response.status_code == 200, response.text
@@ -215,13 +232,11 @@ async def test_what_would_be_expensive_to_build_is_refused_from_the_syntax_tree(
     assert verdict["teeth"]["status"] == "not_measured"
 
 
-async def test_nested_gate_definitions_come_back_inconclusive_fast_not_as_a_hang(
-    scope, nothing_is_built
-):
+async def test_nested_gate_definitions_come_back_inconclusive_fast_not_as_a_hang(scope):
     """The case PR 1011's review measured on the importer: nested gate definitions make
-    `qasm3.loads` itself exponential (514 characters took 8 s, about x2.2 per level).
-    Twelve doubling levels (2**12 = 4,096 gate applications) are refused from the tree,
-    and the whole request, auth and routing included, comes back well under 2 s."""
+    `qasm3.loads` itself exponential (514 characters took 8.2 s, about x2.2 per level).
+    Twelve doubling levels (2**12 = 4,096 gate applications) are refused from the tree in
+    the child, and the whole request, child start-up included, comes back under 2 s."""
     started = time.perf_counter()
     async with _session_client(scope) as client:
         response = await client.post(
@@ -236,8 +251,8 @@ async def test_nested_gate_definitions_come_back_inconclusive_fast_not_as_a_hang
 @pytest.mark.parametrize(
     ("qasm", "prop", "words"),
     [
-        (BELL, {"kind": "state", "subject": "circuit", "reference": "ghz(13)"}, "ghz(13)"),
-        (QFT3, {"kind": "unitary", "subject": "circuit", "reference": "qft(9)"}, "qft(9)"),
+        (BELL, {"kind": "state", "subject": "circuit", "reference": "ghz(13)"}, "on 13"),
+        (QFT3, {"kind": "unitary", "subject": "circuit", "reference": "qft(9)"}, "on 9"),
         (
             BELL,
             {
@@ -245,53 +260,27 @@ async def test_nested_gate_definitions_come_back_inconclusive_fast_not_as_a_hang
                 "subject": "circuit",
                 "reference_qasm": HEADER + "qubit[13] r;\nh r[0];\n",
             },
-            "reference circuit has 13 qubits",
+            "on 13",
         ),
     ],
     ids=["a-13-qubit-reference-state", "a-9-qubit-reference-unitary", "a-13-qubit-reference-qasm"],
 )
-async def test_an_expectation_wider_than_the_ceiling_is_refused_before_it_is_built(
+async def test_an_expectation_wider_than_the_circuit_is_a_fail_and_is_never_built(
     scope, qasm, prop, words
 ):
-    """The engine builds a library reference or a reference circuit BEFORE it compares
-    widths, so a 2-qubit circuit checked against `ghz(24)` would still allocate a
-    24-qubit state. The widths here sit one past each ceiling on purpose: if the guard
-    regressed, the engine would build a small reference and answer `fail` (width
-    mismatch), so the test goes red without allocating anything large."""
+    """The engine reads an expectation's width (from the library name, or the reference
+    circuit's syntax tree) BEFORE it builds the expectation. Wider than a narrower circuit
+    is a real disagreement, so a `fail` naming both widths, not an `inconclusive`. The
+    widths sit one past each ceiling on purpose: if the width check regressed, the child
+    would build a small reference and answer the same `fail` in different words, so the
+    wording is what these pin, and nothing large is ever allocated."""
     async with _session_client(scope) as client:
         response = await client.post("/v1/checks/circuit", json=_body(qasm, prop))
     assert response.status_code == 200, response.text
     verdict = response.json()["verdict"]
-    assert verdict["status"] == "inconclusive"
+    assert verdict["status"] == "fail"
     assert words in verdict["detail"]
     assert verdict["teeth"]["status"] == "not_measured"
-
-
-def test_the_expansion_count_is_exact_at_the_ceiling_not_merely_refusing():
-    """The counter, read without simulating anything: 2**11 = 2,048 gate applications is
-    under `MAX_EXPANDED_OPERATIONS` (4,000) and is admitted with that exact count; 2**12 =
-    4,096 is refused. A counter that refused everything would pass the parametrized
-    refusal test above; this is the half that shows it counts."""
-    prop = CheckProperty(kind="unitary", subject="circuit", reference="qft(1)")
-    assert circuit_check.MAX_EXPANDED_OPERATIONS == 4_000
-    admitted = circuit_check._bound_source(
-        _doubling_chain(11), max_qubits=8, prop=prop, what="The circuit"
-    )
-    assert admitted.qubits == 1
-    with pytest.raises(circuit_check._Refused, match="4,000 gate applications"):
-        circuit_check._bound_source(
-            _doubling_chain(12), max_qubits=8, prop=prop, what="The circuit"
-        )
-    # A register-wide call is counted once per qubit it lands on: 12 x 334 = 4,008.
-    wide = HEADER + "qubit[12] q;\n" + "h q;\n" * 334
-    with pytest.raises(circuit_check._Refused, match="4,000 gate applications"):
-        circuit_check._bound_source(wide, max_qubits=12, prop=prop, what="The circuit")
-    assert (
-        circuit_check._bound_source(
-            HEADER + "qubit[12] q;\n" + "h q;\n" * 333, max_qubits=12, prop=prop, what="The circuit"
-        ).qubits
-        == 12
-    )
 
 
 @pytest.mark.parametrize(
@@ -317,7 +306,7 @@ async def test_a_reference_circuit_that_does_not_parse_is_a_400_too(scope):
     async with _session_client(scope) as client:
         response = await client.post("/v1/checks/circuit", json=_body(BELL, prop))
     assert response.status_code == 400
-    assert response.json()["title"].startswith("The check's reference circuit's OpenQASM 3")
+    assert response.json()["title"].startswith("The check's reference circuit does not parse")
 
 
 async def test_a_value_check_is_refused_with_the_words_that_say_where_it_belongs(scope):
@@ -341,9 +330,9 @@ async def test_the_per_account_ceiling_answers_429_before_any_judging(scope, mon
     calls: list[str] = []
     real = circuit_check.judge_circuit
 
-    def counting(*args, **kwargs):
+    async def counting(*args, **kwargs):
         calls.append("judged")
-        return real(*args, **kwargs)
+        return await real(*args, **kwargs)
 
     monkeypatch.setattr(checks_routes, "judge_circuit", counting)
     async with _session_client(scope, check_rate_limit_per_minute=1) as client:

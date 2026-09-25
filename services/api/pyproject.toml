@@ -13,13 +13,6 @@ dependencies = [
     # conversion (leona_notebooks.ipynb) for routes/notebooks.py. The worker,
     # not the API, owns generation, revision and sandbox execution.
     "leona-notebooks",
-    # `circuit_check.py` (POST /v1/checks/circuit) reads the caller's OpenQASM 3 as an
-    # AST with `openqasm3.parse` and bounds it BEFORE `qiskit_qasm3_import.convert`
-    # builds anything, so both are imported here directly. Pinned to the ranges
-    # leona-notebooks and majorana-openqasm already resolve (0.6.x of the importer, and
-    # the openqasm3 range it requires), so this adds no version of its own.
-    "qiskit-qasm3-import>=0.6,<0.7",
-    "openqasm3[parser]>=0.4,<2",
     "pillow>=12.3.0",
     "alembic>=1.20.0",
     "sqlalchemy[asyncio]>=2.0.54",

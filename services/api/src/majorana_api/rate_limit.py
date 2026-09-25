@@ -215,11 +215,11 @@ DEFAULT_TOKEN_LIMIT = 600
 #: This bucket exists because nothing else meters this route. It is stateless, so the
 #: run allowance and abuse backstop (`routes/runs.py::_enforce_execute_backstop`,
 #: `_gate_notebook_run`) have no row to count, and a browser session passes no token
-#: limiter at all. A check costs real CPU on the API instance (up to about
-#: `CIRCUIT_CHECK_BUDGET_S` plus one simulation, see `circuit_check.py`), where a
-#: comment costs a row: 30 a minute is a check every two seconds, well past an agent
-#: checking circuits as it writes them, and it stops a loop from queueing an hour of
-#: checks behind one instance's single judging slot. Per instance, like the others here.
+#: limiter at all. A check costs real CPU on the API instance (a child process judging
+#: for up to `CIRCUIT_CHECK_KILL_AFTER_S`, see `routes/checks.py`), where a comment costs
+#: a row: 30 a minute is a check every two seconds, well past an agent checking circuits
+#: as it writes them, and it stops a loop from queueing an hour of checks behind one
+#: instance's single judging slot. Per instance, like the others here.
 #:
 #: `0` disables it, the same escape hatch the limiters above have.
 DEFAULT_CHECK_LIMIT = 30
