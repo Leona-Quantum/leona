@@ -166,7 +166,12 @@ test("a cell carried forward from an earlier version shows the cached-from label
   };
   const cells = notebookCellViews(cachedSpec, cachedReport);
   const view = render(<NotebookView cells={cells} locale="en" framework="qiskit" />);
-  assert.ok(view.getByText("Unchanged since version 4, not re-run"));
+  const label = view.getByText("Unchanged since version 4, not re-run");
+  assert.ok(label);
+  // The tooltip names the ONE thing detection cannot see and points at the
+  // escape hatch — adversarial review, ai-ops 382.
+  assert.match(label.title, /library call we don't recognize/);
+  assert.match(label.title, /Run everything fresh/);
 });
 
 test("a cell that actually ran this version shows no cached-from label", () => {

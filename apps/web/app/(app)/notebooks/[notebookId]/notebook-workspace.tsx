@@ -810,8 +810,21 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
     setDraftCells((current) => (current === null ? current : undoStructuralChange(current, change)));
   }
 
-  /** Save the draft as a new user-authored version. `runUntil` is "Run to here". */
-  async function saveDraft({ execute, runUntil }: { execute: boolean; runUntil?: string | null }) {
+  /** Save the draft as a new user-authored version. `runUntil` is "Run to here".
+   * `reuseResults: false` is "Run everything fresh" — the escape hatch for
+   * dependency-graph replay's known limit (state a cell changes OUTSIDE any
+   * notebook-level variable it named, e.g. an RNG seed a helper function sets):
+   * skips the cache entirely and re-runs every cell, ignoring what looks
+   * unchanged. Defaults `true`, matching the server's own default. */
+  async function saveDraft({
+    execute,
+    runUntil,
+    reuseResults = true,
+  }: {
+    execute: boolean;
+    runUntil?: string | null;
+    reuseResults?: boolean;
+  }) {
     const spec = version?.spec;
     if (!spec || draftCells === null || mutationPending.current) return;
     mutationPending.current = true;
@@ -826,6 +839,7 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
           message: "",
           execute,
           run_until: runUntil ?? null,
+          reuse_results: reuseResults,
         }),
       });
       const payload = (await response.json()) as unknown;
@@ -1491,6 +1505,15 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
                   onClick={() => void saveDraft({ execute: false })}
                 >
                   {copy.saveWithoutRunning}
+                </button>
+                <button
+                  className="mj-secondary-button"
+                  type="button"
+                  disabled={saving}
+                  title={copy.runEverythingFreshHint}
+                  onClick={() => void saveDraft({ execute: true, reuseResults: false })}
+                >
+                  {copy.runEverythingFresh}
                 </button>
                 <button
                   className="mj-secondary-button"
