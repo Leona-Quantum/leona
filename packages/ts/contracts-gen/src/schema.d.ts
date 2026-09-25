@@ -333,6 +333,11 @@ export interface components {
              */
             message: string;
             /**
+             * Reuse Results
+             * @default true
+             */
+            reuse_results: boolean;
+            /**
              * Run Until
              * @default null
              */
@@ -739,6 +744,16 @@ export interface components {
         };
         /** CellResult */
         CellResult: {
+            /**
+             * Cache Key
+             * @default null
+             */
+            cache_key: string | null;
+            /**
+             * Cached From Seq
+             * @default null
+             */
+            cached_from_seq: number | null;
             /**
              * Duration Ms
              * @default 0
@@ -3055,6 +3070,11 @@ export interface components {
          *     resolves.
          */
         NotebookLiveCellResult: {
+            /**
+             * Cached From Seq
+             * @default null
+             */
+            cached_from_seq: number | null;
             /**
              * Duration Ms
              * @default 0

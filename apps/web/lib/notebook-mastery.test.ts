@@ -23,6 +23,8 @@ function result(id: string, status: "ok" | "error" | "skipped" | "not_run") {
     duration_ms: 1,
     execution_count: 1,
     note: "",
+    cache_key: null,
+    cached_from_seq: null,
   };
 }
 

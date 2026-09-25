@@ -61,6 +61,8 @@ const report = {
       duration_ms: 120,
       execution_count: 1,
       note: "",
+      cache_key: null,
+      cached_from_seq: null,
     },
     {
       id: "c2",
@@ -72,6 +74,8 @@ const report = {
       duration_ms: 4,
       execution_count: 2,
       note: "",
+      cache_key: null,
+      cached_from_seq: null,
     },
   ],
 };
@@ -115,6 +119,8 @@ test("text/html output is shown as literal text, never as rendered markup", () =
         duration_ms: 1,
         execution_count: 1,
         note: "",
+        cache_key: null,
+        cached_from_seq: null,
       },
     ],
   };
@@ -125,6 +131,70 @@ test("text/html output is shown as literal text, never as rendered markup", () =
   // ...and there is no actual <strong> element produced by that output — if there
   // were, this component would have interpreted the HTML instead of showing it.
   assert.equal(view.container.querySelector(".mj-notebook-cell-output-text strong"), null);
+});
+
+test("a cell carried forward from an earlier version shows the cached-from label", () => {
+  // Dependency-graph replay (plan platform-vision-20260924/phase-a §3): a cell the
+  // worker reused instead of re-running carries `cached_from_seq`, and the reader
+  // sees which version it is unchanged since.
+  const cachedSpec = [
+    { id: "c1", kind: "code" as const, role: "run" as const, source: "print(counts)", tags: [], execute: true, stub: null, check: null, answer: null, answer_prompt: null, timeout_s: null },
+  ];
+  const cachedReport = {
+    notebook_slug: "bell-state-intro",
+    ok: true,
+    runner: "sandbox" as const,
+    duration_ms: 900,
+    environment: {},
+    dropped_bytes: 0,
+    note: "",
+    cells: [
+      {
+        id: "c1",
+        status: "ok" as const,
+        stdout: "{'00': 512, '11': 512}\n",
+        stderr: "",
+        outputs: [],
+        error: null,
+        duration_ms: 120,
+        execution_count: 1,
+        note: "",
+        cache_key: null,
+        cached_from_seq: 4,
+      },
+    ],
+  };
+  const cells = notebookCellViews(cachedSpec, cachedReport);
+  const view = render(<NotebookView cells={cells} locale="en" framework="qiskit" />);
+  const label = view.getByText("Unchanged since version 4, not re-run");
+  assert.ok(label);
+  // The tooltip names the ONE thing detection cannot see and points at the
+  // escape hatch — adversarial review, ai-ops 382.
+  assert.match(label.title, /library call we don't recognize/);
+  assert.match(label.title, /Run everything fresh/);
+});
+
+test("a cell that actually ran this version shows no cached-from label", () => {
+  const cells = notebookCellViews(spec.cells, report);
+  const view = render(<NotebookView cells={cells} locale="en" framework="qiskit" />);
+  assert.equal(view.queryByText(/Unchanged since version/), null);
+});
+
+test("Run everything fresh is reachable outside edit mode when the workspace wires it", () => {
+  // Round 2 of the adversarial review: the tooltip on the cached-from label
+  // names this button, so a reader viewing results (this view, no edit props
+  // at all) must be able to reach it too — not just someone mid-edit.
+  const cells = notebookCellViews(spec.cells, report);
+  const view = render(
+    <NotebookView cells={cells} locale="en" framework="qiskit" onRunEverythingFresh={() => {}} />,
+  );
+  assert.ok(view.getByText("Run everything fresh"));
+});
+
+test("Run everything fresh renders nothing when the caller never wires it", () => {
+  const cells = notebookCellViews(spec.cells, report);
+  const view = render(<NotebookView cells={cells} locale="en" framework="qiskit" />);
+  assert.equal(view.queryByText("Run everything fresh"), null);
 });
 
 test("the \"Explain this error\" action appears only on the cell whose output actually errored", () => {

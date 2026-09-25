@@ -662,6 +662,11 @@
             "title": "Message",
             "type": "string"
           },
+          "reuse_results": {
+            "default": true,
+            "title": "Reuse Results",
+            "type": "boolean"
+          },
           "run_until": {
             "anyOf": [
               {
@@ -1488,6 +1493,30 @@
       "CellResult": {
         "additionalProperties": false,
         "properties": {
+          "cache_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cache Key"
+          },
+          "cached_from_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cached From Seq"
+          },
           "duration_ms": {
             "default": 0,
             "minimum": 0,
@@ -5716,6 +5745,18 @@
         "additionalProperties": false,
         "description": "One cell's execution outcome, status and error name/value only \u2014 no stdout, no\noutputs, no figures. What raised is often exactly what a graded cell's assertion\nwas checking, so even this is not risk-free for a non-author viewer; see the\n\"Live\" lane's report for the residual flag this carries forward rather than\nresolves.",
         "properties": {
+          "cached_from_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cached From Seq"
+          },
           "duration_ms": {
             "default": 0,
             "minimum": 0,
@@ -12092,7 +12133,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.37.0"
+    "version": "2.37.2"
   },
   "openapi": "3.1.0",
   "paths": {}

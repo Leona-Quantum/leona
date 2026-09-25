@@ -268,6 +268,15 @@ class NotebookLiveCellResult(BaseModel):
     ename: str | None = None
     evalue: str | None = None
     duration_ms: int = Field(default=0, ge=0)
+    #: Mirrors `CellResult.cached_from_seq` (dependency-graph replay, plan
+    #: platform-vision-20260924/phase-a §3): set when this cell's result was
+    #: carried forward from an earlier version rather than run THIS dispatch, to
+    #: the parent version's `seq`. Without this, a live listener sees a reused
+    #: cell as `status="not_run"` — the pre-merge, fresh-dispatch-only shape — and
+    #: a reader watching the run would see cells they did not edit disappear
+    #: rather than keep their results. `None` for every cell that actually ran (or
+    #: never entered dependency-graph replay at all).
+    cached_from_seq: int | None = None
 
 
 class NotebookCells(_EventBase):
