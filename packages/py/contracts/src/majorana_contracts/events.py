@@ -268,6 +268,10 @@ class NotebookLiveCellResult(BaseModel):
     ename: str | None = None
     evalue: str | None = None
     duration_ms: int = Field(default=0, ge=0)
+    #: A `role=check` cell's verdict (`CellResult.check.status`), judged on the worker
+    #: right after the dispatch; `None` for every other cell. Status only, like the rest
+    #: of this event: the full verdict is in the stored report.
+    check: Literal["pass", "fail", "inconclusive"] | None = None
 
 
 class NotebookCells(_EventBase):

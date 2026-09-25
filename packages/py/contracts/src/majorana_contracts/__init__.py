@@ -164,6 +164,9 @@ from .notebooks import (
     CellOutput,
     CellResult,
     CellRole,
+    CheckProperty,
+    CheckTeeth,
+    CheckVerdict,
     ChoiceAnswer,
     CreateNotebookRequest,
     CreateNotebookResponse,
@@ -540,7 +543,15 @@ from .lifecycle import (
 # now. Additive: one new enum value, no existing model changes; `auth/token_access.py`
 # gates the one route it unlocks (migration 0075 widens the matching DB check
 # constraint in the same PR).
-CONTRACTS_VERSION = "2.37.0"
+# 2.38.0: Phase A, "check cells" (ai-ops 382 option 1; design in
+# ai-ops/desk/leona/plans/platform-vision-20260924/phase-a/DESIGN.md §1-§2). New:
+# `CellRole.CHECK`, `CheckProperty` on the new `Cell.property` (only on role=check cells,
+# and required on them — UNRELATED to `Cell.check`, the hidden exercise grader),
+# `CheckVerdict` and `CheckTeeth` on the new `CellResult.check`, and an optional `check`
+# status on the `notebook.cells` event's `NotebookLiveCellResult`. Additive: one enum
+# value, three models, three optional fields that default to None, so every stored spec,
+# report and event still parses. No route and no migration (spec and report are JSONB).
+CONTRACTS_VERSION = "2.38.0"
 
 __all__ = [
     "PresenceHeartbeatRequest",
@@ -694,6 +705,9 @@ __all__ = [
     "CellResult",
     "HardwareRequest",
     "CellRole",
+    "CheckProperty",
+    "CheckTeeth",
+    "CheckVerdict",
     "CreateNotebookRequest",
     "CreateNotebookResponse",
     "CreateNotebookTurnRequest",

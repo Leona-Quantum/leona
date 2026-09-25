@@ -650,6 +650,8 @@ export interface components {
              */
             kind: "markdown" | "code";
             /** @default null */
+            property: components["schemas"]["CheckProperty"] | null;
+            /** @default null */
             role: components["schemas"]["CellRole"] | null;
             /**
              * Source
@@ -739,6 +741,8 @@ export interface components {
         };
         /** CellResult */
         CellResult: {
+            /** @default null */
+            check: components["schemas"]["CheckVerdict"] | null;
             /**
              * Duration Ms
              * @default 0
@@ -782,7 +786,7 @@ export interface components {
          * CellRole
          * @enum {string}
          */
-        CellRole: "setup" | "objective" | "concept" | "predict" | "run" | "observe" | "explain" | "modify" | "checkpoint" | "figure" | "exercise" | "hint" | "solution" | "question" | "answer" | "summary" | "references" | "note";
+        CellRole: "setup" | "objective" | "concept" | "predict" | "run" | "observe" | "explain" | "modify" | "checkpoint" | "figure" | "exercise" | "hint" | "solution" | "question" | "answer" | "summary" | "references" | "note" | "check";
         /** ChatCompleted */
         ChatCompleted: {
             /**
@@ -886,6 +890,202 @@ export interface components {
              * @enum {string}
              */
             type: "chat.error";
+        };
+        /**
+         * CheckProperty
+         * @description What a `role=check` cell asserts about an object an earlier cell built.
+         *
+         *     **Not `Cell.check`.** That field is the hidden grader of a reader's exercise: Python
+         *     that runs in the sandbox after the reader's own cell. This is data. The sandbox never
+         *     executes it; it only records the subject (`__leona_capture_check__`), and trusted code
+         *     on the worker (`leona_notebooks.checks.evaluate_check`) judges the subject against the
+         *     expectation here. So nothing a notebook cell does can move the goalposts.
+         *
+         *     Five kinds, each with its own expectation fields and no others:
+         *
+         *     - `state`: the circuit's output state from |0…0⟩ equals `amplitudes` (bitstring to a
+         *       number or an expression), a library `reference`, or `reference_qasm`, up to global
+         *       phase. Bitstrings follow Qiskit's convention: q0 is the RIGHTMOST character.
+         *     - `unitary`: the circuit's unitary equals `reference` or `reference_qasm` up to
+         *       global phase.
+         *     - `distribution`: the circuit's ideal measured distribution matches `probabilities`.
+         *     - `energy`: ⟨ψ|H|ψ⟩ for `hamiltonian` (Pauli string to coefficient, q0 rightmost as
+         *       in Qiskit's `SparsePauliOp`) against the exact ground energy (`target="ground"`)
+         *       or a number.
+         *     - `value`: a number, or a list of numbers, the subject variable holds.
+         */
+        CheckProperty: {
+            /**
+             * Accepted
+             * @default false
+             */
+            accepted: boolean;
+            /**
+             * Amplitudes
+             * @default null
+             */
+            amplitudes: {
+                [key: string]: number | string;
+            } | null;
+            /**
+             * Author
+             * @default nala
+             * @enum {string}
+             */
+            author: "nala" | "user" | "source";
+            /**
+             * Citation
+             * @default
+             */
+            citation: string;
+            /**
+             * Hamiltonian
+             * @default null
+             */
+            hamiltonian: {
+                [key: string]: number;
+            } | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "state" | "unitary" | "distribution" | "energy" | "value";
+            /**
+             * Probabilities
+             * @default null
+             */
+            probabilities: {
+                [key: string]: number | string;
+            } | null;
+            /**
+             * Reference
+             * @default null
+             */
+            reference: string | null;
+            /**
+             * Reference Qasm
+             * @default null
+             */
+            reference_qasm: string | null;
+            /**
+             * Statement
+             * @default
+             */
+            statement: string;
+            /** Subject */
+            subject: string;
+            /**
+             * Target
+             * @default null
+             */
+            target: "ground" | number | null;
+            /**
+             * Tolerance
+             * @default null
+             */
+            tolerance: number | null;
+            /**
+             * Value
+             * @default null
+             */
+            value: number | number[] | null;
+        };
+        /**
+         * CheckTeeth
+         * @description Whether a passing check could have failed: the worker's mutation test of it.
+         *
+         *     For a check that passes on a circuit, the worker makes deliberately broken copies of
+         *     the subject (drop a gate, swap a two-qubit gate's control and target, negate an angle,
+         *     swap a gate for its adjoint, reverse the qubit order) and judges each the same way.
+         *     A copy that behaves exactly like the original is `equivalent` and is left out, because
+         *     no check could catch it. `caught` of `mutants` is the score; `survivors` names the
+         *     broken copies the check passed, at most 8, in words.
+         *
+         *     `not_measured` is never a pass: it means the test did not happen (too large, over the
+         *     time budget, a `value` check with no circuit to break), and `reason` says which.
+         */
+        CheckTeeth: {
+            /**
+             * Caught
+             * @default 0
+             */
+            caught: number;
+            /**
+             * Equivalent
+             * @default 0
+             */
+            equivalent: number;
+            /**
+             * Mutants
+             * @default 0
+             */
+            mutants: number;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "measured" | "not_measured";
+            /** Survivors */
+            survivors?: string[];
+        };
+        /**
+         * CheckVerdict
+         * @description The worker's judgement of one `role=check` cell, on `CellResult.check`.
+         *
+         *     Written only by trusted code after the run (`leona_notebooks.checks`), never by the
+         *     sandbox. `pass` / `fail` / `inconclusive` and nothing else — never "verified"
+         *     (ADR-0023). `inconclusive` is the check's own incapacity (the subject is missing, is
+         *     not a circuit, measures mid-circuit, is too wide, did not parse) and is never counted
+         *     as a fail. A failing check does not fail the notebook.
+         */
+        CheckVerdict: {
+            /**
+             * Basis
+             * @enum {string}
+             */
+            basis: "circuit" | "value";
+            /**
+             * Checked Against
+             * @default
+             */
+            checked_against: string;
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+            /**
+             * Measure
+             * @default
+             */
+            measure: string;
+            /**
+             * Qubits
+             * @default null
+             */
+            qubits: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pass" | "fail" | "inconclusive";
+            /**
+             * Subject Fingerprint
+             * @default null
+             */
+            subject_fingerprint: string | null;
+            /**
+             * Subject Qasm
+             * @default null
+             */
+            subject_qasm: string | null;
+            /** @default null */
+            teeth: components["schemas"]["CheckTeeth"] | null;
         };
         /**
          * ChoiceAnswer
@@ -3055,6 +3255,11 @@ export interface components {
          *     resolves.
          */
         NotebookLiveCellResult: {
+            /**
+             * Check
+             * @default null
+             */
+            check: ("pass" | "fail" | "inconclusive") | null;
             /**
              * Duration Ms
              * @default 0

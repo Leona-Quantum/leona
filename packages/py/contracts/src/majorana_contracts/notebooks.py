@@ -15,6 +15,8 @@ revision — and re-exports the types from here so there is one definition.
 
 from __future__ import annotations
 
+import builtins
+import math
 import re
 from datetime import datetime
 from enum import StrEnum
@@ -73,6 +75,10 @@ class CellRole(StrEnum):
     SUMMARY = "summary"
     REFERENCES = "references"
     NOTE = "note"
+    #: A structured property of an earlier result (`Cell.property`), judged by trusted
+    #: code on the worker, never by the cell's own source. Not the same thing as
+    #: `Cell.check`, the hidden grader of an exercise — see `CheckProperty`.
+    CHECK = "check"
 
 
 #: Roles whose whole content is the thing a learner must not see before they try.
@@ -215,6 +221,322 @@ AnswerKey = Annotated[
 ]
 
 
+# --------------------------------------------------------------------------- check cells
+
+CheckKind = Literal["state", "unitary", "distribution", "energy", "value"]
+#: Who wrote a check. `source` means it was transcribed from somewhere outside the model
+#: (a paper, an Atlas record) and so needs a `citation`. The default is the LEAST trusted
+#: label on purpose: a property that arrives without an author never gains trust by the
+#: omission. `leona_notebooks.checks.enforce_check_authorship` is what actually sets it.
+CheckAuthor = Literal["nala", "user", "source"]
+CheckStatus = Literal["pass", "fail", "inconclusive"]
+
+#: Library references a `state` check may name. Built by trusted worker code
+#: (`leona_notebooks.checks`), never written by the model or the reader. The widths stop
+#: at 24 because that is `majorana_verification.statevector.STATEVECTOR_MAX_QUBITS`, the
+#: widest statevector the worker simulates (restated: this package imports nothing
+#: internal).
+CHECK_STATE_REFERENCE_RE = re.compile(
+    r"^(?:bell(?::(?:phi|psi)[+-])?|(?:ghz|w|uniform)\((?:[1-9]|1\d|2[0-4])\))$"
+)
+#: Library references a `unitary` check may name. 12 is `UNITARY_MAX_QUBITS`, restated.
+CHECK_UNITARY_REFERENCE_RE = re.compile(r"^i?qft\((?:[1-9]|1[0-2])\)$")
+#: The names an amplitude or probability expression may use. The evaluator
+#: (`leona_notebooks.checks.evaluate_expression`) walks an `ast` against this allowlist and
+#: never calls `eval`; the validator below walks the same allowlist without evaluating, so a
+#: property that would be refused at run time is refused when it is written instead.
+CHECK_EXPRESSION_CONSTANTS: frozenset[str] = frozenset({"i", "j", "pi", "e"})
+CHECK_EXPRESSION_FUNCTIONS: frozenset[str] = frozenset({"sqrt", "exp", "cos", "sin"})
+MAX_CHECK_EXPRESSION_CHARS = 200
+#: The widest Pauli string an `energy` check may carry: `EXACT_DIAG_MAX_QUBITS` in
+#: `majorana_verification.hamiltonian`, restated.
+MAX_CHECK_HAMILTONIAN_QUBITS = 10
+MAX_CHECK_HAMILTONIAN_TERMS = 256
+MAX_CHECK_BASIS_ENTRIES = 4096
+MAX_CHECK_VALUE_ENTRIES = 4096
+MAX_CHECK_REFERENCE_QASM_CHARS = 20_000
+#: How much of the subject's OpenQASM a verdict carries back to the page. A longer
+#: subject is still judged; the verdict simply does not repeat it.
+MAX_CHECK_VERDICT_QASM_CHARS = 8_000
+
+#: The tolerance a property gets when it names none, per kind. What each one bounds:
+#: `state` — 1 - fidelity; `unitary` — the largest entry of the difference of the two
+#: unitaries after removing global phase; `distribution` — total variation distance;
+#: `energy` and `value` — absolute difference. `energy` is looser than the rest because a
+#: variational optimum is rarely within 1e-6 of the exact ground energy; 1e-3 is about
+#: chemical accuracy in hartree. A check that needs something else sets it.
+CHECK_DEFAULT_TOLERANCE: dict[str, float] = {
+    "state": 1e-6,
+    "unitary": 1e-6,
+    "distribution": 1e-6,
+    "energy": 1e-3,
+    "value": 1e-6,
+}
+#: Upper bounds that keep a tolerance from making the check impossible to fail: a
+#: fidelity is at most 1, a total variation distance at most 1, and the entries of the
+#: difference of two unitaries at most 2.
+_CHECK_TOLERANCE_CEILING: dict[str, float] = {"state": 1.0, "distribution": 1.0, "unitary": 2.0}
+
+#: Which expectation fields each kind takes. Exactly one of the first set for state and
+#: unitary; all of the listed fields for the other three.
+_CHECK_EXPECTATION_FIELDS = (
+    "amplitudes",
+    "probabilities",
+    "reference",
+    "reference_qasm",
+    "hamiltonian",
+    "target",
+    "value",
+)
+_CHECK_ONE_OF: dict[str, tuple[str, ...]] = {
+    "state": ("amplitudes", "reference", "reference_qasm"),
+    "unitary": ("reference", "reference_qasm"),
+}
+_CHECK_ALL_OF: dict[str, tuple[str, ...]] = {
+    "distribution": ("probabilities",),
+    "energy": ("hamiltonian", "target"),
+    "value": ("value",),
+}
+
+_BITSTRING_RE = re.compile(r"^[01]+$")
+_PAULI_RE = re.compile(r"^[IXYZ]+$")
+
+
+def _validate_check_expression(text: str) -> None:
+    """Refuse an amplitude/probability expression the evaluator would refuse.
+
+    Parsing only — `ast.parse` builds a tree and runs nothing. The walk accepts numbers,
+    the names in `CHECK_EXPRESSION_CONSTANTS`, one-argument calls of the names in
+    `CHECK_EXPRESSION_FUNCTIONS`, `+ - * / **`, unary `+ -`, and parentheses. Everything
+    else (attributes, subscripts, other names, keywords, comparisons) is refused here.
+    """
+    import ast
+
+    if not text.strip():
+        raise ValueError("an expression must not be blank")
+    if len(text) > MAX_CHECK_EXPRESSION_CHARS:
+        raise ValueError(f"an expression may be at most {MAX_CHECK_EXPRESSION_CHARS} characters")
+    try:
+        tree = ast.parse(text.strip(), mode="eval")
+    except SyntaxError as exc:
+        raise ValueError(f"expression {text!r} does not parse: {exc.msg}") from None
+    allowed_ops = (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow, ast.UAdd, ast.USub)
+
+    def walk(node: ast.AST) -> None:
+        if isinstance(node, ast.Expression):
+            walk(node.body)
+        elif isinstance(node, ast.BinOp) and isinstance(node.op, allowed_ops):
+            walk(node.left)
+            walk(node.right)
+        elif isinstance(node, ast.UnaryOp) and isinstance(node.op, allowed_ops):
+            walk(node.operand)
+        elif isinstance(node, ast.Constant) and type(node.value) in (int, float, complex):
+            return
+        elif isinstance(node, ast.Name) and node.id in CHECK_EXPRESSION_CONSTANTS:
+            return
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in CHECK_EXPRESSION_FUNCTIONS
+            and len(node.args) == 1
+            and not node.keywords
+        ):
+            walk(node.args[0])
+        else:
+            raise ValueError(
+                f"expression {text!r} uses {type(node).__name__}, which a check expression "
+                "may not: use numbers, i, pi, e, sqrt(), exp(), cos(), sin() and + - * / **"
+            )
+
+    walk(tree)
+
+
+def _a(kind: str) -> str:
+    """ "a state", "an energy" — for messages a reader sees."""
+    return ("an " if kind[:1] in "aeiou" else "a ") + kind
+
+
+def _validate_bitstring_keys(name: str, keys: list[str], *, max_width: int = 24) -> int:
+    if not keys:
+        raise ValueError(f"{name} must name at least one basis state")
+    widths = {len(key) for key in keys}
+    for key in keys:
+        if not _BITSTRING_RE.match(key):
+            raise ValueError(f"{name} key {key!r} is not a string of 0s and 1s")
+    if len(widths) != 1:
+        raise ValueError(f"{name} keys must all have the same length, got {sorted(widths)}")
+    width = widths.pop()
+    if width > max_width:
+        raise ValueError(f"{name} keys are {width} bits; a check simulates at most {max_width}")
+    return width
+
+
+class CheckProperty(_Model):
+    """What a `role=check` cell asserts about an object an earlier cell built.
+
+    **Not `Cell.check`.** That field is the hidden grader of a reader's exercise: Python
+    that runs in the sandbox after the reader's own cell. This is data. The sandbox never
+    executes it; it only records the subject (`__leona_capture_check__`), and trusted code
+    on the worker (`leona_notebooks.checks.evaluate_check`) judges the subject against the
+    expectation here. So nothing a notebook cell does can move the goalposts.
+
+    Five kinds, each with its own expectation fields and no others:
+
+    - `state`: the circuit's output state from |0…0⟩ equals `amplitudes` (bitstring to a
+      number or an expression), a library `reference`, or `reference_qasm`, up to global
+      phase. Bitstrings follow Qiskit's convention: q0 is the RIGHTMOST character.
+    - `unitary`: the circuit's unitary equals `reference` or `reference_qasm` up to
+      global phase.
+    - `distribution`: the circuit's ideal measured distribution matches `probabilities`.
+    - `energy`: ⟨ψ|H|ψ⟩ for `hamiltonian` (Pauli string to coefficient, q0 rightmost as
+      in Qiskit's `SparsePauliOp`) against the exact ground energy (`target="ground"`)
+      or a number.
+    - `value`: a number, or a list of numbers, the subject variable holds.
+    """
+
+    kind: CheckKind
+    #: The name, in the notebook's namespace, of the object the check is about.
+    subject: str = Field(min_length=1, max_length=64)
+    amplitudes: dict[str, float | str] | None = Field(
+        default=None, max_length=MAX_CHECK_BASIS_ENTRIES
+    )
+    probabilities: dict[str, float | str] | None = Field(
+        default=None, max_length=MAX_CHECK_BASIS_ENTRIES
+    )
+    reference: str | None = None
+    reference_qasm: str | None = Field(
+        default=None, min_length=1, max_length=MAX_CHECK_REFERENCE_QASM_CHARS
+    )
+    hamiltonian: dict[str, float] | None = Field(
+        default=None, max_length=MAX_CHECK_HAMILTONIAN_TERMS
+    )
+    target: Literal["ground"] | float | None = None
+    value: float | list[float] | None = None
+    #: `None` in a submission means "the default for this kind"; validation fills it in,
+    #: so a stored property always states the tolerance it was judged with.
+    tolerance: float | None = Field(default=None, ge=0.0)
+    #: One human line saying what is being checked. Rendered as the cell's comment.
+    statement: str = Field(default="", max_length=300)
+    author: CheckAuthor = "nala"
+    #: Where the property came from: a paper, an Atlas record id. Required for `source`.
+    citation: str = Field(default="", max_length=500)
+    #: Whether a person has accepted this check. A Nala check stays unaccepted until then.
+    accepted: bool = False
+
+    @field_validator("subject")
+    @classmethod
+    def _subject_is_identifier(cls, value: str) -> str:
+        import keyword
+
+        if not value.isidentifier() or keyword.iskeyword(value):
+            raise ValueError(f"subject {value!r} must be a Python variable name")
+        return value
+
+    @field_validator("statement")
+    @classmethod
+    def _statement_one_line(cls, value: str) -> str:
+        if "\n" in value or "\r" in value:
+            raise ValueError("statement must be one line")
+        return value.strip()
+
+    @model_validator(mode="after")
+    def _expectations_fit_the_kind(self) -> CheckProperty:
+        given = {name for name in _CHECK_EXPECTATION_FIELDS if getattr(self, name) is not None}
+        if self.kind in _CHECK_ONE_OF:
+            allowed = set(_CHECK_ONE_OF[self.kind])
+            chosen = given & allowed
+            if len(chosen) != 1:
+                raise ValueError(
+                    f"{_a(self.kind)} check needs exactly one of {sorted(allowed)}, "
+                    f"got {sorted(chosen) or 'none'}"
+                )
+        else:
+            allowed = set(_CHECK_ALL_OF[self.kind])
+            missing = allowed - given
+            if missing:
+                raise ValueError(f"{_a(self.kind)} check needs {sorted(missing)}")
+        extra = given - allowed
+        if extra:
+            raise ValueError(f"{_a(self.kind)} check does not take {sorted(extra)}")
+        return self
+
+    @model_validator(mode="after")
+    def _expectations_are_well_formed(self) -> CheckProperty:
+        if self.reference is not None:
+            grammar = (
+                CHECK_STATE_REFERENCE_RE if self.kind == "state" else CHECK_UNITARY_REFERENCE_RE
+            )
+            if not grammar.match(self.reference):
+                names = (
+                    "bell, bell:phi-, bell:psi+, bell:psi-, ghz(n), w(n), uniform(n)"
+                    if self.kind == "state"
+                    else "qft(n), iqft(n)"
+                )
+                raise ValueError(
+                    f"reference {self.reference!r} is not a library reference "
+                    f"{_a(self.kind)} check can use; one of: {names}"
+                )
+        for name in ("amplitudes", "probabilities"):
+            mapping = getattr(self, name)
+            if mapping is None:
+                continue
+            _validate_bitstring_keys(name, list(mapping))
+            for key, entry in mapping.items():
+                if isinstance(entry, str):
+                    _validate_check_expression(entry)
+                elif not math.isfinite(entry):
+                    raise ValueError(f"{name}[{key}] is not a finite number")
+                elif name == "probabilities" and entry < 0:
+                    raise ValueError(f"probabilities[{key}] is negative")
+        if self.hamiltonian is not None:
+            if not self.hamiltonian:
+                raise ValueError("hamiltonian must have at least one term")
+            widths = {len(term) for term in self.hamiltonian}
+            for term, coefficient in self.hamiltonian.items():
+                if not _PAULI_RE.match(term):
+                    raise ValueError(f"hamiltonian term {term!r} is not a string of I, X, Y, Z")
+                if not math.isfinite(coefficient):
+                    raise ValueError(f"hamiltonian[{term}] is not a finite number")
+            if len(widths) != 1:
+                raise ValueError("hamiltonian terms must all act on the same number of qubits")
+            if widths.pop() > MAX_CHECK_HAMILTONIAN_QUBITS:
+                raise ValueError(
+                    f"an energy check diagonalises at most {MAX_CHECK_HAMILTONIAN_QUBITS} qubits"
+                )
+        if isinstance(self.target, float) and not math.isfinite(self.target):
+            raise ValueError("target must be a finite number or 'ground'")
+        if self.value is not None:
+            values = self.value if isinstance(self.value, list) else [self.value]
+            if not values:
+                raise ValueError("value must not be an empty list")
+            if len(values) > MAX_CHECK_VALUE_ENTRIES:
+                raise ValueError(f"value may have at most {MAX_CHECK_VALUE_ENTRIES} entries")
+            if not all(math.isfinite(entry) for entry in values):
+                raise ValueError("value must hold finite numbers only")
+        return self
+
+    @model_validator(mode="after")
+    def _tolerance_and_provenance(self) -> CheckProperty:
+        if self.tolerance is None:
+            self.tolerance = CHECK_DEFAULT_TOLERANCE[self.kind]
+        if not math.isfinite(self.tolerance):
+            raise ValueError("tolerance must be a finite number")
+        ceiling = _CHECK_TOLERANCE_CEILING.get(self.kind)
+        if ceiling is not None and self.tolerance >= ceiling:
+            raise ValueError(
+                f"{_a(self.kind)} check with tolerance {self.tolerance} cannot fail; "
+                f"it must be below {ceiling}"
+            )
+        if self.author == "source" and not self.citation.strip():
+            raise ValueError("a check with author 'source' needs a citation")
+        return self
+
+    def expectation_key(self) -> dict[str, Any]:
+        """Everything that decides the verdict, and nothing about who wrote it or whether
+        it was accepted. Two properties with the same key are the same check."""
+        return self.model_dump(mode="json", exclude={"author", "accepted"})
+
+
 class Cell(_Model):
     id: str
     kind: Literal["markdown", "code"]
@@ -248,6 +570,15 @@ class Cell(_Model):
     answer_prompt: AnswerPrompt | None = None
     #: Advisory per-cell budget for a kernel-based validator; the sandbox has one budget.
     timeout_s: int | None = Field(default=None, ge=1, le=600)
+    #: For `role=check` cells only, and required on them: the structured property the
+    #: worker judges (`CheckProperty`). UNRELATED to `check` above, despite the name —
+    #: `check` is the hidden grader of a reader's exercise and runs in the sandbox; this
+    #: is data the sandbox never runs, judged by trusted code after the run. The cell's
+    #: `source` is only a comment rendered from it.
+    property: CheckProperty | None = None
+    # The field above shadows the builtin `property` for the rest of this class body, so
+    # the computed attributes below are declared with `builtins.property`. A bare
+    # `@property` after this line decorates with `None` and fails at import.
 
     @field_validator("id")
     @classmethod
@@ -287,7 +618,28 @@ class Cell(_Model):
             raise ValueError(f"cell {self.id}: only role=question cells carry an answer key")
         return self
 
-    @property
+    @model_validator(mode="after")
+    def _property_exactly_on_check_cells(self) -> Cell:
+        """A `role=check` cell is its property; any other cell has none.
+
+        Both directions, because each half fails silently alone: a property on a `run`
+        cell would never be judged (the composer only captures `role=check` cells), and a
+        `role=check` cell with no property would render as a check on the page and judge
+        nothing. A check cell is code (the sandbox captures at its position) and carries
+        neither a stub nor a hidden grader, which belong to exercises.
+        """
+        if self.role == CellRole.CHECK:
+            if self.property is None:
+                raise ValueError(f"cell {self.id}: a role=check cell needs a property")
+            if self.kind != "code":
+                raise ValueError(f"cell {self.id}: a role=check cell must be a code cell")
+            if self.stub is not None or self.check is not None:
+                raise ValueError(f"cell {self.id}: a role=check cell carries no stub or grader")
+        elif self.property is not None:
+            raise ValueError(f"cell {self.id}: only role=check cells carry a property")
+        return self
+
+    @builtins.property
     def is_graded(self) -> bool:
         """Whether this cell can produce a grade at all — the two ways differ.
 
@@ -297,15 +649,15 @@ class Cell(_Model):
         """
         return self.check is not None or self.answer is not None
 
-    @property
+    @builtins.property
     def is_code(self) -> bool:
         return self.kind == "code"
 
-    @property
+    @builtins.property
     def runs_in_sandbox(self) -> bool:
         return self.kind == "code" and self.execute and "skip-execution" not in self.tags
 
-    @property
+    @builtins.property
     def may_raise(self) -> bool:
         return "raises-exception" in self.tags
 
@@ -538,6 +890,64 @@ class HardwareRequest(_Model):
     label: str | None = Field(default=None, max_length=MAX_HARDWARE_REQUEST_LABEL_CHARS)
 
 
+class CheckTeeth(_Model):
+    """Whether a passing check could have failed: the worker's mutation test of it.
+
+    For a check that passes on a circuit, the worker makes deliberately broken copies of
+    the subject (drop a gate, swap a two-qubit gate's control and target, negate an angle,
+    swap a gate for its adjoint, reverse the qubit order) and judges each the same way.
+    A copy that behaves exactly like the original is `equivalent` and is left out, because
+    no check could catch it. `caught` of `mutants` is the score; `survivors` names the
+    broken copies the check passed, at most 8, in words.
+
+    `not_measured` is never a pass: it means the test did not happen (too large, over the
+    time budget, a `value` check with no circuit to break), and `reason` says which.
+    """
+
+    status: Literal["measured", "not_measured"]
+    reason: str = Field(default="", max_length=500)
+    mutants: int = Field(default=0, ge=0)
+    equivalent: int = Field(default=0, ge=0)
+    caught: int = Field(default=0, ge=0)
+    survivors: list[str] = Field(default_factory=list, max_length=8)
+
+    @model_validator(mode="after")
+    def _caught_within_mutants(self) -> CheckTeeth:
+        if self.caught > self.mutants:
+            raise ValueError("caught cannot exceed mutants")
+        return self
+
+
+class CheckVerdict(_Model):
+    """The worker's judgement of one `role=check` cell, on `CellResult.check`.
+
+    Written only by trusted code after the run (`leona_notebooks.checks`), never by the
+    sandbox. `pass` / `fail` / `inconclusive` and nothing else — never "verified"
+    (ADR-0023). `inconclusive` is the check's own incapacity (the subject is missing, is
+    not a circuit, measures mid-circuit, is too wide, did not parse) and is never counted
+    as a fail. A failing check does not fail the notebook.
+    """
+
+    status: CheckStatus
+    #: What was judged: the circuit the code built, or a plain value it produced. The page
+    #: says "checked from the circuit" or "checked from the value your code produced".
+    basis: Literal["circuit", "value"]
+    #: What the subject was compared with, in words ("Qiskit's QFT on 3 qubits, exact
+    #: unitary").
+    checked_against: str = Field(default="", max_length=500)
+    #: The number, with the bar it had to clear ("fidelity 0.999999 (needs ≥ 0.999999)").
+    measure: str = Field(default="", max_length=500)
+    #: On a fail, the diagnosis (reversed qubit order, one wrong phase, the adjoint); on an
+    #: inconclusive, why the check could not judge.
+    detail: str = Field(default="", max_length=2_000)
+    qubits: int | None = Field(default=None, ge=0)
+    #: sha256 of the subject's OpenQASM as the worker normalised it.
+    subject_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    #: The subject's OpenQASM, when it is short enough to repeat.
+    subject_qasm: str | None = Field(default=None, max_length=MAX_CHECK_VERDICT_QASM_CHARS)
+    teeth: CheckTeeth | None = None
+
+
 class CellResult(_Model):
     id: str
     status: CellStatus
@@ -554,6 +964,9 @@ class CellResult(_Model):
     hardware_requests: list[HardwareRequest] = Field(
         default_factory=list, max_length=MAX_HARDWARE_REQUESTS_PER_NOTEBOOK
     )
+    #: The worker's verdict on a `role=check` cell; `None` for every other cell and in
+    #: every report stored before check cells existed, so those still parse unchanged.
+    check: CheckVerdict | None = None
 
 
 class ExecutionReport(_Model):
