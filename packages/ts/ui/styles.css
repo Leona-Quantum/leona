@@ -15521,6 +15521,9 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
   font-size: var(--fs-13);
 }
 .mj-notebook-cell-add-check {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
   margin-top: var(--sp-2);
 }
 
@@ -15642,6 +15645,169 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
   display: flex;
   justify-content: flex-end;
   gap: var(--sp-2);
+}
+
+/* -- block cells (ai-ops 382, Phase B S1): an Atlas method in a notebook, its cost at a
+   size the reader moves (the planner's own table and chart classes, `mj-plan-*`, from
+   ux-atlas.css), this notebook's checks as evidence, and the "Add a block" form -- */
+.mj-notebook-block {
+  display: grid;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.mj-notebook-block-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.mj-notebook-block-name {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-16, 1rem);
+  font-weight: 500;
+}
+.mj-notebook-block-link {
+  font-size: var(--fs-13);
+}
+.mj-notebook-block-muted {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+.mj-notebook-block-subheading {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 600;
+}
+.mj-notebook-block-cost,
+.mj-notebook-block-evidence,
+.mj-notebook-block-audit {
+  display: grid;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+}
+.mj-notebook-block-cost > p,
+.mj-notebook-block-evidence > p {
+  margin: 0;
+}
+.mj-notebook-block-size {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-13);
+  color: var(--text-1);
+}
+.mj-notebook-block-size input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.mj-notebook-block-size-readout {
+  grid-column: 1 / -1;
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+}
+.mj-notebook-block-chart {
+  max-width: 28rem;
+}
+.mj-notebook-block-prose {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  line-height: 1.55;
+}
+.mj-notebook-block-citations ul,
+.mj-notebook-block-audit ul {
+  margin: var(--sp-1) 0 0;
+  padding-left: 1.25em;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+.mj-notebook-block-hole {
+  margin: 0;
+  padding: var(--sp-3);
+  border: 1px dashed var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+.mj-notebook-block-hole p {
+  margin: 0;
+}
+.mj-notebook-block-hole p + p {
+  margin-top: var(--sp-1);
+}
+.mj-notebook-block-evidence-list {
+  display: grid;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-13);
+}
+.mj-notebook-block-evidence-list li {
+  padding-left: var(--sp-2);
+  border-left: 3px solid var(--border-0);
+}
+.mj-notebook-block-evidence-list li[data-status="pass"] {
+  border-left-color: var(--ok);
+}
+.mj-notebook-block-evidence-list li[data-status="fail"] {
+  border-left-color: var(--err);
+}
+.mj-notebook-block-evidence-list li[data-status="inconclusive"] {
+  border-left-color: var(--warn);
+}
+.mj-notebook-block-evidence-statement {
+  color: var(--text-0);
+}
+.mj-notebook-block-evidence-list .mj-notebook-block-muted {
+  font-size: var(--fs-12);
+}
+.mj-notebook-block-boundary {
+  padding: var(--sp-2) var(--sp-3);
+  border-left: 3px solid var(--border-0);
+  color: var(--text-0);
+  font-size: var(--fs-13);
+}
+.mj-notebook-block-boundary[data-standing="within"] {
+  border-left-color: var(--ok);
+}
+.mj-notebook-block-boundary[data-standing="beyond"],
+.mj-notebook-block-boundary[data-standing="unplaced"],
+.mj-notebook-block-boundary[data-standing="unchecked"] {
+  border-left-color: var(--warn);
+}
+.mj-notebook-block-audit li[data-verdict="gap"] {
+  color: var(--text-0);
+}
+.mj-notebook-add-block-results {
+  display: grid;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mj-notebook-add-block-results li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+.mj-notebook-add-block-chosen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-13);
 }
 
 /* -- the review panel (a <details>, so "Nala's review" collapses) -- */

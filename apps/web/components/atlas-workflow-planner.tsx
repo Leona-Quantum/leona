@@ -201,7 +201,7 @@ function t(text: Bilingual, locale: PublicLocale): string {
   return locale === "ja" ? text.ja : text.en;
 }
 
-function shortAuthors(authors: string, locale: PublicLocale): string {
+export function shortAuthors(authors: string, locale: PublicLocale): string {
   const names = authors.split(",").map((name) => name.trim()).filter(Boolean);
   const surname = (name: string) => name.split(/\s+/).pop() ?? name;
   if (names.length === 0) return "";
@@ -210,7 +210,9 @@ function shortAuthors(authors: string, locale: PublicLocale): string {
   return locale === "ja" ? `${surname(names[0])} ら` : `${surname(names[0])} et al.`;
 }
 
-function SourceCite({ source, papers, locale }: { source: SourceKey | null; papers: ReadonlyMap<string, PlannerPaper>; locale: PublicLocale }) {
+/** A cost line's source as the planner page prints it: the paper, its year and the
+ * locator. Exported for the notebook's block card, which prints the same lines the same way. */
+export function SourceCite({ source, papers, locale }: { source: SourceKey | null; papers: ReadonlyMap<string, PlannerPaper>; locale: PublicLocale }) {
   if (!source) return <span className="mj-plan-muted">—</span>;
   const entry = PLANNER_SOURCES[source];
   const paper = papers.get(entry.paperId);

@@ -8,13 +8,16 @@ import { NotebookIdeBar } from "./notebook-ide-bar";
 import { NotebookCodeEditor, NotebookCodeView, type EditorDiagnostic } from "./notebook-code-editor";
 import { NotebookCheckCard } from "./notebook-check-card";
 import { NotebookAddCheckForm } from "./notebook-add-check-form";
+import { NotebookBlockCard, type BlockCatalogState } from "./notebook-block-card";
+import { NotebookAddBlockForm } from "./notebook-add-block-form";
 import { cellDomId } from "../lib/notebook-ide";
 import { lintMessage, lintNotebook, type LintFinding } from "../lib/notebook-lint";
 import { NotebookHardwareRequests, type NotebookHardwareContext } from "./notebook-hardware-card";
 import { checkCellPillStatus, checkSummaryCounts, type CheckProperty } from "../lib/notebook-checks";
+import { blockCellOptions, type BlockRef } from "../lib/notebook-blocks";
 import type { NotebookCellStatus, NotebookCellView } from "../lib/notebook-view";
 import type { PublicLocale } from "../lib/public-locale";
-import { NOTEBOOK_CHECK_COPY, WORKSPACE_COPY } from "../lib/workspace-locale";
+import { NOTEBOOK_BLOCK_COPY, NOTEBOOK_CHECK_COPY, WORKSPACE_COPY } from "../lib/workspace-locale";
 
 type Cell = components["schemas"]["Cell"];
 
@@ -24,6 +27,11 @@ type Cell = components["schemas"]["Cell"];
 export interface NotebookCheckFormState {
   afterId: string;
   subjectHint: string;
+}
+
+/** "Add a block" (ai-ops 382, Phase B S1): which cell the form is open below. */
+export interface NotebookBlockFormState {
+  afterId: string;
 }
 
 /**
@@ -131,6 +139,12 @@ export function NotebookView({
   onStartAddCheck,
   onCancelAddCheck,
   onSubmitAddCheck,
+  blockCatalog = { status: "unavailable" },
+  onAcceptBlock,
+  blockForm,
+  onStartAddBlock,
+  onCancelAddBlock,
+  onSubmitAddBlock,
 }: {
   cells: NotebookCellView[];
   locale?: PublicLocale;
@@ -189,10 +203,25 @@ export function NotebookView({
   onStartAddCheck?: (afterId: string) => void;
   onCancelAddCheck?: () => void;
   onSubmitAddCheck?: (property: CheckProperty) => void;
+  /** The Atlas slice block cells are drawn from (ai-ops 382, Phase B S1). The workspace
+   * fetches it only when the notebook has a block or one is being added. */
+  blockCatalog?: BlockCatalogState;
+  /** Accept a Nala block, offered where the rest of per-cell editing is. */
+  onAcceptBlock?: (cellId: string) => void;
+  /** "Add a block": which cell the form is open below. `null`/omitted renders none. */
+  blockForm?: NotebookBlockFormState | null;
+  onStartAddBlock?: (afterId: string) => void;
+  onCancelAddBlock?: () => void;
+  onSubmitAddBlock?: (ref: BlockRef) => void;
 }) {
   const copy = WORKSPACE_COPY[locale].notebooks;
   const checkCopy = NOTEBOOK_CHECK_COPY[locale];
+  const blockCopy = NOTEBOOK_BLOCK_COPY[locale];
   const checkCounts = useMemo(() => checkSummaryCounts(cells), [cells]);
+  const blockOptions = useMemo(
+    () => blockCellOptions(cells, blockCatalog.status === "ready" ? blockCatalog.catalog.methods : null),
+    [cells, blockCatalog],
+  );
   // Lint runs once per render of the version on screen (no debounce: unlike the editor,
   // this surface's source never changes without a whole new `cells` array arriving), so
   // a reader sees the same "certain-to-fail Qiskit mistake" flags Nala's own draft would
@@ -265,6 +294,12 @@ export function NotebookView({
           hardware={hardware ? { ...hardware, locale } : undefined}
           onAcceptCheck={onAcceptCheck}
           onStartAddCheck={onStartAddCheck}
+          cells={cells}
+          locale={locale}
+          blockCopy={blockCopy}
+          blockCatalog={blockCatalog}
+          onAcceptBlock={onAcceptBlock}
+          onStartAddBlock={onStartAddBlock}
         />
           )}
           {pendingInsertAfterId === cell.id && cellEdit ? (
@@ -285,6 +320,18 @@ export function NotebookView({
               busy={busy}
               onCancel={() => onCancelAddCheck?.()}
               onSubmit={(property) => onSubmitAddCheck?.(property)}
+              blockOptions={blockOptions}
+            />
+          ) : null}
+          {blockForm?.afterId === cell.id ? (
+            <NotebookAddBlockForm
+              afterId={blockForm.afterId}
+              catalog={blockCatalog.status === "ready" ? blockCatalog.catalog : null}
+              locale={locale}
+              copy={blockCopy}
+              busy={busy}
+              onCancel={() => onCancelAddBlock?.()}
+              onSubmit={(ref) => onSubmitAddBlock?.(ref)}
             />
           ) : null}
         </Fragment>
@@ -405,6 +452,12 @@ function NotebookCellCard({
   hardware,
   onAcceptCheck,
   onStartAddCheck,
+  cells,
+  locale,
+  blockCopy,
+  blockCatalog,
+  onAcceptBlock,
+  onStartAddBlock,
 }: {
   cell: NotebookCellView;
   copy: NotebookCopy;
@@ -429,12 +482,19 @@ function NotebookCellCard({
   hardware?: NotebookHardwareContext;
   onAcceptCheck?: (cellId: string) => void;
   onStartAddCheck?: (afterId: string) => void;
+  cells: readonly NotebookCellView[];
+  locale: PublicLocale;
+  blockCopy: (typeof NOTEBOOK_BLOCK_COPY)[PublicLocale];
+  blockCatalog: BlockCatalogState;
+  onAcceptBlock?: (cellId: string) => void;
+  onStartAddBlock?: (afterId: string) => void;
 }) {
   const [attemptOpen, setAttemptOpen] = useState(false);
   const [attemptText, setAttemptText] = useState("");
   const showExplainError = cell.error !== null;
   const showCheckAttempt = cell.role !== null && CHECKABLE_ROLES.has(cell.role);
   const isCheckCell = cell.role === "check" && cell.checkProperty !== null;
+  const isBlockCell = cell.role === "block" && cell.block !== null;
   // A check cell's head pill shows the VERDICT (pass/fail/inconclusive/not run yet),
   // never the generic capture status a plain code cell's pill shows — "ok" only means
   // the worker's capture function ran, and a check that captured cleanly then judged
@@ -463,14 +523,23 @@ function NotebookCellCard({
   return (
     <article
       id={cellDomId(cell.id)}
-      className={isCheckCell ? "mj-notebook-cell mj-notebook-check-cell" : "mj-notebook-cell"}
+      className={
+        isCheckCell
+          ? "mj-notebook-cell mj-notebook-check-cell"
+          : isBlockCell
+            ? "mj-notebook-cell mj-notebook-block-cell"
+            : "mj-notebook-cell"
+      }
       data-kind={cell.kind}
       data-status={pillStatus}
       tabIndex={0}
     >
       <div className="mj-notebook-cell-head">
-        {cell.role ? <span className="mj-notebook-cell-role">{cell.role}</span> : null}
-        <span className="mj-notebook-cell-pill" data-status={pillStatus}>{pillLabel}</span>
+        {cell.role ? (
+          <span className="mj-notebook-cell-role">{isBlockCell ? blockCopy.roleLabel : cell.role}</span>
+        ) : null}
+        {/* A block never runs, so it has no run status to show. */}
+        {isBlockCell ? null : <span className="mj-notebook-cell-pill" data-status={pillStatus}>{pillLabel}</span>}
         {cell.cachedFromSeq != null ? (
           <span className="mj-notebook-cell-cached" title={copy.cellCachedFromSeqTooltip}>
             {copy.cellCachedFromSeq(cell.cachedFromSeq)}
@@ -497,6 +566,18 @@ function NotebookCellCard({
       </div>
       {isCheckCell ? (
         <NotebookCheckCard cell={cell} copy={checkCopy} canAccept={Boolean(onAcceptCheck)} busy={busy} onAccept={onAcceptCheck} />
+      ) : isBlockCell ? (
+        <NotebookBlockCard
+          cell={cell}
+          cells={cells}
+          catalog={blockCatalog}
+          locale={locale}
+          copy={blockCopy}
+          checkCopy={checkCopy}
+          canAccept={Boolean(onAcceptBlock)}
+          busy={busy}
+          onAccept={onAcceptBlock}
+        />
       ) : cell.kind === "markdown" ? (
         // Reuses the chat thread's own typography (headings, code, lists,
         // links) rather than restating it: `.mj-chat-message` is styled once,
@@ -528,7 +609,8 @@ function NotebookCellCard({
           collapseStructural
           onAskNala={onAskNala ? () => onAskNala(cell.id) : undefined}
           onFixWithNala={onFixWithNala ? () => onFixWithNala(cell.id) : undefined}
-          onEditCell={onStartEditCell ? () => onStartEditCell(cell.id) : undefined}
+          // A block's text is written from the block itself, so there is nothing to edit.
+          onEditCell={onStartEditCell && !isBlockCell ? () => onStartEditCell(cell.id) : undefined}
           onInsert={onStartInsertCell ? (kind) => onStartInsertCell(cell.id, kind) : undefined}
           onMove={onMoveCell ? (direction) => onMoveCell(cell.id, direction) : undefined}
           onDelete={onDeleteCell ? () => onDeleteCell(cell.id) : undefined}
@@ -536,11 +618,18 @@ function NotebookCellCard({
           onAskNalaToChange={onAskNalaToChangeCell ? () => onAskNalaToChangeCell(cell.id) : undefined}
         />
       ) : null}
-      {cell.kind === "code" && !isCheckCell && onStartAddCheck ? (
+      {cell.kind === "code" && !isCheckCell && (onStartAddCheck || onStartAddBlock) ? (
         <div className="mj-notebook-cell-add-check">
-          <button type="button" className="mj-secondary-button" disabled={busy} onClick={() => onStartAddCheck(cell.id)}>
-            {checkCopy.addCheck}
-          </button>
+          {onStartAddCheck ? (
+            <button type="button" className="mj-secondary-button" disabled={busy} onClick={() => onStartAddCheck(cell.id)}>
+              {checkCopy.addCheck}
+            </button>
+          ) : null}
+          {onStartAddBlock ? (
+            <button type="button" className="mj-secondary-button" disabled={busy} onClick={() => onStartAddBlock(cell.id)}>
+              {blockCopy.addBlock}
+            </button>
+          ) : null}
         </div>
       ) : null}
       {cell.kind === "code" ? <NotebookCellOutputs cell={cell} copy={copy} /> : null}

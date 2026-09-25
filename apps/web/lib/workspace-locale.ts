@@ -4933,6 +4933,9 @@ export const NOTEBOOK_CHECK_COPY: Record<PublicLocale, {
   submitting: string;
   cancel: string;
   validationHeading: string;
+  /** The "Add a check" form's optional link to a block cell (ai-ops 382, Phase B S1). */
+  evidenceForLabel: string;
+  evidenceForNone: string;
   /** `draftCheckStatement`'s labels — the auto-drafted sentence in the statement field. */
   statement: {
     state: (subject: string, reference: string) => string;
@@ -5043,6 +5046,8 @@ export const NOTEBOOK_CHECK_COPY: Record<PublicLocale, {
     submitting: "Adding…",
     cancel: "Cancel",
     validationHeading: "This check cannot be added yet:",
+    evidenceForLabel: "Evidence for block",
+    evidenceForNone: "No block",
     statement: {
       state: (subject, reference) => `Check that ${subject} prepares the ${reference}.`,
       stateAmplitudes: (subject) => `Check that ${subject}'s state matches the given amplitudes.`,
@@ -5147,6 +5152,8 @@ export const NOTEBOOK_CHECK_COPY: Record<PublicLocale, {
     submitting: "追加しています…",
     cancel: "キャンセル",
     validationHeading: "このチェックはまだ追加できません:",
+    evidenceForLabel: "根拠とするブロック",
+    evidenceForNone: "ブロックなし",
     statement: {
       state: (subject, reference) => `${subject}が${reference}を準備することを確認する。`,
       stateAmplitudes: (subject) => `${subject}の状態が指定した振幅と一致することを確認する。`,
@@ -5157,6 +5164,237 @@ export const NOTEBOOK_CHECK_COPY: Record<PublicLocale, {
       value: (subject, value) => `${subject}が${value || "期待される値"}と等しいことを確認する。`,
       subjectFallback: "対象",
     },
+  },
+};
+
+/**
+ * Block cells (ai-ops 382, Phase B slice S1): the card a `role=block` cell renders as, and
+ * the "Add a block" form. Plain words, no dashes between clauses. A check's verdict is
+ * "checked", a gate count is "counted", and nothing is ever "verified".
+ */
+export const NOTEBOOK_BLOCK_COPY: Record<PublicLocale, {
+  roleLabel: string;
+  atlasLink: string;
+  loading: string;
+  loadFailed: string;
+  unavailable: string;
+  unknownMethod: (id: string) => string;
+  stageOf: (capability: string, problem: string) => string;
+  wholeWorkflow: string;
+  unplaced: (problem: string) => string;
+  invalidPlan: string;
+  sizeLabel: string;
+  sizeReadout: (param: string, value: string) => string;
+  planSize: string;
+  widthAtSize: (qubits: string) => string;
+  noWidth: string;
+  costHeading: string;
+  costColumns: [string, string, string, string, string];
+  needs: (names: string) => string;
+  assumed: (names: string) => string;
+  series: Record<"logicalQubits" | "toffolis" | "tGates" | "queries" | "serialDepth", string>;
+  proseHeading: string;
+  proseIntro: string;
+  citationsLabel: string;
+  holeHeading: string;
+  holeReason: string;
+  holeNoReason: string;
+  evidenceHeading: string;
+  evidenceEmpty: string;
+  evidenceChecked: (qubits: string) => string;
+  evidenceValue: string;
+  boundary: (qubits: string) => string;
+  noBoundary: string;
+  within: (width: string) => string;
+  beyond: (boundary: string, width: string, source: string) => string;
+  unplacedStanding: (boundary: string, source: string) => string;
+  uncheckedClaim: (source: string) => string;
+  ceilings: (state: string, distribution: string, unitary: string, energy: string) => string;
+  sourceJoin: string;
+  proseSource: (authors: string) => string;
+  sourceFallback: string;
+  auditHeading: string;
+  auditMatches: (block: string, line: string, sizes: string) => string;
+  auditGaps: (count: number, block: string, line: string, sizes: string) => string;
+
+  addBlock: string;
+  addBlockTitle: string;
+  searchLabel: string;
+  searchPlaceholder: string;
+  noMatches: string;
+  chosenLabel: string;
+  change: string;
+  numbersLabel: string;
+  numbersNone: string;
+  numbersOption: (problem: string, capability: string) => string;
+  noPositions: string;
+  paramsHeading: string;
+  paramsHint: string;
+  sizeParamLabel: string;
+  sizeParamAuto: string;
+  invalidParam: (name: string) => string;
+  pickMethodFirst: string;
+  submit: string;
+  submitting: string;
+  cancel: string;
+}> = {
+  en: {
+    roleLabel: "block",
+    atlasLink: "Open in the Atlas",
+    loading: "Loading the Atlas…",
+    loadFailed: "The Atlas could not be loaded, so this block's cost cannot be shown. Reload the page to try again.",
+    unavailable: "Signed-in readers see this block's cost worked out at any size. Its Atlas page gives the cost as the source states it.",
+    unknownMethod: (id) => `Leona's Atlas has no method with the id ${id}.`,
+    stageOf: (capability, problem) => `The "${capability}" step of the planner's "${problem}" workflow.`,
+    wholeWorkflow: "These numbers are for the whole workflow this method is a step of, not for this step alone.",
+    unplaced: (problem) =>
+      `The planner no longer puts this method in the "${problem}" workflow, so it has no numbers for it. The method's own cost text is below.`,
+    invalidPlan: "The plan saved with this block is not one the planner can read, so no numbers are shown. The method's own cost text is below.",
+    sizeLabel: "Problem size",
+    sizeReadout: (param, value) => `${param} = ${value}`,
+    planSize: "the size in the plan",
+    widthAtSize: (qubits) => `At this size the plan's qubit count is ${qubits}.`,
+    noWidth: "The plan gives no qubit count at this size.",
+    costHeading: "What it costs at this size",
+    costColumns: ["Quantity", "Value", "Formula", "Kind", "Source"],
+    needs: (names) => `needs ${names}`,
+    assumed: (names) => `Assumed by the planner, not set in this block: ${names}.`,
+    series: {
+      logicalQubits: "Logical qubits",
+      toffolis: "Toffoli gates",
+      tGates: "T gates",
+      queries: "Queries",
+      serialDepth: "Serial depth",
+    },
+    proseHeading: "Cost as the source states it",
+    proseIntro: "Leona's planner has no numbers for this method, so this is the cost its source gives, in its own words.",
+    citationsLabel: "Sources",
+    holeHeading: "No cost recorded",
+    holeReason: "The Atlas says why:",
+    holeNoReason: "The Atlas records no cost for this method, and no reason yet.",
+    evidenceHeading: "Evidence in this notebook",
+    evidenceEmpty:
+      'No check in this notebook is marked as evidence for this block yet. Add a check and pick this block under "Evidence for block".',
+    evidenceChecked: (qubits) => `checked on a ${qubits}-qubit circuit`,
+    evidenceValue: "checked from a value, so it has no circuit width",
+    boundary: (qubits) => `The checks here pass on circuits up to ${qubits} qubits.`,
+    noBoundary: "No check with a circuit has passed yet, so nothing in this notebook backs these numbers at any size.",
+    within: (width) => `At this size the circuit has ${width} qubits, inside what the checks here ran.`,
+    beyond: (boundary, width, source) =>
+      `Beyond ${boundary} qubits, the numbers above are ${source}'s claim. Nothing in this notebook has run a ${width}-qubit circuit.`,
+    unplacedStanding: (boundary, source) =>
+      `The plan gives no qubit count at this size, so it cannot be placed against the checks, which reach ${boundary} qubits. The numbers above are ${source}'s claim.`,
+    uncheckedClaim: (source) => `At every size, the numbers above are ${source}'s claim.`,
+    ceilings: (state, distribution, unitary, energy) =>
+      `Leona checks a state on at most ${state} qubits, a distribution on ${distribution}, a unitary on ${unitary} and an energy on ${energy}. Past that, the source is all there is.`,
+    sourceJoin: " and ",
+    proseSource: (authors) => authors,
+    sourceFallback: "the source cited on the Atlas page",
+    auditHeading: "Cost formula audit",
+    auditMatches: (block, line, sizes) =>
+      `Leona counted the gates of its ${block} block at n = ${sizes}, and the counts match "${line}".`,
+    auditGaps: (count, block, line, sizes) =>
+      `Leona counted the gates of its ${block} block at n = ${sizes}, and ${count === 1 ? "one count differs" : `${count} counts differ`} from "${line}".`,
+
+    addBlock: "Add a block",
+    addBlockTitle: "Add a block",
+    searchLabel: "Atlas method",
+    searchPlaceholder: "Search by name, for example Grover",
+    noMatches: "No Atlas method matches that.",
+    chosenLabel: "Method",
+    change: "Change",
+    numbersLabel: "Numbers from the planner",
+    numbersNone: "None: show the cost as the method's source states it",
+    numbersOption: (problem, capability) => `${problem}: the "${capability}" step`,
+    noPositions: "The planner has no problem this method is a step of, so the block will show the cost its source states.",
+    paramsHeading: "Values for the plan",
+    paramsHint: "Leave a value empty to use the planner's own assumption. The block labels it as one.",
+    sizeParamLabel: "The size a reader can change",
+    sizeParamAuto: "Let the block pick",
+    invalidParam: (name) => `${name} is not a number the planner can use.`,
+    pickMethodFirst: "Pick an Atlas method first.",
+    submit: "Add the block",
+    submitting: "Adding…",
+    cancel: "Cancel",
+  },
+  ja: {
+    roleLabel: "ブロック",
+    atlasLink: "アトラスで開く",
+    loading: "アトラスを読み込んでいます…",
+    loadFailed: "アトラスを読み込めなかったため、このブロックのコストを表示できません。ページを再読み込みしてください。",
+    unavailable: "サインインすると、このブロックのコストを任意の規模で計算して表示します。アトラスのページには出典が述べるコストがあります。",
+    unknownMethod: (id) => `Leona のアトラスに id が ${id} の手法はありません。`,
+    stageOf: (capability, problem) => `プランナーの「${problem}」ワークフローの「${capability}」の段階です。`,
+    wholeWorkflow: "この数値は、この手法を一段階として含むワークフロー全体のものです。この段階だけのものではありません。",
+    unplaced: (problem) =>
+      `プランナーは現在この手法を「${problem}」ワークフローに入れていないため、数値はありません。手法自身のコストの記述を下に示します。`,
+    invalidPlan: "このブロックに保存された計画はプランナーが読めないため、数値は表示しません。手法自身のコストの記述を下に示します。",
+    sizeLabel: "問題の規模",
+    sizeReadout: (param, value) => `${param} = ${value}`,
+    planSize: "計画の規模",
+    widthAtSize: (qubits) => `この規模での計画の量子ビット数は ${qubits} です。`,
+    noWidth: "この規模では、計画に量子ビット数がありません。",
+    costHeading: "この規模でのコスト",
+    costColumns: ["量", "値", "式", "種類", "出典"],
+    needs: (names) => `${names} が必要`,
+    assumed: (names) => `このブロックでは設定されておらず、プランナーの仮定を使っています: ${names}。`,
+    series: {
+      logicalQubits: "論理量子ビット",
+      toffolis: "Toffoli ゲート",
+      tGates: "T ゲート",
+      queries: "クエリ",
+      serialDepth: "直列深さ",
+    },
+    proseHeading: "出典が述べるコスト",
+    proseIntro: "Leona のプランナーにはこの手法の数値がないため、出典の記述をそのまま示します。",
+    citationsLabel: "出典",
+    holeHeading: "コストの記録がありません",
+    holeReason: "アトラスが示す理由:",
+    holeNoReason: "アトラスにはこの手法のコストも、その理由もまだ記録されていません。",
+    evidenceHeading: "このノートブックの根拠",
+    evidenceEmpty:
+      "このブロックの根拠として示されたチェックはまだありません。チェックを追加し、「根拠とするブロック」でこのブロックを選んでください。",
+    evidenceChecked: (qubits) => `${qubits} 量子ビットの回路でチェック済み`,
+    evidenceValue: "値からチェックしたため、回路の幅はありません",
+    boundary: (qubits) => `このノートブックのチェックは、${qubits} 量子ビットまでの回路で合格しています。`,
+    noBoundary: "回路を使うチェックはまだ合格していないため、どの規模でもこの数値を裏付けるものはこのノートブックにありません。",
+    within: (width) => `この規模では回路は ${width} 量子ビットで、チェックが実行した範囲に入っています。`,
+    beyond: (boundary, width, source) =>
+      `${boundary} 量子ビットを超える部分の数値は ${source} の主張です。このノートブックでは ${width} 量子ビットの回路を実行していません。`,
+    unplacedStanding: (boundary, source) =>
+      `この規模では計画に量子ビット数がないため、${boundary} 量子ビットまでのチェックと比べられません。数値は ${source} の主張です。`,
+    uncheckedClaim: (source) => `どの規模でも、上の数値は ${source} の主張です。`,
+    ceilings: (state, distribution, unitary, energy) =>
+      `Leona がチェックできるのは、状態は ${state} 量子ビット、分布は ${distribution}、ユニタリは ${unitary}、エネルギーは ${energy} 量子ビットまでです。それを超える規模では出典だけが頼りです。`,
+    sourceJoin: "と",
+    proseSource: (authors) => authors,
+    sourceFallback: "アトラスのページに挙げた出典",
+    auditHeading: "コスト式の監査",
+    auditMatches: (block, line, sizes) =>
+      `Leona は自身の ${block} ブロックのゲートを n = ${sizes} で数え、「${line}」と一致しました。`,
+    auditGaps: (count, block, line, sizes) =>
+      `Leona は自身の ${block} ブロックのゲートを n = ${sizes} で数え、${count} 件が「${line}」と一致しませんでした。`,
+
+    addBlock: "ブロックを追加",
+    addBlockTitle: "ブロックを追加",
+    searchLabel: "アトラスの手法",
+    searchPlaceholder: "名前で検索（例: Grover）",
+    noMatches: "一致するアトラスの手法はありません。",
+    chosenLabel: "手法",
+    change: "変更",
+    numbersLabel: "プランナーの数値",
+    numbersNone: "使わない（手法の出典が述べるコストを表示する）",
+    numbersOption: (problem, capability) => `${problem}: 「${capability}」の段階`,
+    noPositions: "この手法を段階として含む問題がプランナーにないため、ブロックは出典が述べるコストを表示します。",
+    paramsHeading: "計画の値",
+    paramsHint: "空欄にするとプランナー自身の仮定を使います。ブロックにはそのことが表示されます。",
+    sizeParamLabel: "読者が変えられる規模",
+    sizeParamAuto: "ブロックに任せる",
+    invalidParam: (name) => `${name} はプランナーが使える数値ではありません。`,
+    pickMethodFirst: "先にアトラスの手法を選んでください。",
+    submit: "ブロックを追加する",
+    submitting: "追加しています…",
+    cancel: "キャンセル",
   },
 };
 

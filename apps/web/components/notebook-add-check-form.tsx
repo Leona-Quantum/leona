@@ -49,6 +49,7 @@ export function NotebookAddCheckForm({
   busy = false,
   onCancel,
   onSubmit,
+  blockOptions = [],
 }: {
   afterId: string;
   subjectHint: string;
@@ -56,6 +57,9 @@ export function NotebookAddCheckForm({
   busy?: boolean;
   onCancel: () => void;
   onSubmit: (property: CheckProperty) => void;
+  /** The notebook's block cells (ai-ops 382, Phase B S1): a check may be marked as
+   * evidence for one. No select renders when the notebook has none. */
+  blockOptions?: readonly { id: string; label: string }[];
 }) {
   // `draftCheckStatement`'s labels: `copy.statement`'s per-kind sentences plus
   // `copy.referenceFamilyOption` doing double duty as the reference's human name —
@@ -71,6 +75,7 @@ export function NotebookAddCheckForm({
     return { ...initial, statement: draftCheckStatement(initial, statementLabels) };
   });
   const [errors, setErrors] = useState<string[]>([]);
+  const [evidenceFor, setEvidenceFor] = useState("");
 
   function update(patch: Partial<CheckDraft>) {
     setDraft((current) => {
@@ -94,7 +99,7 @@ export function NotebookAddCheckForm({
     const problems = validateCheckDraft(draft);
     setErrors(problems);
     if (problems.length > 0) return;
-    onSubmit(buildCheckProperty(draft));
+    onSubmit({ ...buildCheckProperty(draft), block: evidenceFor || null });
   }
 
   const mode = checkExpectationMode(draft);
@@ -270,6 +275,20 @@ export function NotebookAddCheckForm({
           onChange={(event) => setDraft((current) => ({ ...current, statement: event.target.value, statementTouched: true }))}
         />
       </label>
+
+      {blockOptions.length > 0 ? (
+        <label className="mj-notebook-add-check-field">
+          <span>{copy.evidenceForLabel}</span>
+          <select value={evidenceFor} disabled={busy} onChange={(event) => setEvidenceFor(event.target.value)}>
+            <option value="">{copy.evidenceForNone}</option>
+            {blockOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label} ({option.id})
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
 
       {errors.length > 0 ? (
         <div className="mj-notebook-add-check-errors" role="alert">

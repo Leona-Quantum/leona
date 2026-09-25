@@ -108,6 +108,9 @@ export function SharedNotebookView() {
             cells={notebookCellViews(state.notebook.cells, state.notebook.report ?? null)}
             locale={locale}
             framework={state.notebook.framework.name}
+            // The Atlas slice a block's cost is worked out from is served to signed-in
+            // readers only (`/api/notebook-blocks`); here a block links to its Atlas page.
+            blockCatalog={{ status: "unavailable" }}
           />
           <section className="shared-notebook-cta">
             <p>{copy.signInCta}</p>
