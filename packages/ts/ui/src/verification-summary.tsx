@@ -15,10 +15,10 @@ export type VerificationLocale = "en" | "ja";
  * another is the same conflation `verificationHeadline` was extracted to undo.
  * A new verdict word goes here or it goes nowhere. */
 const COPY: Record<VerificationLocale, {
-  titles: Record<"failed" | "executedWithReference" | "executed" | "unavailable" | "verified" | "structural", string>;
+  titles: Record<"failed" | "executedWithReference" | "executed" | "neverCalled" | "unavailable" | "verified" | "structural", string>;
   states: Record<Exclude<DisplayState, "ready">, { title: string; body: string }>;
   nextAction: Record<VerificationSummary["retry_target"], string>;
-  warnings: Record<"reference" | "advisory" | "inconclusive", string>;
+  warnings: Record<"reference" | "advisory" | "neverCalled" | "inconclusive", string>;
   actions: Record<"advisory" | "none", string>;
   evidence: Record<EvidenceStrength, string>;
   results: Record<ResultKind, string>;
@@ -42,6 +42,7 @@ const COPY: Record<VerificationLocale, {
       failed: "Failed",
       executedWithReference: "Executed · reference check passed",
       executed: "Executed",
+      neverCalled: "Function written",
       unavailable: "Verification unavailable",
       verified: "Verified",
       structural: "Structurally verified",
@@ -63,6 +64,7 @@ const COPY: Record<VerificationLocale, {
     warnings: {
       reference: "The generated code ran, its basic result contract passed, and its reported value matched the reference the plan declared. No other quantum property was checked.",
       advisory: "The generated code ran and its basic result contract passed. Strict quantum correctness was not verified.",
+      neverCalled: "There was nothing to call it with, so nothing checked that it works. Run it yourself, or ask Nala to add a test.",
       inconclusive: "Verification unavailable — correctness has not been confirmed.",
     },
     actions: {
@@ -88,6 +90,7 @@ const COPY: Record<VerificationLocale, {
       failed: "検証失敗",
       executedWithReference: "実行済み・参照値と一致",
       executed: "実行済み",
+      neverCalled: "関数を作成",
       unavailable: "検証結果なし",
       verified: "検証済み",
       structural: "構造のみ検証",
@@ -109,6 +112,7 @@ const COPY: Record<VerificationLocale, {
     warnings: {
       reference: "生成されたコードが実行され、基本的な出力形式の確認に合格し、報告された値が計画で宣言した参照値と一致しました。それ以外の量子的な性質は確認していません。",
       advisory: "生成されたコードが実行され、基本的な出力形式の確認に合格しました。量子計算としての正しさは検証していません。",
+      neverCalled: "呼び出すための入力がなかったため、動作は確認されていません。自分で実行するか、Nalaにテストの追加を頼んでください。",
       inconclusive: "検証結果なし — 正しさは確認できていません。",
     },
     actions: {
@@ -123,6 +127,7 @@ const COPY: Record<VerificationLocale, {
       "physical fidelity": "物理的な忠実度",
       "optimality": "最適性",
       "intent alignment": "リクエストとの一致",
+      "function written, never called": "作成された関数は呼び出されていない",
     },
     reason: "判定理由",
     evidenceStrength: "根拠の強さ",
@@ -150,6 +155,19 @@ function isAdvisoryOutcome(summary: VerificationSummary): boolean {
     || summary.reason_code === TRUSTED_EVIDENCE_REASON;
 }
 
+/** ai-ops 372, review round 2: the Plan's own artifact_contract said this
+ * deliverable was a function/class never required to execute, and the
+ * candidate never assigned RESULT — so `check()` scoring later is the only
+ * thing that ever calls it. `isAdvisoryOutcome` is false for this reason code
+ * on purpose (it does not start with "ai_review_aligned"), so this needs its
+ * own check rather than folding into that one — the two must never say
+ * "Executed" about a function nothing here ran. */
+const NEVER_CALLED_REASON = "function_written_not_called";
+
+function isNeverCalledOutcome(summary: VerificationSummary): boolean {
+  return summary.reason_code === NEVER_CALLED_REASON;
+}
+
 /** A reference check ran and passed, so one number really was compared against
  * what the physics should do. The overall decision stays INCONCLUSIVE — that
  * split is exactly what EvidenceStrength exists to express. */
@@ -160,6 +178,7 @@ function hasReferenceEvidence(summary: VerificationSummary): boolean {
 function titleFor(summary: VerificationSummary, locale: VerificationLocale): string {
   const titles = COPY[locale].titles;
   if (summary.decision === "fail") return titles.failed;
+  if (isNeverCalledOutcome(summary)) return titles.neverCalled;
   if (hasReferenceEvidence(summary)) return titles.executedWithReference;
   if (isAdvisoryOutcome(summary)) return titles.executed;
   if (summary.decision === "inconclusive") return titles.unavailable;
@@ -183,7 +202,7 @@ function stateMessage(
  * evidence beneath it. Exported so no screen has to retype them in either
  * language. */
 export function verificationVocabulary(locale: VerificationLocale): Readonly<Record<
-  "failed" | "executedWithReference" | "executed" | "unavailable" | "verified" | "structural" | "stale" | "legacy",
+  "failed" | "executedWithReference" | "executed" | "neverCalled" | "unavailable" | "verified" | "structural" | "stale" | "legacy",
   string
 >> {
   const copy = COPY[locale];
@@ -246,15 +265,18 @@ export function VerificationSummaryPanel({
   const unresolved = summary.checks?.filter((check) => check.result === "unavailable" || check.result === "error" || check.result === "skipped") ?? [];
   const failed = summary.checks?.filter((check) => check.result === "fail") ?? [];
   const claims = summary.unverified_claims ?? [];
+  const neverCalledOutcome = isNeverCalledOutcome(summary);
   const advisoryOutcome = isAdvisoryOutcome(summary);
-  const warning = hasReferenceEvidence(summary)
-    ? copy.warnings.reference
-    : advisoryOutcome
-      ? copy.warnings.advisory
-      : summary.decision === "inconclusive"
-        ? copy.warnings.inconclusive
-        : null;
-  const action = advisoryOutcome
+  const warning = neverCalledOutcome
+    ? copy.warnings.neverCalled
+    : hasReferenceEvidence(summary)
+      ? copy.warnings.reference
+      : advisoryOutcome
+        ? copy.warnings.advisory
+        : summary.decision === "inconclusive"
+          ? copy.warnings.inconclusive
+          : null;
+  const action = neverCalledOutcome || advisoryOutcome
     ? copy.actions.advisory
     : summary.retry_target === "none" && summary.decision === "pass"
       ? copy.actions.none

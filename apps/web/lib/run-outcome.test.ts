@@ -161,6 +161,85 @@ test("the simple pipeline is presented as executed and explicitly unverified", (
   );
 });
 
+test("ai-ops 372: a function-typed candidate that never ran is never called Executed", () => {
+  const outcome = runOutcomeFromEvents([
+    queued,
+    {
+      type: "plan.produced",
+      plan: {
+        problem_summary: "Write create_quantum_circuit(n_qubits)",
+        algorithm: "other",
+        framework: "qiskit",
+      },
+    },
+    { type: "code.generated", revision: 1, code: "def create_quantum_circuit(n_qubits):\n    return QuantumCircuit(n_qubits)\n" },
+    { type: "artifact.saved", artifact_id: "artifact-1" },
+    {
+      type: "run.finished",
+      status: "succeeded",
+      verification_summary: {
+        ...baseSummary,
+        decision: "inconclusive",
+        evidence_strength: "structural",
+        reason_code: "function_written_not_called",
+        failure_class: "evidence_gap",
+        checks: [
+          { method: "structural", result: "pass" },
+          { method: "return_contract", result: "skipped" },
+        ],
+        unverified_claims: ["function written, never called", "quantum correctness", "optimality"],
+      },
+    },
+  ]);
+
+  assert.equal(outcome?.eyebrow, "Function written");
+  assert.equal(outcome?.title, "Nala wrote the function, but did not run it");
+  assert.doesNotMatch(JSON.stringify(outcome), /circuit executed/i);
+  assert.doesNotMatch(JSON.stringify(outcome), /"eyebrow":"Executed result"/);
+  assert.equal(outcome?.tone, "warn");
+  assert.equal(outcome?.callout?.title, "Never called");
+  assert.match(
+    outcome?.callout?.body ?? "",
+    /nothing to call it with.*run it yourself.*ask nala to add a test/i,
+  );
+  // No em dashes in this copy (owner's humanizer rule).
+  assert.doesNotMatch(JSON.stringify(outcome), /—/);
+});
+
+test("ai-ops 372, Japanese: the same function-written-but-not-called copy translates", () => {
+  const outcome = runOutcomeFromEvents(
+    [
+      queued,
+      {
+        type: "plan.produced",
+        plan: { problem_summary: "create_quantum_circuit", framework: "qiskit" },
+      },
+      { type: "code.generated", revision: 1, code: "def create_quantum_circuit(n): return QuantumCircuit(n)" },
+      { type: "artifact.saved", artifact_id: "artifact-1" },
+      {
+        type: "run.finished",
+        status: "succeeded",
+        verification_summary: {
+          ...baseSummary,
+          decision: "inconclusive",
+          evidence_strength: "structural",
+          reason_code: "function_written_not_called",
+          failure_class: "evidence_gap",
+          checks: [{ method: "structural", result: "pass" }],
+          unverified_claims: ["function written, never called"],
+        },
+      },
+    ],
+    null,
+    "ja",
+  );
+
+  assert.equal(outcome?.eyebrow, "関数を作成");
+  assert.equal(outcome?.title, "Nalaは関数を作成しましたが、実行していません");
+  assert.equal(outcome?.callout?.title, "呼び出されていません");
+  assert.match(outcome?.callout?.body ?? "", /Nalaにテストの追加を頼んでください/);
+});
+
 test("physical pass renders as a verified result", () => {
   const outcome = runOutcomeFromEvents([
     queued,

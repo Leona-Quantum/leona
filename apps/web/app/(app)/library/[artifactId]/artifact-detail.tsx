@@ -143,6 +143,15 @@ function verdictChip(artifact: LibraryArtifact, copy: ArtifactCopy, locale: Publ
   if (artifact.status === "failed") return { label: words.failed, glyph: "×" };
   if (
     artifact.status === "inconclusive"
+    && artifact.verificationSummary?.reason_code === "function_written_not_called"
+  ) {
+    // ai-ops 372, review round 2: a function-typed Plan whose candidate was
+    // never required to execute — check() scoring later is what actually
+    // calls it, not this pipeline. Must not read "Executed".
+    return { label: words.neverCalled, glyph: "–" };
+  }
+  if (
+    artifact.status === "inconclusive"
     && artifact.verificationSummary?.reason_code === "ai_review_aligned"
   ) {
     return { label: words.executed, glyph: "–" };
