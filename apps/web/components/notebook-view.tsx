@@ -101,6 +101,7 @@ export function NotebookView({
   gradingCellIds,
   busy = false,
   onRunAll,
+  onRunEverythingFresh,
   onAskNala,
   onFixWithNala,
   hardware,
@@ -130,6 +131,12 @@ export function NotebookView({
    * and the outline, just without that button — a no-op-safe default for the
    * workspace to wire once it decides what "run all" from the read view should do. */
   onRunAll?: () => void;
+  /** "Run everything fresh" (`reuse_results: false`): a reader VIEWING results,
+   * not just someone mid-edit, can bypass dependency-graph replay's cache —
+   * the "Unchanged since version N" label's tooltip names this action, and
+   * omitting it here would point that tooltip at a button this view never
+   * renders. Same no-op-safe default as `onRunAll`. */
+  onRunEverythingFresh?: () => void;
   onAskNala?: (cellId: string) => void;
   onFixWithNala?: (cellId: string) => void;
   /** Which notebook version this is, so a `leona_submit` cell gets its "Run on hardware" card. Omit it and no card renders (the read-only share page). */
@@ -173,7 +180,16 @@ export function NotebookView({
   const pendingInsertAfterId = cellEdit && cellEdit.isNew ? cellEdit.insertAfterId : null;
   return (
     <div className="mj-notebook-view">
-      <NotebookIdeBar cells={cells} cellStatuses={cellStatuses} copy={copy.ide} busy={busy} onRunAll={onRunAll} />
+      <NotebookIdeBar
+        cells={cells}
+        cellStatuses={cellStatuses}
+        copy={copy.ide}
+        busy={busy}
+        onRunAll={onRunAll}
+        onRunEverythingFresh={onRunEverythingFresh}
+        runEverythingFreshLabel={copy.runEverythingFresh}
+        runEverythingFreshHint={copy.runEverythingFreshHint}
+      />
       {cells.map((cell, index) => (
         <Fragment key={cell.id}>
           {editingExistingId === cell.id && cellEdit ? (

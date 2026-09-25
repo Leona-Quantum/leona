@@ -32,6 +32,9 @@ export function NotebookIdeBar({
   copy,
   busy = false,
   onRunAll,
+  onRunEverythingFresh,
+  runEverythingFreshLabel,
+  runEverythingFreshHint,
 }: {
   cells: readonly { id: string; kind: string; source: string }[];
   /** Cell id -> last run status, wherever the caller has it (`NotebookCellView.status`
@@ -41,16 +44,37 @@ export function NotebookIdeBar({
   copy: NotebookIdeCopy;
   busy?: boolean;
   onRunAll?: () => void;
+  /** "Run everything fresh" (`reuse_results: false`) — dependency-graph replay's
+   * escape hatch, reachable here so a READER viewing results (not just someone
+   * mid-edit, who already has this action in the edit bar) can bypass the cache
+   * too: the "Unchanged since version N" label's own tooltip names this button,
+   * and previously pointed at one a reader in this view could not see at all.
+   * Optional and independent of `onRunAll` — a caller wires one, both, or
+   * neither. */
+  onRunEverythingFresh?: () => void;
+  runEverythingFreshLabel?: string;
+  runEverythingFreshHint?: string;
 }) {
   const raised = raisedCellIdsOf(cells.map((cell) => ({ id: cell.id, status: cellStatuses.get(cell.id) ?? "not_run" })));
   const outline = notebookOutline(cells);
-  if (!onRunAll && raised.length === 0 && outline.length === 0) return null;
+  if (!onRunAll && !onRunEverythingFresh && raised.length === 0 && outline.length === 0) return null;
   return (
     <div className="mj-notebook-ide-bar" role="group" aria-label={copy.barLabel}>
       <div className="mj-notebook-ide-bar-row">
         {onRunAll ? (
           <button type="button" className="mj-secondary-button" disabled={busy} onClick={onRunAll} title={copy.runAllHint}>
             {copy.runAll}
+          </button>
+        ) : null}
+        {onRunEverythingFresh ? (
+          <button
+            type="button"
+            className="mj-secondary-button"
+            disabled={busy}
+            onClick={onRunEverythingFresh}
+            title={runEverythingFreshHint}
+          >
+            {runEverythingFreshLabel}
           </button>
         ) : null}
         {raised.length > 0 ? (

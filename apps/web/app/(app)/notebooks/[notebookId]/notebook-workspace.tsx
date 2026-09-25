@@ -1544,6 +1544,13 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
               framework={notebook.framework?.name ?? "qiskit"}
               onCellAction={cellAction}
               onRunAll={() => void runAgain()}
+              // "Run everything fresh" (round 2 of the adversarial review): a
+              // reader viewing results, not editing, needs the SAME cache
+              // bypass the edit bar offers — `runAgain()` already sends a
+              // plain rerun job, which never reuses a cell's result at all
+              // (the `kind="rerun"` path is unaffected by dependency-graph
+              // replay), so reusing it here is exact, not an approximation.
+              onRunEverythingFresh={() => void runAgain()}
               onAskNala={askNalaAbout}
               onFixWithNala={fixWithNala}
               grades={grades}

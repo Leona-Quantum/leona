@@ -180,6 +180,23 @@ test("a cell that actually ran this version shows no cached-from label", () => {
   assert.equal(view.queryByText(/Unchanged since version/), null);
 });
 
+test("Run everything fresh is reachable outside edit mode when the workspace wires it", () => {
+  // Round 2 of the adversarial review: the tooltip on the cached-from label
+  // names this button, so a reader viewing results (this view, no edit props
+  // at all) must be able to reach it too — not just someone mid-edit.
+  const cells = notebookCellViews(spec.cells, report);
+  const view = render(
+    <NotebookView cells={cells} locale="en" framework="qiskit" onRunEverythingFresh={() => {}} />,
+  );
+  assert.ok(view.getByText("Run everything fresh"));
+});
+
+test("Run everything fresh renders nothing when the caller never wires it", () => {
+  const cells = notebookCellViews(spec.cells, report);
+  const view = render(<NotebookView cells={cells} locale="en" framework="qiskit" />);
+  assert.equal(view.queryByText("Run everything fresh"), null);
+});
+
 test("the \"Explain this error\" action appears only on the cell whose output actually errored", () => {
   const cells = notebookCellViews(spec.cells, report);
   const view = render(<NotebookView cells={cells} locale="en" framework="qiskit" onCellAction={() => {}} />);
