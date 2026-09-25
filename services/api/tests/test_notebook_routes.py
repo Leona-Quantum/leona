@@ -1933,3 +1933,64 @@ async def test_a_member_sees_no_hidden_block_through_any_field(client, monkeypat
         dumped = json_module.dumps(body[field])
         assert "grover-fixed-iteration-search" not in dumped, field
         assert "domainSize" not in dumped, field
+
+
+async def test_a_save_that_changes_what_a_check_judges_does_not_keep_its_old_verdict(
+    client, author_state
+):
+    """Review of PR 1019, S2 (a Phase A gap). A check cell's source is only its
+    statement comment, so a save that changes the subject, reference or tolerance but
+    keeps the statement left every code cell's (id, source, execute) the same, and the
+    old verdict was carried onto a check that no longer says what it judged."""
+    from leona_notebooks.checks import enforce_check_authorship
+    from leona_notebooks.spec import NotebookSpec as Spec
+
+    statement = "qc prepares the Bell state"
+    # Stored as the route stores it: stamped, so the check's source is its rendered comment.
+    before = enforce_check_authorship(
+        Spec.model_validate(
+            _checked_spec(
+                _check("k01", kind="state", subject="x", reference="bell", statement=statement)
+            )
+        ),
+        None,
+        "user",
+    ).model_dump(mode="json")
+    author_state["versions"][0].spec = before
+    author_state["versions"][0].report = {
+        "notebook_slug": "s",
+        "ok": True,
+        "runner": "sandbox",
+        "cells": [
+            {"id": "c01", "status": "ok"},
+            {"id": "k01", "status": "ok", "check": {"status": "pass", "basis": "circuit"}},
+        ],
+    }
+    async with client as c:
+        for change in ({"reference": "ghz(3)"}, {"subject": "y"}, {"tolerance": 0.5}):
+            prop = {"kind": "state", "subject": "x", "reference": "bell", "statement": statement}
+            edited = _checked_spec(_check("k01", **{**prop, **change}))
+            response = await c.post(
+                f"/v1/notebooks/{author_state['notebook'].id}/versions",
+                json={"spec": edited, "execute": False},
+            )
+            assert response.status_code == 201, response.text
+            assert author_state["result_kwargs"]["report"] is None, change
+            author_state["versions"][:] = author_state["versions"][:1]
+        # Accepting a check, or linking it to a block, changes nothing it judges: kept.
+        accepted = _checked_spec(
+            _check(
+                "k01",
+                kind="state",
+                subject="x",
+                reference="bell",
+                statement=statement,
+                accepted=True,
+            )
+        )
+        response = await c.post(
+            f"/v1/notebooks/{author_state['notebook'].id}/versions",
+            json={"spec": accepted, "execute": False},
+        )
+        assert response.status_code == 201, response.text
+        assert author_state["result_kwargs"]["report"] is not None

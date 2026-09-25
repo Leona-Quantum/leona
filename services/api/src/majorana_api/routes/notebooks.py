@@ -31,6 +31,7 @@ from leona_notebooks.authoring import (
     spec_from_author_request,
 )
 from leona_notebooks.checks import enforce_check_authorship
+from leona_notebooks.dependencies import check_property_payload
 from leona_notebooks.source import render_source
 from leona_notebooks.templates import (
     KIND_DESCRIPTIONS,
@@ -1171,6 +1172,13 @@ def _report_if_code_unchanged(
     one-line text change is the common case). Carried only when the code cells (id,
     source, execute) are identical and in the same order; any code change keeps the old
     rule, no report until it runs.
+
+    A check cell's source is only the comment its statement renders to, so a check whose
+    subject, expectation or tolerance changed under the same statement looked unchanged
+    and kept its old verdict (review of PR 1019). Its property is compared too, minus who
+    wrote it, whether it was accepted and which block it is evidence for, none of which
+    changes what it judges (`check_property_payload`, the same view the replay cache
+    key hashes).
     """
     if latest.status != contracts.NotebookVersionStatus.READY.value or latest.report is None:
         return None
@@ -1178,8 +1186,12 @@ def _report_if_code_unchanged(
         return None
     before = contracts.NotebookSpec.model_validate(latest.spec)
 
-    def code(cells: list[contracts.Cell]) -> list[tuple[str, str, bool]]:
-        return [(c.id, c.source, c.execute) for c in cells if c.kind == "code"]
+    def code(cells: list[contracts.Cell]) -> list[tuple[str, str, bool, Any]]:
+        return [
+            (c.id, c.source, c.execute, check_property_payload(c))
+            for c in cells
+            if c.kind == "code"
+        ]
 
     if code(before.cells) != code(spec.cells):
         return None
