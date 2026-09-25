@@ -42,6 +42,7 @@ from .routes.catalog import router as catalog_router
 from .routes.checks import router as checks_router
 from .routes.comments import router as comments_router
 from .routes.estimates import router as estimates_router
+from .routes.plans import router as plans_router
 from .routes.me import router as me_router
 from .routes.notifications import router as notifications_router
 from .routes.tokens import router as tokens_router
@@ -574,6 +575,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(catalog_router, prefix="/v1")
     app.include_router(estimates_router, prefix="/v1")
     app.include_router(checks_router, prefix="/v1")
+    app.include_router(plans_router, prefix="/v1")
     app.include_router(qpu_router, prefix="/v1")
     app.include_router(qapps_router, prefix="/v1")
     app.include_router(notebooks_router, prefix="/v1")

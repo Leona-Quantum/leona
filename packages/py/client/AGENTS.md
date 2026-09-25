@@ -8,7 +8,7 @@ Atlas tools since this move) and `leona-notebooks` (`%nala`, the CLI).
 |---|---|
 | `atlas.py` | Pure rules: limit verdicts, stated cost and regime, verification tier, literature, OpenQASM. No network. Moved from `leona_mcp.atlas`, unchanged. |
 | `catalog.py` | The one HTTP read of the Atlas: `GET /v1/catalog/entries` (full view, pages of 100), with a 10-minute cache. Moved from `leona_mcp.client`, unchanged. |
-| `client.py` | `Client`: the bearer-token control-plane calls (notebooks, runs, estimates, Qapps, and `check_circuit` → `POST /v1/checks/circuit`, returning a `CheckVerdict`) generalised from `leona_notebooks.jupyter.Client`, plus the Atlas convenience methods that wrap `atlas.py`/`catalog.py`. |
+| `client.py` | `Client`: the bearer-token control-plane calls (notebooks, runs, estimates, Qapps, `check_circuit` → `POST /v1/checks/circuit`, returning a `CheckVerdict`, and `plan_workflow` → `POST /v1/plans`, returning the raw plan) generalised from `leona_notebooks.jupyter.Client`, plus the Atlas convenience methods that wrap `atlas.py`/`catalog.py`. |
 
 Rules that are load-bearing:
 
@@ -18,8 +18,8 @@ Rules that are load-bearing:
   installing it into a throwaway venv from a `git+file://` URL and confirming `uv`
   resolves `majorana-contracts` via `[tool.uv.sources]`'s workspace-auto-discovery
   even outside `uv sync`. Do not add a dependency on `leona_notebooks`,
-  `majorana_api`, `majorana_worker`, `majorana_agent`, `sqlalchemy` or `psycopg` —
-  any of those breaks that promise, and the root `pyproject.toml`'s import-linter
+  `leona_planner`, `majorana_api`, `majorana_worker`, `majorana_agent`, `sqlalchemy`
+  or `psycopg` — any of those breaks that promise, and the root `pyproject.toml`'s import-linter
   contract for `leona_client` enforces it.
 - **`client.py` stays on stdlib `urllib` for its own transport**, not `httpx`, even
   though `catalog.py` (moved in alongside it) already depends on `httpx` for the

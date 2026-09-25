@@ -110,8 +110,9 @@ untrusted generated code runs only in ephemeral network-locked sandboxes
   and estimates — used by mcp and notebooks below), contracts, estimation, frameworks,
   llm, mcp (leona-mcp: a stdio MCP server over the public Atlas API and, with a personal
   access token, verified runs), notebooks (leona-notebooks: the
-  notebook lane's pure core), openqasm, qpu, sandbox,
-  verification
+  notebook lane's pure core), openqasm, planner (leona-planner: the workflow
+  planner's arithmetic, ported from apps/web and held equal to it by a parity grid;
+  behind `POST /v1/plans`), qpu, sandbox, verification
 - `packages/ts/*` — ui (vendored components), ui-visual (render/diff harness),
   contracts-gen (GENERATED — never hand-edit)
 - `db/migrations` — Alembic, single linear history, every migration reversible

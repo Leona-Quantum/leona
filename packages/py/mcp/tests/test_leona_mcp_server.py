@@ -47,7 +47,7 @@ async def test_initialize_names_the_server_and_says_what_it_does_not_do(server):
         assert phrase in result.instructions
 
 
-async def test_tools_list_offers_the_three_atlas_tools_read_only_and_six_acting_ones(server, api):
+async def test_tools_list_offers_the_three_atlas_tools_read_only_and_seven_acting_ones(server, api):
     async with create_connected_server_and_client_session(server) as session:
         tools = (await session.list_tools()).tools
     assert sorted(t.name for t in tools) == [
@@ -57,6 +57,7 @@ async def test_tools_list_offers_the_three_atlas_tools_read_only_and_six_acting_
         "get_run",
         "list_my_runs",
         "list_problem_areas",
+        "plan_workflow",
         "run_qapp",
         "run_verified",
         "search_methods",
@@ -75,7 +76,7 @@ async def test_tools_list_offers_the_three_atlas_tools_read_only_and_six_acting_
         assert by_name[name].annotations.readOnlyHint is False
         assert by_name[name].annotations.idempotentHint is False
     # check_circuit stores nothing and answers the same input the same way.
-    for name in ("get_run", "list_my_runs", "estimate_resources", "check_circuit"):
+    for name in ("get_run", "list_my_runs", "estimate_resources", "check_circuit", "plan_workflow"):
         assert by_name[name].annotations.readOnlyHint is True
     for name in by_name:
         assert by_name[name].annotations.destructiveHint is False
@@ -322,7 +323,9 @@ async def test_run_verified_with_no_token_set_gives_clear_guidance_not_a_crash(m
     assert "Account" in result.content[0].text
 
 
-@pytest.mark.parametrize("tool", ["get_run", "list_my_runs", "estimate_resources", "check_circuit"])
+@pytest.mark.parametrize(
+    "tool", ["get_run", "list_my_runs", "estimate_resources", "check_circuit", "plan_workflow"]
+)
 async def test_the_other_acting_tools_also_need_a_token(monkeypatch, tool):
     monkeypatch.delenv("LEONA_API_TOKEN", raising=False)
     server = build_server()
@@ -333,6 +336,7 @@ async def test_the_other_acting_tools_also_need_a_token(monkeypatch, tool):
             "points": [{"label": "x", "logical_qubits": 4, "toffoli_count": 100}]
         },
         "check_circuit": {"qasm": "OPENQASM 3.0;", "kind": "state", "reference": "bell"},
+        "plan_workflow": {"problem": "factoring"},
     }[tool]
     async with create_connected_server_and_client_session(server) as session:
         result = await session.call_tool(tool, args)
