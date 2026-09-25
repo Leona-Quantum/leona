@@ -582,7 +582,9 @@ from .lifecycle import (
 # 2.39.0, above both. Nothing beyond the union of the two: `CellResult` carries `check`
 # AND `cache_key`/`cached_from_seq`; `NotebookLiveCellResult` carries `check` AND
 # `cached_from_seq`. The replay planner hashes a check cell's property, minus `author` and
-# `accepted`, into its cache key, so accepting a check does not force a re-run.
+# `accepted`, into its cache key, so accepting a check does not force a re-run. The
+# check ceilings, sized for 512 MiB containers, are state 18, distribution 14, unitary 8
+# (replacing the "unitary stops at 10" in the 2.38.0 note above) and energy 10.
 # 2.40.0: the agent connector's first headless tool, `check_circuit` (ai-ops 382 option 1,
 # "move the connector up to ship with it"; VISION §5.8). New: `CircuitCheckRequest`
 # (an OpenQASM 3 circuit plus a `CheckProperty`), `CircuitCheckResponse` (a `CheckVerdict`

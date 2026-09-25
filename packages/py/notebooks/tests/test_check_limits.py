@@ -86,15 +86,15 @@ def _bell() -> QuantumCircuit:
 @pytest.mark.parametrize(
     "fields",
     [
-        {"kind": "state", "reference": "ghz(19)"},
-        {"kind": "unitary", "reference": "qft(10)"},
+        {"kind": "state", "reference": "ghz(18)"},
+        {"kind": "unitary", "reference": "qft(8)"},
         {
             "kind": "state",
-            "reference_qasm": 'OPENQASM 3.0; include "stdgates.inc"; qubit[19] q; h q[0];',
+            "reference_qasm": 'OPENQASM 3.0; include "stdgates.inc"; qubit[18] q; h q[0];',
         },
         {
             "kind": "unitary",
-            "reference_qasm": 'OPENQASM 3.0; include "stdgates.inc"; qubit[10] q; h q[0];',
+            "reference_qasm": 'OPENQASM 3.0; include "stdgates.inc"; qubit[8] q; h q[0];',
         },
         {"kind": "energy", "hamiltonian": {"Z" * 10: 1.0}, "target": "ground"},
     ],
@@ -114,18 +114,18 @@ def test_the_contract_caps_a_reference_circuit_at_the_kinds_ceiling() -> None:
     wide = 'OPENQASM 3.0; include "stdgates.inc"; qubit[30] q; h q[0];'
     with pytest.raises(ValidationError, match="30 qubits"):
         CheckProperty(kind="state", subject="qc", reference_qasm=wide)
-    eleven = 'OPENQASM 3.0; include "stdgates.inc"; qubit[11] q; h q[0];'
-    with pytest.raises(ValidationError, match="11 qubits"):
-        CheckProperty(kind="unitary", subject="qc", reference_qasm=eleven)
+    nine = 'OPENQASM 3.0; include "stdgates.inc"; qubit[9] q; h q[0];'
+    with pytest.raises(ValidationError, match="9 qubits"):
+        CheckProperty(kind="unitary", subject="qc", reference_qasm=nine)
     physical = 'OPENQASM 3.0; include "stdgates.inc"; h $29;'
     with pytest.raises(ValidationError, match="30 qubits"):
         CheckProperty(kind="state", subject="qc", reference_qasm=physical)
 
 
-def test_a_unitary_check_stops_at_ten_qubits() -> None:
+def test_a_unitary_check_stops_at_eight_qubits() -> None:
     with pytest.raises(ValidationError, match="not a library reference"):
-        CheckProperty(kind="unitary", subject="qc", reference="qft(11)")
-    CheckProperty(kind="unitary", subject="qc", reference="qft(10)")
+        CheckProperty(kind="unitary", subject="qc", reference="qft(9)")
+    CheckProperty(kind="unitary", subject="qc", reference="qft(8)")
 
 
 def test_a_subject_on_physical_qubits_is_measured_by_its_real_width(
@@ -175,15 +175,18 @@ def test_a_shallow_nested_definition_is_still_judged() -> None:
 # --------------------------------------------------------------------------- (c) cost guard
 
 
-def test_a_unitary_too_costly_to_build_is_refused_before_building_it(
+def test_a_simulation_too_costly_to_run_is_refused_before_running_it(
     simulated: list[tuple[str, int]],
 ) -> None:
-    qc = QuantumCircuit(10)
-    for layer in range(100):
-        for q in range(10):
+    """At the 8-qubit unitary ceiling the 4,000-application bound already stops a unitary
+    before its cost guard could (4,000 x 4**8 is under the limit), so the guard is shown on
+    a state check: 2,106 gates x 2**18 is over it."""
+    qc = QuantumCircuit(18)
+    for layer in range(117):
+        for q in range(18):
             qc.rz(0.01 * (layer + q + 1), q)
     verdict = evaluate_check(
-        CheckProperty(kind="unitary", subject="qc", reference="qft(10)"),
+        CheckProperty(kind="state", subject="qc", reference="uniform(18)"),
         CheckCapture.from_circuit(qc),
     )
     assert verdict.status == "inconclusive"
@@ -333,9 +336,10 @@ def test_no_reader_facing_string_in_the_engine_has_a_dash_pair() -> None:
     assert offending == []
 
 
-def test_each_kind_stops_where_one_check_fits_in_about_150_mib() -> None:
-    """Coordinator, 512 MiB containers: state 19, distribution 15, unitary and energy 10.
-    The widths come from the measured and fitted costs in checks.py."""
+def test_each_kind_stops_where_one_check_fits_in_64_mib() -> None:
+    """Coordinator, 512 MiB containers with about 100 MiB left for a check (64 MiB of
+    headroom): state 18, distribution 14, unitary 8, energy 10. From the measured and
+    fitted costs in the contract's comment."""
     from majorana_contracts.notebooks import (
         CHECK_DISTRIBUTION_MAX_QUBITS,
         CHECK_STATE_MAX_QUBITS,
@@ -343,19 +347,19 @@ def test_each_kind_stops_where_one_check_fits_in_about_150_mib() -> None:
     )
 
     assert (CHECK_STATE_MAX_QUBITS, CHECK_DISTRIBUTION_MAX_QUBITS, CHECK_UNITARY_MAX_QUBITS) == (
-        19,
-        15,
-        10,
+        18,
+        14,
+        8,
     )
     with pytest.raises(ValidationError, match="not a library reference"):
-        CheckProperty(kind="state", subject="qc", reference="ghz(20)")
-    with pytest.raises(ValidationError, match="at most 15"):
-        CheckProperty(kind="distribution", subject="qc", probabilities={"0" * 16: 1})
-    wide = QuantumCircuit(16)
+        CheckProperty(kind="state", subject="qc", reference="ghz(19)")
+    with pytest.raises(ValidationError, match="at most 14"):
+        CheckProperty(kind="distribution", subject="qc", probabilities={"0" * 15: 1})
+    wide = QuantumCircuit(15)
     wide.measure_all()
     verdict = evaluate_check(
-        CheckProperty(kind="distribution", subject="qc", probabilities={"0" * 15: 1}),
+        CheckProperty(kind="distribution", subject="qc", probabilities={"0" * 14: 1}),
         CheckCapture.from_circuit(wide),
     )
-    assert verdict.status == "inconclusive" and "at most 15" in verdict.detail
-    assert verdict.qubits == 16, "a too-wide verdict says how wide"
+    assert verdict.status == "inconclusive" and "at most 14" in verdict.detail
+    assert verdict.qubits == 15, "a too-wide verdict says how wide"

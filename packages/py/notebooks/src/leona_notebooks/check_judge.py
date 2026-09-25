@@ -62,6 +62,49 @@ def _cap_memory(headroom: int) -> str:
     return f"{limit} bytes ({footprint} after imports + {headroom})"
 
 
+def _warm_up(checks, CheckProperty) -> None:
+    """Judge one tiny check of every kind, with its broken copies, before the footprint is
+    measured. Qiskit, numpy and scipy load a lot lazily on first use (QFT synthesis, the
+    `Operator` machinery, LAPACK for `eigvalsh`, the marginal-distribution code): measured
+    on an M1 Pro, a 9-qubit unitary check whose own matrices are 4 MiB each grew the process
+    by more than 64 MiB, almost all of it code and module state, which would have counted
+    against the check's headroom. After this, the footprint includes all of it and the
+    headroom measures the check's own work."""
+    from qiskit import QuantumCircuit
+
+    bell = QuantumCircuit(2)
+    bell.h(0)
+    bell.cx(0, 1)
+    measured = bell.copy()
+    measured.measure_all()
+    qft = QuantumCircuit(2)
+    qft.h(1)
+    qft.cp(3.141592653589793 / 2, 0, 1)
+    qft.h(0)
+    qft.swap(0, 1)
+    warm = [
+        (CheckProperty(kind="state", subject="w", reference="bell"), bell),
+        (CheckProperty(kind="unitary", subject="w", reference="qft(2)"), qft),
+        (CheckProperty(kind="unitary", subject="w", reference="iqft(2)"), qft),  # a fail
+        (
+            CheckProperty(kind="distribution", subject="w", probabilities={"00": 0.5, "11": 0.5}),
+            measured,
+        ),
+        (
+            CheckProperty(
+                kind="energy", subject="w", hamiltonian={"ZZ": -1.0, "XX": -1.0}, target="ground"
+            ),
+            bell,
+        ),
+        (CheckProperty(kind="state", subject="w", amplitudes={"01": 1}), bell),  # a fail
+    ]
+    for prop, circuit in warm:
+        try:
+            checks.evaluate_check(prop, checks.CheckCapture.from_circuit(circuit))
+        except Exception:  # noqa: BLE001 - warming up must never stop the real work
+            pass
+
+
 def main() -> int:
     started = time.monotonic()
     payload = json.loads(sys.stdin.read())
@@ -76,6 +119,7 @@ def main() -> int:
 
     from leona_notebooks import checks
 
+    _warm_up(checks, CheckProperty)
     cap = _cap_memory(int(payload.get("memory_headroom_bytes") or 0))
     import resource
 

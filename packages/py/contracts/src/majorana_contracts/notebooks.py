@@ -235,22 +235,28 @@ CheckStatus = Literal["pass", "fail", "inconclusive"]
 #: (`leona_notebooks.checks`), never written by the model or the reader. The widths stop
 #: at `CHECK_STATE_MAX_QUBITS`.
 CHECK_STATE_REFERENCE_RE = re.compile(
-    r"^(?:bell(?::(?:phi|psi)[+-])?|(?:ghz|w|uniform)\((?:[1-9]|1\d)\))$"
+    r"^(?:bell(?::(?:phi|psi)[+-])?|(?:ghz|w|uniform)\((?:[1-9]|1[0-8])\))$"
 )
 #: Library references a `unitary` check may name, up to `CHECK_UNITARY_MAX_QUBITS`.
-CHECK_UNITARY_REFERENCE_RE = re.compile(r"^i?qft\((?:[1-9]|10)\)$")
-#: The widest circuit a check of each kind judges, sized so one check fits in about 150 MiB
-#: above the judging process's own footprint: the worker and the API are 512 MiB
-#: containers, shared with the process that started the judge (review of PR 1011). Measured
-#: and fitted in `leona_notebooks.checks` (see the numbers there): a failing state check
-#: costs about 156 bytes per amplitude, so 19 qubits is about 78 MiB and 20 about 156 MiB;
-#: a failing distribution check about 2.6 KB per outcome (it keeps one dict entry per
-#: outcome), so 15 qubits is about 82 MiB; a 10-qubit unitary check peaked 56 MiB above the
-#: footprint, measured. `energy` is also held to 10 by its Hamiltonian. Restated here
-#: because this package imports nothing internal; `leona_notebooks.checks` reads these.
-CHECK_STATE_MAX_QUBITS = 19
-CHECK_DISTRIBUTION_MAX_QUBITS = 15
-CHECK_UNITARY_MAX_QUBITS = 10
+CHECK_UNITARY_REFERENCE_RE = re.compile(r"^i?qft\([1-8]\)$")
+#: The widest circuit a check of each kind judges, sized so one check fits in the judging
+#: process's 64 MiB of headroom (`leona_notebooks.checks.CHECK_MEMORY_HEADROOM_BYTES`). The
+#: worker is a 512 MiB container whose own process peaks near 292 MiB (Cloud Monitoring,
+#: `run.googleapis.com/container/memory/utilizations`, hourly p99 over 3 days to
+#: 2026-09-25: max 57.0%, median 54%, read by the coordinator), and the judge's footprint
+#: is about 120 MiB, so about 100 MiB is left for a check. Peaks above the footprint, one
+#: child per check, M1 Pro: a 9-qubit unitary check measured +43 to +63 MiB and was once
+#: killed over 64, so unitary stops at 8 (measured +5 to +36 MiB, 32 broken copies
+#: included); a 10-qubit energy check with 256 terms measured +48 to +50 MiB, so energy
+#: stays at 10. Fitted from traced
+#: allocations at 6 to 10 qubits (ESTIMATES): a failing state check costs about 156 bytes
+#: per amplitude (18 qubits about 39 MiB, 19 about 78), and a failing distribution check
+#: about 2.6 KB per measured outcome (14 qubits about 41 MiB, 15 about 82). A 1 GiB worker
+#: would allow 19 / 15 / 10. Restated here because this package imports nothing internal;
+#: `leona_notebooks.checks` reads these.
+CHECK_STATE_MAX_QUBITS = 18
+CHECK_DISTRIBUTION_MAX_QUBITS = 14
+CHECK_UNITARY_MAX_QUBITS = 8
 #: The names an amplitude or probability expression may use. The evaluator
 #: (`leona_notebooks.checks.evaluate_expression`) walks an `ast` against this allowlist and
 #: never calls `eval`; the validator below walks the same allowlist without evaluating, so a
