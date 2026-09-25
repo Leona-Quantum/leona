@@ -1746,6 +1746,83 @@ async def test_author_reuse_results_false_reruns_everything_even_when_unchanged(
     assert all(cell["cached_from_seq"] is None for cell in by_id.values())
 
 
+AUTHORED_WITH_A_SKIP_PAST_RUN_UNTIL = """\
+# ---
+# title: My own edit
+# kind: scratch
+# ---
+
+# %% id=c01
+x = 21
+print("first")
+
+# %% id=c02
+print("second", x * 2)
+
+# %% id=c03 execute=false
+import os
+"""
+
+
+async def test_author_replay_all_cached_with_run_until_reports_a_later_skip_as_not_run(
+    _fake_run_plumbing,
+):
+    """Regression: `_all_cached_report` (the `plan.execute == set()` path) must
+    classify a cell PAST the `run_until` cut as `not_run` even when that cell is
+    ALSO skip-eligible (`execute=False`) — the same precedence
+    `compose_notebook_program` itself applies (it tests the cut before it ever
+    calls `prepare_cell_source`). c03 sits after `run_until="c02"` and is
+    `execute=false`; a real dispatch reports it `not_run`/"after the cell you ran
+    to", never `skipped`/"execute=false" — and the all-cached shortcut must agree,
+    or `_authored_turn`'s "left for later" count silently drops it."""
+    store = MemoryNotebookStore()
+    notebook_id = uuid.uuid4()
+    run1, version1 = uuid.uuid4(), uuid.uuid4()
+    store.seed_version(notebook_id, version1, seq=1)
+    session = Session()
+
+    await nh.handle_notebook_revise(
+        session,
+        _author_payload(
+            run_id=run1,
+            notebook_id=notebook_id,
+            version_id=version1,
+            source=AUTHORED_WITH_A_SKIP_PAST_RUN_UNTIL,
+        ),
+        llm=QueueLLM([]),
+        sandbox=FakeSandbox(),
+        store=store,
+    )
+
+    # Second save: same source, run to c02 only. c01/c02 are both still cached
+    # (nothing edited), so plan.execute is empty — the all-cached shortcut fires —
+    # and c03 never enters the dependency graph at all (execute=false).
+    run2, version2 = uuid.uuid4(), uuid.uuid4()
+    store.seed_version(notebook_id, version2, seq=2)
+    sandbox2 = FakeSandbox()
+    await nh.handle_notebook_revise(
+        session,
+        _author_payload(
+            run_id=run2,
+            notebook_id=notebook_id,
+            version_id=version2,
+            source=AUTHORED_WITH_A_SKIP_PAST_RUN_UNTIL,
+            run_until="c02",
+            parent_version_id=version1,
+        ),
+        llm=QueueLLM([]),
+        sandbox=sandbox2,
+        store=store,
+    )
+
+    child = store.versions[version2]
+    assert child.status == "ready", child.error
+    assert sandbox2.specs == []  # the all-cached shortcut, not a real dispatch
+    by_id = {cell["id"]: cell for cell in child.report["cells"]}
+    assert by_id["c03"]["status"] == "not_run"
+    assert by_id["c03"]["note"] == "after the cell you ran to"
+
+
 # --------------------------------------------------------------------------- grade
 
 # Built as a dict rather than parsed from `.nb.py`: `check` reaches a spec through the

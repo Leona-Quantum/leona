@@ -1243,7 +1243,7 @@ def _merge_replay_report(
 
 
 def _all_cached_report(
-    spec: NotebookSpec, plan: RunPlan, parent_seq: int | None
+    spec: NotebookSpec, plan: RunPlan, parent_seq: int | None, run_until: str | None
 ) -> ExecutionReport:
     """`plan.execute` is empty: nothing needs a sandbox dispatch at all (plan brief
     item 5 — "if the plan executes nothing, do not dispatch a sandbox"). Built
@@ -1251,11 +1251,29 @@ def _all_cached_report(
     `prepare_cell_source` — the SAME check `compose_notebook_program` runs internally
     — so this can never drift from what a real, empty-`only` dispatch would have
     reported for the cells it left out.
+
+    That "same check" has to include `compose_notebook_program`'s own PRECEDENCE, not
+    just its two classifications: a cell past the `run_until` cut is `not_run`
+    (`RUN_UNTIL_NOTE`) there EVEN WHEN it would also be skip-eligible
+    (`execute=False`, a `%%` cell magic) — the composer tests `index > cut` before it
+    ever calls `prepare_cell_source`. Checking skip-eligibility first, as an earlier
+    version of this function did, relabelled such a cell `skipped` instead: still
+    correct about the cell never running, but the WRONG reason, and it silently
+    undercounts `_authored_turn`'s "left for later" figure. So the cut is computed
+    and tested here first, exactly mirroring `compose_notebook_program`'s own
+    `index > cut` gate before its `prepare_cell_source` call.
     """
+    cut = len(spec.cells) - 1
+    if run_until is not None:
+        cut = spec.index_of(run_until)  # already validated by `plan_run`'s own lookup
+    index_of_id = {cell.id: index for index, cell in enumerate(spec.cells)}
     cells: list[CellResult] = []
     for cell in spec.code_cells():
         if cell.id in plan.reused:
             cells.append(plan.reused[cell.id].model_copy(update={"cached_from_seq": parent_seq}))
+            continue
+        if index_of_id[cell.id] > cut:
+            cells.append(CellResult(id=cell.id, status="not_run", note=RUN_UNTIL_NOTE))
             continue
         _source, skip_reason = prepare_cell_source(cell)
         if skip_reason is not None:
@@ -1351,7 +1369,7 @@ async def _handle_author(
     plan = plan_run(authored, parent_spec, parent_report, run_until)
 
     if not plan.execute:
-        report = _all_cached_report(authored, plan, parent_seq)
+        report = _all_cached_report(authored, plan, parent_seq, run_until)
     else:
         report = await ports.run_notebook(authored, run_until=run_until, only=set(plan.execute))
         report = _merge_replay_report(report, plan, parent_seq)
