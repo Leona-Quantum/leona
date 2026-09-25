@@ -2206,6 +2206,9 @@ async def _finish_simple_pipeline(
             reference_methods,
             review.decision,
             result_derived=result_was_derived(execution.observation),
+            result_never_executed=(
+                not execution.result and not result_was_derived(execution.observation)
+            ),
             recorded_checks=recorded_basic_checks(review),
             review_severity=review.severity,
         )
