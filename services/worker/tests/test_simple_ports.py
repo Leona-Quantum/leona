@@ -1979,6 +1979,127 @@ async def test_basic_contract_rejects_a_function_that_never_needed_to_run(task_i
     assert not any("RESULT missing key" in item for item in checked.value.diagnostics)
 
 
+async def test_a_delivered_function_candidate_is_never_labelled_verified_pass():
+    """ai-ops 372, downstream of the check_contract fix (coordinator's item 2).
+
+    Pins the REAL, OBSERVED behavior with the real SimpleIntentReviewer (a
+    real advisory model call, stubbed response) rather than the fake Reviewer
+    double `_ports()` uses elsewhere in this file — so the full review()
+    codepath, including `_success_criteria_check`,
+    `SimpleIntentReviewer._decide`, and `simple_pipeline_verification_summary`,
+    actually runs. This is not the answer I expected going in, and the test
+    asserts what actually happens, not what would be convenient.
+
+    check_contract now lets a FUNCTION/CLASS-declared, non-executed candidate
+    through — confirmed below. But the review CONTROLLER
+    (`SimpleIntentReviewer._decide`) is a SEPARATE deterministic gate: it
+    forces CODE_REPAIR whenever ANY entry in `basic_checks` has
+    `result != "pass"`, regardless of the model's own "ready" opinion
+    (`deterministic_failed or not graded_acceptable` → CODE_REPAIR, never
+    READY). `_success_criteria_check` for this shape now returns "n/a" rather
+    than "fail" (this PR's second, smaller fix — honest reporting, matching
+    `_return_contract_check`'s existing "n/a, not fail" precedent for a
+    derived circuit result) — but "n/a" is STILL `!= "pass"`, so it is STILL
+    counted as `deterministic_failed`. **The candidate is therefore still
+    routed to CODE_REPAIR, not READY, even after both fixes in this PR.**
+
+    I deliberately did NOT change `_decide`'s `deterministic_failed` filter
+    (whether "n/a"/"skipped" should count as a failure there) in this PR: that
+    function is the review controller for every Nala run, not just this
+    benchmark's FUNCTION/CLASS shape, and changing what it treats as a defect
+    is a materially bigger, differently-reviewed change than this PR's fix.
+    So: this PR's fix is CONFIRMED to remove the check_contract rejection, and
+    CONFIRMED, by this test, NOT to be sufficient by itself to reach READY —
+    the run would still burn its whole repair budget and end up back at
+    `_recover_sound_candidate_or_fail`, same as before, for the reason traced
+    here rather than for the check_contract reason. Whether that also held for
+    the real 2026-09-23 candidates (whose plans may have differed from the one
+    engineered here) is exactly what the diagnostic re-run this PR prepares
+    (not runs) would settle.
+
+    Either way — CODE_REPAIR here, or READY in some other plan shape — this
+    also pins the ADR-0023 property that actually mattered to ask about:
+    `simple_pipeline_verification_summary` never grades this shape a PASS.
+    """
+    from majorana_evals.public_benchmarks.qiskit_human_eval import build_nala_prompt
+
+    task = _qiskit_human_eval_task("qiskitHumanEval/0")
+    source = task["prompt"] + task["canonical_solution"]
+    nala_prompt = build_nala_prompt(task["prompt"])
+
+    plan_payload = _plan_payload()
+    plan_payload["artifact_contract"] = {
+        "artifact_type": "function",
+        "entry_point": task["entry_point"],
+        "measurement_policy": "not_applicable",
+        "top_level_execution": "forbidden",
+    }
+    generation_llm = QueueLLM([json.dumps(plan_payload), json.dumps({"source": source})])
+    review_llm = QueueLLM(
+        [
+            json.dumps(
+                {
+                    "decision": "ready",
+                    "confidence": "high",
+                    "severity": "none",
+                    "summary": "the function matches the requested signature",
+                    "passed_checks": ["request_to_plan", "plan_to_source"],
+                    "residual_risks": ["AI review is advisory"],
+                }
+            )
+        ]
+    )
+    ports = ProductionSimplePipelinePorts(
+        store=MemoryAgentStore(),
+        observer=Observer(),
+        llm=generation_llm,
+        executor=Executor(),
+        reviewer=SimpleIntentReviewer(llm=review_llm, task_prompt=nala_prompt),
+        converter=Converter(),
+        saver=Saver(),
+        task_prompt=nala_prompt,
+        framework=Framework.QISKIT,
+        requested_shots=100,
+        requested_seed=7,
+    )
+    run_id = uuid4()
+
+    planned = await ports.plan(run_id, None, None)
+    assert planned.value is not None
+    generated = await ports.generate(run_id, planned.value, None, None)
+    assert generated.value is not None
+    executed = await ports.run_execution(run_id, planned.value, generated.value)
+    assert executed.value is not None
+    real_execution = executed.value.model_copy(update={"result": {}})
+
+    checked = await ports.check_contract(run_id, planned.value, generated.value, real_execution)
+    assert checked.value is not None
+    assert checked.value.passed is True, checked.value.diagnostics
+
+    reviewed = await ports.review(run_id, planned.value, generated.value, real_execution, 1)
+    assert reviewed.value is not None
+
+    checks = reviewed.value.feedback["basic_checks"]
+    success_criteria = next(c for c in checks if c["method"] == "success_criteria")
+    # This PR's second fix: honest "n/a" (nothing to check), not a false "fail".
+    assert success_criteria["result"] == "n/a", checks
+
+    # The real, observed answer — not READY, for the reason explained above.
+    assert reviewed.value.decision is SemanticReviewDecision.CODE_REPAIR
+    assert reviewed.value.feedback["critic"]["decision"] == "ready", (
+        "the underlying model call DID say ready — _decide overrode it"
+    )
+
+    summary = simple_pipeline_verification_summary(
+        semantic_review_decision=reviewed.value.decision,
+        recorded_checks=checks,
+        review_severity=reviewed.value.severity,
+    )
+    assert summary["decision"] != "pass", (
+        "must never be labelled PASS without an independent reference (ADR-0023)"
+    )
+
+
 async def test_basic_contract_rejects_observed_qubits_above_plan_and_lane():
     ports, *_ = _ports()
     run_id = uuid4()
