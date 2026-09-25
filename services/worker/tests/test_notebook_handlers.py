@@ -257,9 +257,22 @@ class FakeSandbox:
 
     provider = "fake"
 
-    def __init__(self, *, fail_cell_id: str | None = None):
+    def __init__(
+        self,
+        *,
+        fail_cell_id: str | None = None,
+        environment: dict[str, str] | None = None,
+    ):
         self.fail_cell_id = fail_cell_id
         self.specs: list = []
+        # Overridable so a test can simulate the sandbox's OWN reported
+        # environment changing between two dispatches (an in-place image
+        # rebuild) without needing a real sandbox.
+        self.environment = environment or {
+            "python": "3.11.9",
+            "qiskit": "2.5.2",
+            "figures": "unavailable",
+        }
 
     async def _execute(self, spec):
         self.specs.append(spec)
@@ -317,11 +330,7 @@ class FakeSandbox:
             protected_result={
                 "notebook": {
                     "cells": cells,
-                    "environment": {
-                        "python": "3.11.9",
-                        "qiskit": "2.5.2",
-                        "figures": "unavailable",
-                    },
+                    "environment": self.environment,
                     "image_bytes": 0,
                     "dropped_bytes": 0,
                     "stopped": stopped,
@@ -1835,11 +1844,13 @@ async def test_author_replay_all_cached_with_run_until_reports_a_later_skip_as_n
 async def test_reused_cells_appear_on_the_live_event_and_the_all_cached_path_emits_one(
     monkeypatch,
 ):
-    """NIT: a live listener's LAST `notebook.cells` event for a replay run must
-    show a reused cell as itself — `status="ok"`, `cached_from_seq` set — not the
-    pre-merge `not_run` `run_notebook`'s own (fresh-dispatch-only) emission gives
-    it. And the all-cached shortcut (nothing to dispatch at all) must still emit
-    ONE such event, even though it never calls `run_notebook`."""
+    """NIT: a live listener's FIRST `notebook.cells` event for a replay run —
+    `run_notebook`'s own, fired from inside the dispatch — must ALREADY show a
+    reused cell as itself (`status="ok"`, `cached_from_seq` set), not `not_run`
+    (round 2: the plan is known before dispatch, so there is no reason to show it
+    wrong even transiently). The LAST event (`emit_final_cells`, after the merge)
+    must show it too. And the all-cached shortcut (nothing to dispatch at all)
+    must still emit ONE such event, even though it never calls `run_notebook`."""
     sinks: list[FakeEventSink] = []
 
     class Recording(FakeEventSink):
@@ -1882,7 +1893,10 @@ async def test_reused_cells_appear_on_the_live_event_and_the_all_cached_path_emi
         store=store,
     )
     replay_events = [p for kind, p in sinks[1].events if kind == "notebook.cells"]
-    assert len(replay_events) >= 1
+    assert len(replay_events) >= 2  # run_notebook's own emission, then the final one
+    first_by_id = {c["id"]: c for c in replay_events[0]["cells"]}
+    assert first_by_id["c03"]["status"] == "ok"  # NOT "not_run" — known before dispatch
+    assert first_by_id["c03"]["cached_from_seq"] == 1
     final = replay_events[-1]
     by_id = {c["id"]: c for c in final["cells"]}
     assert by_id["c03"]["status"] == "ok"
@@ -1916,6 +1930,121 @@ async def test_reused_cells_appear_on_the_live_event_and_the_all_cached_path_emi
     assert by_id["c01"]["cached_from_seq"] == 2
     assert by_id["c02"]["cached_from_seq"] == 2
     assert by_id["c03"]["cached_from_seq"] == 1
+
+
+async def test_a_sandbox_environment_drift_invalidates_every_reused_cell(_fake_run_plumbing):
+    """Round 2 of the adversarial review: `environment_signature` (S4) is a
+    constant in production, so it cannot catch an in-place image rebuild on its
+    own — the fresh dispatch's OWN reported environment, compared against the
+    parent's, is the real signal. c01 is edited (forcing a fresh dispatch); c02
+    and c03 would ordinarily be reused — but the SECOND dispatch's sandbox
+    reports a different `qiskit` version than the first, so both must be
+    corrected to `not_run` with the drift note, and the turn must say so."""
+    store = MemoryNotebookStore()
+    notebook_id = uuid.uuid4()
+    run1, version1 = uuid.uuid4(), uuid.uuid4()
+    store.seed_version(notebook_id, version1, seq=1)
+    session = Session()
+
+    await nh.handle_notebook_revise(
+        session,
+        _author_payload(run_id=run1, notebook_id=notebook_id, version_id=version1),
+        llm=QueueLLM([]),
+        sandbox=FakeSandbox(),  # qiskit 2.5.2, the default
+        store=store,
+    )
+
+    edited_source = AUTHORED.replace('print("second", x * 2)', 'print("second!!", x * 2)')
+    run2, version2 = uuid.uuid4(), uuid.uuid4()
+    store.seed_version(notebook_id, version2, seq=2)
+    drifted_sandbox = FakeSandbox(environment={"python": "3.11.9", "qiskit": "2.6.0"})
+    await nh.handle_notebook_revise(
+        session,
+        _author_payload(
+            run_id=run2,
+            notebook_id=notebook_id,
+            version_id=version2,
+            source=edited_source,
+            parent_version_id=version1,
+        ),
+        llm=QueueLLM([]),
+        sandbox=drifted_sandbox,
+        store=store,
+    )
+
+    child = store.versions[version2]
+    assert child.status == "ready", child.error
+    by_id = {cell["id"]: cell for cell in child.report["cells"]}
+    # c01/c02 actually ran fresh this dispatch (c02 depends on c01, the edited
+    # cell) — untouched by the drift correction, which only ever applies to
+    # cells `plan` would otherwise have REUSED.
+    assert by_id["c01"]["status"] == "ok"
+    assert by_id["c02"]["status"] == "ok"
+    assert by_id["c03"]["status"] == "not_run"
+    assert by_id["c03"]["note"] == nh.ENVIRONMENT_DRIFT_NOTE
+    assert by_id["c03"]["cached_from_seq"] is None
+    assert "sandbox environment changed" in store.turns[-1].content
+
+
+async def test_the_same_sandbox_environment_still_allows_reuse(_fake_run_plumbing):
+    """The control: two dispatches reporting the IDENTICAL environment must not
+    trip the drift correction — reuse works exactly as before."""
+    store = MemoryNotebookStore()
+    notebook_id = uuid.uuid4()
+    run1, version1 = uuid.uuid4(), uuid.uuid4()
+    store.seed_version(notebook_id, version1, seq=1)
+    session = Session()
+
+    await nh.handle_notebook_revise(
+        session,
+        _author_payload(run_id=run1, notebook_id=notebook_id, version_id=version1),
+        llm=QueueLLM([]),
+        sandbox=FakeSandbox(),
+        store=store,
+    )
+
+    edited_source = AUTHORED.replace('print("second", x * 2)', 'print("second!!", x * 2)')
+    run2, version2 = uuid.uuid4(), uuid.uuid4()
+    store.seed_version(notebook_id, version2, seq=2)
+    await nh.handle_notebook_revise(
+        session,
+        _author_payload(
+            run_id=run2,
+            notebook_id=notebook_id,
+            version_id=version2,
+            source=edited_source,
+            parent_version_id=version1,
+        ),
+        llm=QueueLLM([]),
+        sandbox=FakeSandbox(),  # the SAME default environment as version 1
+        store=store,
+    )
+
+    child = store.versions[version2]
+    by_id = {cell["id"]: cell for cell in child.report["cells"]}
+    assert by_id["c03"]["status"] == "ok"
+    assert by_id["c03"]["cached_from_seq"] == 1
+    assert nh.ENVIRONMENT_DRIFT_NOTE not in store.turns[-1].content
+
+
+def test_authored_turn_singular_subject_verb_agreement_not_just_the_noun() -> None:
+    """NIT: "1 cell that changed or DEPENDS", not "...or depend" — `_plural_s`
+    fixed the noun in round 1 and missed that "depend" is a present-tense verb
+    agreeing with the same subject."""
+    from majorana_contracts.notebooks import CellResult, ExecutionReport
+
+    report = ExecutionReport(
+        notebook_slug="s",
+        ok=True,
+        runner="sandbox",
+        cells=[
+            CellResult(id="c1", status="ok", cache_key="k1"),
+            CellResult(id="c2", status="ok", cache_key="k2", cached_from_seq=1),
+        ],
+    )
+    msg = nh._authored_turn(report, run_until=None, locale="en")
+    assert "1 cell that changed or depends on your edit" in msg
+    assert "or depend on" not in msg
 
 
 def test_sandbox_environment_id_reads_the_sandboxs_own_property_with_a_safe_fallback() -> None:

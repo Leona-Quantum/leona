@@ -717,6 +717,7 @@ class ProductionNotebookPorts(NotebookPorts):
         only: set[str] | None = None,
         reused_hardware_request_count: int = 0,
         reused_hardware_qasm_chars: int = 0,
+        reused_for_live: dict[str, CellResult] | None = None,
     ) -> ExecutionReport:
         """`run_until` is the editor's "Run to here": cells after that id are left out
         of the program and come back `not_run`. `only` further restricts the dispatch
@@ -725,9 +726,27 @@ class ProductionNotebookPorts(NotebookPorts):
         `not_run` too, never counted against the report's `ok`. The `reused_hardware_*`
         pair (S2) is what REUSED cells already committed this notebook to, so the
         hardware-request cap is enforced notebook-wide rather than resetting every
-        replay dispatch — see `compose_notebook_program`'s own docstring. All four are
-        optional with a default so this still satisfies `NotebookPorts.run_notebook(spec)`,
-        which every other (non-replay) caller uses, unchanged."""
+        replay dispatch — see `compose_notebook_program`'s own docstring.
+
+        `reused_for_live` (round 2 of the adversarial review): cells `plan` already
+        knows will be REUSED, pre-stamped with `cached_from_seq`
+        (`_reused_for_display`) — known BEFORE this dispatch even starts, since a
+        replay plan is computed from static structure alone. Used ONLY to build
+        what THIS call emits on the live `notebook.cells` stream, overlaid onto the
+        fresh (excluded-cells-are-`not_run`) report right before emitting it — the
+        RETURNED report is unaffected, still fresh-only, exactly as every caller
+        already expects; `_merge_replay_report` still does the full, correct merge
+        (cache-key stamping, the raise correction, the environment-drift
+        correction) on the value this function returns. Without this, a live
+        listener's FIRST word on a replay dispatch showed every reused cell as
+        `not_run` — indistinguishable from "has not run yet" — until the SEPARATE,
+        later `emit_final_cells` call corrected it; now the first (and typically
+        only, since nothing else about a reused cell needs correcting) word is
+        already right.
+
+        All optional with defaults so this still satisfies
+        `NotebookPorts.run_notebook(spec)`, which every other (non-replay) caller
+        uses, unchanged."""
         self._execution_attempt += 1
         attempt = self._execution_attempt
         try:
@@ -750,7 +769,7 @@ class ProductionNotebookPorts(NotebookPorts):
                 ],
                 note=str(exc),
             )
-            await self._emit_cells(report, attempt)
+            await self._emit_cells(_with_reused_overlay(report, reused_for_live), attempt)
             return report
         exec_spec = build_execution_spec(
             program,
@@ -763,7 +782,7 @@ class ProductionNotebookPorts(NotebookPorts):
             float(getattr(result, "duration_ms", 0) or 0) / 1000.0, 0.0
         )
         report = report_from_sandbox_result(result, spec, program)
-        await self._emit_cells(report, attempt)
+        await self._emit_cells(_with_reused_overlay(report, reused_for_live), attempt)
         return report
 
     async def _emit_cells(self, report: ExecutionReport, attempt: int) -> None:
@@ -1184,10 +1203,11 @@ _AUTHORED_TURN: dict[str, dict[str, str]] = {
         "partial": "Ran your edit: {ran} of {total} code cells ran, and {failed} raised.",
         "stopped": "Ran your edit up to {run_until}: {ran} code cells ran, {not_run} left for later.",
         "nothing": "I could not run your edit: {note}",
-        "ok_reused": "Ran {ran} cell{ran_s} that changed or depend on your edit; {reused} unchanged cell{reused_s} kept their results.",
-        "partial_reused": "Ran {ran} cell{ran_s} that changed or depend on your edit, and {failed} raised; {reused} unchanged cell{reused_s} kept their results.",
-        "stopped_reused": "Ran {ran} cell{ran_s} up to {run_until} that changed or depend on your edit; {reused} unchanged cell{reused_s} kept their results, {not_run} left for later.",
+        "ok_reused": "Ran {ran} cell{ran_s} that changed or {ran_depend} on your edit; {reused} unchanged cell{reused_s} kept their results.",
+        "partial_reused": "Ran {ran} cell{ran_s} that changed or {ran_depend} on your edit, and {failed} raised; {reused} unchanged cell{reused_s} kept their results.",
+        "stopped_reused": "Ran {ran} cell{ran_s} up to {run_until} that changed or {ran_depend} on your edit; {reused} unchanged cell{reused_s} kept their results, {not_run} left for later.",
         "all_reused": "Nothing needed to change: all {reused} cell{reused_s} kept their results from before.",
+        "environment_drifted_suffix": " The sandbox environment changed since your last save, so the results that would have been reused are marked for a re-run instead.",
     },
     "ja": {
         "ok": "編集を実行しました: コードセル {total} 個のうち {ran} 個が正常に実行されました。",
@@ -1198,6 +1218,7 @@ _AUTHORED_TURN: dict[str, dict[str, str]] = {
         "partial_reused": "編集の影響を受けたセル {ran} 個を実行し、{failed} 個で例外が発生しました。変更のないセル {reused} 個は前回の結果を保持しています。",
         "stopped_reused": "{run_until} まで、編集の影響を受けたセル {ran} 個を実行しました。変更のないセル {reused} 個は前回の結果を保持し、{not_run} 個は未実行です。",
         "all_reused": "変更はありませんでした。セル {reused} 個はすべて前回の結果を保持しています。",
+        "environment_drifted_suffix": " サンドボックスの実行環境が前回の保存から変わったため、再利用されるはずだった結果は再実行が必要としてマークされています。",
     },
 }
 
@@ -1226,10 +1247,16 @@ def _authored_turn(report: ExecutionReport, *, run_until: str | None, locale: st
         return strings["nothing"].format(note=report.note or "the sandbox produced no evidence")
     if reused > 0:
         ran_s, reused_s = _plural_s(ran), _plural_s(reused)
+        # Subject-verb agreement, not just the noun: "1 cell that changed or
+        # DEPENDS", "2 cells that changed or DEPEND" — `_plural_s` alone fixed
+        # the noun in round 1 and missed that "depend" is a present-tense verb
+        # agreeing with the SAME subject, caught in round 2.
+        ran_depend = "depends" if ran == 1 else "depend"
         if run_until:
             return strings["stopped_reused"].format(
                 ran=ran,
                 ran_s=ran_s,
+                ran_depend=ran_depend,
                 reused=reused,
                 reused_s=reused_s,
                 not_run=not_run,
@@ -1237,11 +1264,18 @@ def _authored_turn(report: ExecutionReport, *, run_until: str | None, locale: st
             )
         if failed:
             return strings["partial_reused"].format(
-                ran=ran, ran_s=ran_s, reused=reused, reused_s=reused_s, failed=failed
+                ran=ran,
+                ran_s=ran_s,
+                ran_depend=ran_depend,
+                reused=reused,
+                reused_s=reused_s,
+                failed=failed,
             )
         if ran == 0:
             return strings["all_reused"].format(reused=reused, reused_s=reused_s)
-        return strings["ok_reused"].format(ran=ran, ran_s=ran_s, reused=reused, reused_s=reused_s)
+        return strings["ok_reused"].format(
+            ran=ran, ran_s=ran_s, ran_depend=ran_depend, reused=reused, reused_s=reused_s
+        )
     if run_until:
         return strings["stopped"].format(ran=ran, not_run=not_run, run_until=run_until)
     if failed:
@@ -1279,8 +1313,51 @@ async def _load_parent_for_replay(
     return parent_spec, parent_report, getattr(parent, "seq", None)
 
 
+#: Note stamped on a reused cell the environment-drift check invalidates —
+#: `_authored_turn` matches on this exact string to say so in the turn too.
+ENVIRONMENT_DRIFT_NOTE = (
+    "the sandbox environment changed since this cell last ran; re-run to refresh"
+)
+
+
+def _reused_for_display(plan: RunPlan, parent_seq: int | None) -> dict[str, CellResult]:
+    """Every cell `plan` says to reuse, stamped with `cached_from_seq` set to the
+    EARLIEST version it actually dates from (`prior.cached_from_seq or
+    parent_seq` — see `_merge_replay_report`'s own docstring for why not always
+    the immediate parent). Computed from `plan` alone, before anything is
+    dispatched, so it doubles as what `run_notebook`'s live emission overlays in
+    from the very first event (`_with_reused_overlay`) and what the final merge
+    uses (`_merge_replay_report`) — one computation, two call sites, so they
+    cannot silently disagree with each other."""
+    return {
+        cell_id: prior.model_copy(update={"cached_from_seq": prior.cached_from_seq or parent_seq})
+        for cell_id, prior in plan.reused.items()
+    }
+
+
+def _with_reused_overlay(
+    report: ExecutionReport, reused_for_live: dict[str, CellResult] | None
+) -> ExecutionReport:
+    """What `ProductionNotebookPorts._emit_cells` should show for THIS dispatch,
+    if different from what the dispatch itself produced — see `run_notebook`'s
+    own `reused_for_live` docstring. A no-op (returns `report` unchanged, same
+    object) when there is nothing to overlay, so a non-replay caller's emission
+    is byte-identical to before this existed."""
+    if not reused_for_live:
+        return report
+    overlaid = [
+        reused_for_live[cell.id] if cell.id in reused_for_live else cell for cell in report.cells
+    ]
+    return report.model_copy(update={"cells": overlaid})
+
+
 def _merge_replay_report(
-    report: ExecutionReport, plan: RunPlan, parent_seq: int | None, spec: NotebookSpec
+    report: ExecutionReport,
+    plan: RunPlan,
+    parent_seq: int | None,
+    spec: NotebookSpec,
+    *,
+    environment_drifted: bool = False,
 ) -> ExecutionReport:
     """Stamp each cell this dispatch actually EXECUTED with its own fresh
     `cache_key`, and replace every cell `plan` says to REUSE with the PARENT's own
@@ -1295,6 +1372,21 @@ def _merge_replay_report(
     it has never heard of a cached value, so the merge happens here, one level up,
     where both the fresh report and the plan are in scope.
 
+    **`environment_drifted` (round 2 of the adversarial review): invalidates
+    EVERY reused cell, unconditionally.** `environment_signature` (S4, folded
+    into the cache key) is a constant in production today —
+    `VercelSandbox.environment_id` never changes on an in-place image rebuild, no
+    digest pinning yet (that property's own docstring) — so it cannot by itself
+    catch a rebuild that silently changed installed package versions between the
+    parent's run and this one. The only reliable signal is the ACTUAL environment
+    THIS dispatch reports, which is only known after it runs — so the caller
+    compares `report.environment` against the parent's and passes the verdict in
+    here, rather than this function reaching for I/O it has no way to do. When
+    it fired, no reused cell is a safe "ok" to show: the cache key matched, but
+    what it matched was computed under conditions this run cannot confirm still
+    hold, for every reused cell alike — stronger than, and takes priority over,
+    the raise-correction below, which only ever invalidates cells AFTER a raise.
+
     **A reused cell after a cell that just raised is corrected to `not_run`.** A
     reused result's own cache-key match says nothing about whether a FULL run of
     this version would even have reached it — `plan.execute` and `plan.reused` are
@@ -1307,9 +1399,13 @@ def _merge_replay_report(
     with `not_run` — matching what a real full run would show, instead of a stale
     "ok" sitting past a traceback a reader would read as "and then it kept going".
     """
+    reused_display = _reused_for_display(plan, parent_seq)
     merged: list[CellResult] = []
     stopped = False
     for cell in report.cells:
+        if environment_drifted and cell.id in plan.reused:
+            merged.append(CellResult(id=cell.id, status="not_run", note=ENVIRONMENT_DRIFT_NOTE))
+            continue
         if stopped and cell.id in plan.reused:
             merged.append(CellResult(id=cell.id, status="not_run", note="an earlier cell raised"))
             continue
@@ -1319,10 +1415,7 @@ def _merge_replay_report(
             if fresh.status == "error" and not spec.cell_by_id(fresh.id).may_raise:
                 stopped = True
         elif cell.id in plan.reused:
-            prior = plan.reused[cell.id]
-            merged.append(
-                prior.model_copy(update={"cached_from_seq": prior.cached_from_seq or parent_seq})
-            )
+            merged.append(reused_display[cell.id])
         else:
             merged.append(cell)  # a genuine not_run: past `run_until`, or never cacheable at all
     return report.model_copy(update={"cells": merged})
@@ -1376,16 +1469,11 @@ def _all_cached_report(
     if run_until is not None:
         cut = spec.index_of(run_until)  # already validated by `plan_run`'s own lookup
     index_of_id = {cell.id: index for index, cell in enumerate(spec.cells)}
+    reused_display = _reused_for_display(plan, parent_seq)
     cells: list[CellResult] = []
     for cell in spec.code_cells():
         if cell.id in plan.reused:
-            # `prior.cached_from_seq or parent_seq`: keep the EARLIEST version a
-            # cell unchanged across several hops actually dates from — see
-            # `_merge_replay_report`'s docstring, the same rule.
-            prior = plan.reused[cell.id]
-            cells.append(
-                prior.model_copy(update={"cached_from_seq": prior.cached_from_seq or parent_seq})
-            )
+            cells.append(reused_display[cell.id])
             continue
         if index_of_id[cell.id] > cut:
             cells.append(CellResult(id=cell.id, status="not_run", note=RUN_UNTIL_NOTE))
@@ -1491,6 +1579,7 @@ async def _handle_author(
 
     if not plan.execute:
         report = _all_cached_report(authored, plan, parent_seq, run_until)
+        environment_drifted = False
     else:
         # S2: what REUSED cells already committed this notebook to, so the
         # sandbox's own hardware-request cap (and the worker-side ledger that
@@ -1506,8 +1595,29 @@ async def _handle_author(
             only=set(plan.execute),
             reused_hardware_request_count=reused_hw_count,
             reused_hardware_qasm_chars=reused_hw_chars,
+            # NIT (round 2): known from `plan` alone, before this dispatch even
+            # starts — so the live `notebook.cells` event this call emits shows a
+            # reused cell as itself from the very first word, never `not_run`.
+            reused_for_live=_reused_for_display(plan, parent_seq),
         )
-        report = _merge_replay_report(report, plan, parent_seq, authored)
+        # Round 2 of the adversarial review: `environment_signature` (S4) is a
+        # constant in production today (`ports.sandbox_environment_id`'s own
+        # docstring), so it cannot catch an in-place image rebuild on its own.
+        # The FRESH dispatch's own reported environment — only known now, after
+        # it ran — is the next-best signal: compare it against what the PARENT
+        # report recorded. Both sides empty (a sandbox crash here, or a report
+        # saved before environment tracking existed there) is "cannot tell", not
+        # "drifted" — never invalidate on missing data.
+        environment_drifted = bool(
+            plan.reused
+            and parent_report is not None
+            and report.environment
+            and parent_report.environment
+            and report.environment != parent_report.environment
+        )
+        report = _merge_replay_report(
+            report, plan, parent_seq, authored, environment_drifted=environment_drifted
+        )
     report = _renumber_execution_counts(report)
     # NIT: the FINAL word on this run's cells, reused ones included (see
     # `emit_final_cells`'s own docstring) — fired for both branches, since the
@@ -1550,6 +1660,9 @@ async def _handle_author(
     turn_content = (
         None if ran_nothing else _authored_turn(report, run_until=run_until, locale=response_locale)
     )
+    if turn_content is not None and environment_drifted:
+        strings = _AUTHORED_TURN.get(response_locale, _AUTHORED_TURN["en"])
+        turn_content += strings["environment_drifted_suffix"]
     await _save_outcome(
         notebook_store=notebook_store,
         scope=scope,
