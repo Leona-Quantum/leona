@@ -38,9 +38,11 @@ from majorana_contracts.notebooks import MAX_CHECK_VALUE_ENTRIES
 
 from leona_notebooks import hardware
 from leona_notebooks.checks import (
+    MAX_CAPTURE_DECOMPOSE_PASSES,
     MAX_CAPTURE_QASM_CHARS,
     MAX_CAPTURE_QUBITS,
     MAX_CAPTURE_TOTAL_CHARS,
+    MAX_EXPANDED_OPERATIONS,
 )
 from leona_notebooks.execution import (
     CellError,
@@ -396,7 +398,7 @@ def _ln_run_cell(cell_id, source, tags=()):
         cell["stderr"], _ = _ln_cap_text(err.getvalue(), _ln_cfg["text_cap"])
         _ln_harvest_figures(cell)
 
-_ln_ck_cfg = {"max_chars": __CK_MAX_CHARS__, "max_total": __CK_MAX_TOTAL__, "max_values": __CK_MAX_VALUES__, "max_qubits": __CK_MAX_QUBITS__}
+_ln_ck_cfg = {"max_chars": __CK_MAX_CHARS__, "max_total": __CK_MAX_TOTAL__, "max_values": __CK_MAX_VALUES__, "max_qubits": __CK_MAX_QUBITS__, "decompose_passes": __CK_DECOMPOSE_PASSES__, "max_ops": __CK_MAX_OPS__}
 _ln_ck_state = {"chars": 0}
 _ln_float = _ln_builtins.float
 
@@ -440,8 +442,19 @@ def _ln_ck_value(value):
             if number is None:
                 return _ln_ck_problem("not_a_number", "a list holding " + _ln_type(item).__name__)
             out.append(number)
-        return {"kind": "value", "value": out}
+        return _ln_ck_charge({"kind": "value", "value": out}, _ln_len(_ln_str(out)))
     return _ln_ck_problem("not_a_number", "a " + _ln_type(value).__name__)
+
+def _ln_ck_charge(record, size):
+    # Circuits and values share one budget, because they share one sidecar: thirteen
+    # 4,096-number values would otherwise overflow it and cost EVERY cell its evidence.
+    if _ln_ck_state["chars"] + size > _ln_cfg_ck_total():
+        return _ln_ck_problem("over_budget")
+    _ln_ck_state["chars"] += size
+    return record
+
+def _ln_cfg_ck_total():
+    return _ln_ck_cfg["max_total"]
 
 def _ln_ck_circuit(value):
     try:
@@ -456,17 +469,31 @@ def _ln_ck_circuit(value):
         return _ln_ck_problem("too_wide", qubits)
     if value.parameters:
         return _ln_ck_problem("unbound_parameters", ", ".join(_ln_builtins.sorted(p.name for p in value.parameters)[:5]))
-    try:
-        qasm = qiskit.qasm3.dumps(value)
-    except _ln_exception as exc:
-        return _ln_ck_problem("not_exportable", _ln_type(exc).__name__ + ": " + _ln_str(exc))
+    # `qc.append(sub_circuit, ...)` puts an instruction in the circuit that OpenQASM 3 has
+    # no way to write, and the export fails. Decomposing replaces such an instruction with
+    # its definition, one level per pass; a few passes, and never a circuit that has grown
+    # past what a check could judge anyway.
+    attempt = value
+    failure = None
+    for _ in _ln_builtins.range(_ln_ck_cfg["decompose_passes"] + 1):
+        try:
+            qasm = qiskit.qasm3.dumps(attempt)
+            failure = None
+            break
+        except _ln_exception as exc:
+            failure = exc
+            if _ln_len(attempt.data) > _ln_ck_cfg["max_ops"]:
+                break
+            try:
+                attempt = attempt.decompose()
+            except _ln_exception:
+                break
+    if failure is not None:
+        return _ln_ck_problem("not_exportable", _ln_type(failure).__name__ + ": " + _ln_str(failure))
     qasm = "".join([qasm])
     if _ln_len(qasm) > _ln_ck_cfg["max_chars"]:
         return _ln_ck_problem("too_large", _ln_len(qasm))
-    if _ln_ck_state["chars"] + _ln_len(qasm) > _ln_ck_cfg["max_total"]:
-        return _ln_ck_problem("over_budget")
-    _ln_ck_state["chars"] += _ln_len(qasm)
-    return {"kind": "circuit", "qasm": qasm, "num_qubits": qubits}
+    return _ln_ck_charge({"kind": "circuit", "qasm": qasm, "num_qubits": qubits}, _ln_len(qasm))
 
 def _ln_capture_check(cell_id, subject, kind):
     # Where a role=check cell sits: record the subject as plain data and run nothing the
@@ -546,6 +573,8 @@ def _check_setup_values() -> dict[str, str]:
         "__CK_MAX_TOTAL__": repr(int(MAX_CAPTURE_TOTAL_CHARS)),
         "__CK_MAX_VALUES__": repr(int(MAX_CHECK_VALUE_ENTRIES)),
         "__CK_MAX_QUBITS__": repr(int(MAX_CAPTURE_QUBITS)),
+        "__CK_DECOMPOSE_PASSES__": repr(int(MAX_CAPTURE_DECOMPOSE_PASSES)),
+        "__CK_MAX_OPS__": repr(int(MAX_EXPANDED_OPERATIONS)),
     }
 
 
