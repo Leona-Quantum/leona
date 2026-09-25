@@ -5020,9 +5020,9 @@ export const NOTEBOOK_CHECK_COPY: Record<PublicLocale, {
     cancel: "Cancel",
     validationHeading: "This check cannot be added yet:",
     statement: {
-      state: (subject, reference) => `Check that ${subject} prepares ${reference}.`,
+      state: (subject, reference) => `Check that ${subject} prepares the ${reference}.`,
       stateAmplitudes: (subject) => `Check that ${subject}'s state matches the given amplitudes.`,
-      unitary: (subject, reference) => `Check that ${subject}'s unitary matches ${reference}.`,
+      unitary: (subject, reference) => `Check that ${subject}'s unitary matches the ${reference}.`,
       distribution: (subject) => `Check that ${subject}'s measured distribution matches the given probabilities.`,
       energyGround: (subject) => `Check the energy of ${subject} against the exact ground state energy.`,
       energyTarget: (subject, target) => `Check the energy of ${subject} against ${target || "the target"}.`,

@@ -57,13 +57,20 @@ export function NotebookAddCheckForm({
   onCancel: () => void;
   onSubmit: (property: CheckProperty) => void;
 }) {
-  const [draft, setDraft] = useState<CheckDraft>(() => emptyCheckDraft("state", subjectHint));
-  const [errors, setErrors] = useState<string[]>([]);
   // `draftCheckStatement`'s labels: `copy.statement`'s per-kind sentences plus
   // `copy.referenceFamilyOption` doing double duty as the reference's human name —
   // the same words the picker's own dropdown shows, so the auto-drafted sentence
   // ("Check that qc prepares GHZ state.") always agrees with what the reader picked.
   const statementLabels = { ...copy.statement, referenceLabel: copy.referenceFamilyOption };
+  const [draft, setDraft] = useState<CheckDraft>(() => {
+    const initial = emptyCheckDraft("state", subjectHint);
+    // The statement is "auto-drafted from the choices" from the moment the form
+    // opens, not only after the reader's first edit — the default kind/reference
+    // already say something ("Check that qc prepares the Bell state."), and an
+    // empty field here would read as broken, not as "nothing chosen yet".
+    return { ...initial, statement: draftCheckStatement(initial, statementLabels) };
+  });
+  const [errors, setErrors] = useState<string[]>([]);
 
   function update(patch: Partial<CheckDraft>) {
     setDraft((current) => {
