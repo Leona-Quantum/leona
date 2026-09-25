@@ -1918,6 +1918,36 @@ async def test_reused_cells_appear_on_the_live_event_and_the_all_cached_path_emi
     assert by_id["c03"]["cached_from_seq"] == 1
 
 
+def test_sandbox_environment_id_reads_the_sandboxs_own_property_with_a_safe_fallback() -> None:
+    """S4: `ProductionNotebookPorts.sandbox_environment_id` is what `_handle_author`
+    folds into `plan_run`'s `environment_signature` — read straight off the
+    configured sandbox (`VercelSandbox`/`LocalSubprocessSandbox` both already
+    expose `environment_id`), never empty when the sandbox has one, and safely
+    empty (not an `AttributeError`) for a test double that has never heard of it."""
+
+    class WithId:
+        environment_id = "vercel:majorana-runner"
+
+    class WithoutId:
+        pass
+
+    ports_with = nh.ProductionNotebookPorts(
+        llm=QueueLLM([]),
+        sandbox=WithId(),
+        sink=FakeEventSink(None, None, None),
+        response_locale="en",
+    )
+    assert ports_with.sandbox_environment_id == "vercel:majorana-runner"
+
+    ports_without = nh.ProductionNotebookPorts(
+        llm=QueueLLM([]),
+        sandbox=WithoutId(),
+        sink=FakeEventSink(None, None, None),
+        response_locale="en",
+    )
+    assert ports_without.sandbox_environment_id == ""
+
+
 def test_renumber_execution_counts_fixes_a_merge_produced_duplicate() -> None:
     """NIT: a merged report otherwise mixes two unrelated counters — THIS
     dispatch's own (restarted at 1 for whatever subset it ran) on fresh cells,

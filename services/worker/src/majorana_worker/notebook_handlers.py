@@ -442,6 +442,20 @@ class ProductionNotebookPorts(NotebookPorts):
         #: this port's `repair()`, in the same order, starting from the same zero.
         self._repair_attempt = 0
 
+    @property
+    def sandbox_environment_id(self) -> str:
+        """S4 (adversarial review): what `leona_notebooks.dependencies.plan_run`
+        folds into every cell's cache key as `environment_signature`, so a cell
+        cached against one sandbox image is never matched against a different one
+        — a redeploy can pin different framework versions, and a cell result
+        computed under the old ones is not equivalent evidence for the new ones,
+        even with byte-identical source. Both real providers
+        (`VercelSandbox`/`LocalSubprocessSandbox`) already expose
+        `environment_id` for exactly this kind of reproducibility bookkeeping;
+        `getattr` with an empty-string fallback so a test double that has never
+        heard of it (most of this test suite's `FakeSandbox`) does not need one."""
+        return str(getattr(self._sandbox, "environment_id", "") or "")
+
     async def _complete(
         self,
         *,
@@ -1467,7 +1481,13 @@ async def _handle_author(
         parent_spec, parent_report, parent_seq = await _load_parent_for_replay(
             notebook_store, scope, session, parent_version_id
         )
-    plan = plan_run(authored, parent_spec, parent_report, run_until)
+    plan = plan_run(
+        authored,
+        parent_spec,
+        parent_report,
+        run_until,
+        environment_signature=ports.sandbox_environment_id,
+    )
 
     if not plan.execute:
         report = _all_cached_report(authored, plan, parent_seq, run_until)

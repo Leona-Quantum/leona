@@ -664,15 +664,26 @@ def cell_cache_payload(
     dep_keys: list[str],
     framework_name: str,
     framework_version: str,
+    environment_signature: str = "",
 ) -> dict[str, Any]:
     """The JSON-able payload one cell's Merkle cache key hashes: prepared source,
     tags, the execute flag, the framework's name and version, the SORTED cache keys
     of its own direct dependencies (not their ids — their keys, so the hash is blind
     to a cosmetic reorder and sensitive to anything that actually changed upstream),
-    and — for a `role="check"` cell only — its check property (`check_property_payload`).
+    — for a `role="check"` cell only — its check property (`check_property_payload`),
+    and `environment_signature`.
 
-    A free function, not inlined in `_cache_keys_from_graph`'s loop, so it can be
-    tested directly against a fake cell without building a whole `NotebookSpec`.
+    `environment_signature` (S4, adversarial review): identifies the SANDBOX the
+    cell would run in, so a cell cached against one runner image is never reused
+    against a different one — a redeploy could pin different framework versions,
+    and a cell result computed under the OLD ones is not equivalent evidence for
+    the NEW ones, even with byte-identical source. The caller supplies it (this
+    module never imports `majorana_sandbox` — see the module docstring); an empty
+    string (the default, and what every caller that predates S4 gets) folds in as
+    a constant and changes nothing about which cells match each other, only
+    whether TODAY's keys match a PARENT computed before this field existed (they
+    will not — a one-time, safe cache miss, the same "everything stale" answer a
+    missing parent already gets).
     """
     payload: dict[str, Any] = {
         "source": prepared_source,
@@ -681,13 +692,16 @@ def cell_cache_payload(
         "framework_name": framework_name,
         "framework_version": framework_version,
         "deps": sorted(dep_keys),
+        "environment_signature": environment_signature,
     }
     if cell.role == CHECK_ROLE:
         payload["check_property"] = check_property_payload(cell)
     return payload
 
 
-def _cache_keys_from_graph(graph: DependencyGraph, spec: NotebookSpec) -> dict[str, str]:
+def _cache_keys_from_graph(
+    graph: DependencyGraph, spec: NotebookSpec, environment_signature: str = ""
+) -> dict[str, str]:
     keys: dict[str, str] = {}
     cells_by_id = {cell.id: cell for cell in spec.cells}
     framework_name = str(spec.framework.name)
@@ -702,19 +716,21 @@ def _cache_keys_from_graph(graph: DependencyGraph, spec: NotebookSpec) -> dict[s
             dep_keys=dep_keys,
             framework_name=framework_name,
             framework_version=framework_version,
+            environment_signature=environment_signature,
         )
         blob = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         keys[cell_id] = hashlib.sha256(blob).hexdigest()
     return keys
 
 
-def cache_keys(spec: NotebookSpec) -> dict[str, str]:
+def cache_keys(spec: NotebookSpec, environment_signature: str = "") -> dict[str, str]:
     """Every graph cell's Merkle cache key (DESIGN §3) — `cell_id -> sha256 hex
     digest`. An edit to any upstream cell changes every downstream key transitively
     (each key folds in its own direct deps' keys); an edit to an unrelated cell, or
-    merely reordering one, changes no key it does not itself depend on."""
+    merely reordering one, changes no key it does not itself depend on.
+    `environment_signature`: see `cell_cache_payload`'s docstring (S4)."""
     graph = build_dependency_graph(spec)
-    return _cache_keys_from_graph(graph, spec)
+    return _cache_keys_from_graph(graph, spec, environment_signature)
 
 
 # --------------------------------------------------------------------------- plan_run
@@ -785,6 +801,7 @@ def plan_run(
     parent_spec: NotebookSpec | None,
     parent_report: ExecutionReport | None,
     target_cell_id: str | None = None,
+    environment_signature: str = "",
 ) -> RunPlan:
     """DESIGN §3's plan: a cell is STALE if its (this run's) cache key has no
     `status == "ok"` result under the same key in `parent_report`. `execute` is the
@@ -817,9 +834,14 @@ def plan_run(
     report was computed against makes the parent's cache keys untrustworthy as a
     SET (not just individually), so a structural change treats the parent as if it
     had no report at all, the same "everything stale" answer a missing parent gets.
+
+    `environment_signature` (S4): folded into every cell's own cache key (see
+    `cell_cache_payload`) — a caller identifying which SANDBOX this run would use
+    means a cell cached against a different one is never matched, even with
+    byte-identical source. Empty by default (every caller that predates S4).
     """
     graph = build_dependency_graph(spec)
-    keys = _cache_keys_from_graph(graph, spec)
+    keys = _cache_keys_from_graph(graph, spec, environment_signature)
 
     position = {cell.id: index for index, cell in enumerate(spec.cells)}
     if target_cell_id is not None:

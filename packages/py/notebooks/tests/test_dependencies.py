@@ -599,6 +599,44 @@ def test_run_plan_is_a_dataclass_with_the_documented_fields() -> None:
     assert set(RunPlan.__dataclass_fields__) == {"execute", "reused", "not_run", "cache_keys"}
 
 
+# --------------------------------------------------------------------------- S4: environment signature
+
+
+def test_environment_signature_changes_every_cache_key() -> None:
+    spec = _spec(_ten_cell_source())
+    a = cache_keys(spec, environment_signature="vercel:majorana-runner")
+    b = cache_keys(spec, environment_signature="vercel:majorana-runner-v2")
+    assert set(a) == set(b)
+    assert all(a[cid] != b[cid] for cid in a)
+
+
+def test_empty_environment_signature_is_the_pre_s4_default() -> None:
+    spec = _spec(_ten_cell_source())
+    assert cache_keys(spec) == cache_keys(spec, environment_signature="")
+
+
+def test_a_different_sandbox_environment_forces_a_full_run_even_with_identical_source() -> None:
+    # A cell cached against one runner image must never be reused against a
+    # different one, even with byte-identical source — a redeploy can pin
+    # different framework versions.
+    spec = _spec(_ten_cell_source())
+    keys = cache_keys(spec, environment_signature="vercel:majorana-runner")
+    report = _ok_report_from_keys(spec, keys)
+    plan = plan_run(spec, spec, report, None, environment_signature="vercel:majorana-runner-v2")
+    assert plan.execute == set(keys)
+    assert plan.reused == {}
+
+
+def test_the_same_sandbox_environment_still_allows_reuse() -> None:
+    # The control: the field itself must not force a full run when it is UNCHANGED.
+    spec = _spec(_ten_cell_source())
+    keys = cache_keys(spec, environment_signature="vercel:majorana-runner")
+    report = _ok_report_from_keys(spec, keys)
+    plan = plan_run(spec, spec, report, None, environment_signature="vercel:majorana-runner")
+    assert plan.execute == frozenset()
+    assert set(plan.reused) == set(keys)
+
+
 # --------------------------------------------------------------------------- ground truth
 #
 # The adversarial review that found B1(a)-(e) and S3 built a small harness comparing
