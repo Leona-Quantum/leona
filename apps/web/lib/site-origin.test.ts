@@ -202,6 +202,7 @@ test("middleware performs the canonical-host hop, permanently and before the cou
 const CANONICAL_PAGE_SOURCES: Record<string, string> = {
   "/": "app/[locale]/page.tsx",
   "/about": "app/[locale]/about/page.tsx",
+  "/benchmarks": "app/[locale]/benchmarks/page.tsx",
   "/events/qiskit-fall-fest-2026": "app/events/qiskit-fall-fest-2026/page.tsx",
   "/pricing": "app/[locale]/pricing/page.tsx",
   "/workspace": "app/[locale]/workspace/page.tsx",
