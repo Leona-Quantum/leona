@@ -233,20 +233,23 @@ CheckStatus = Literal["pass", "fail", "inconclusive"]
 
 #: Library references a `state` check may name. Built by trusted worker code
 #: (`leona_notebooks.checks`), never written by the model or the reader. The widths stop
-#: at 24 because that is `majorana_verification.statevector.STATEVECTOR_MAX_QUBITS`, the
-#: widest statevector the worker simulates (restated: this package imports nothing
-#: internal).
+#: at `CHECK_STATE_MAX_QUBITS`.
 CHECK_STATE_REFERENCE_RE = re.compile(
-    r"^(?:bell(?::(?:phi|psi)[+-])?|(?:ghz|w|uniform)\((?:[1-9]|1\d|2[0-4])\))$"
+    r"^(?:bell(?::(?:phi|psi)[+-])?|(?:ghz|w|uniform)\((?:[1-9]|1\d)\))$"
 )
 #: Library references a `unitary` check may name, up to `CHECK_UNITARY_MAX_QUBITS`.
 CHECK_UNITARY_REFERENCE_RE = re.compile(r"^i?qft\((?:[1-9]|10)\)$")
-#: The widest circuit a check of each kind judges. `state`, `distribution` and `energy` stop
-#: at `STATEVECTOR_MAX_QUBITS` (24; `energy` is also held to 10 by its Hamiltonian); `unitary`
-#: stops at 10, below the verification package's 12, because the worker is one instance
-#: running every user's jobs and a 12-qubit unitary is 256 MiB (review of PR 1011). Restated
-#: here because this package imports nothing internal; `leona_notebooks.checks` reads these.
-CHECK_STATE_MAX_QUBITS = 24
+#: The widest circuit a check of each kind judges, sized so one check fits in about 150 MiB
+#: above the judging process's own footprint: the worker and the API are 512 MiB
+#: containers, shared with the process that started the judge (review of PR 1011). Measured
+#: and fitted in `leona_notebooks.checks` (see the numbers there): a failing state check
+#: costs about 156 bytes per amplitude, so 19 qubits is about 78 MiB and 20 about 156 MiB;
+#: a failing distribution check about 2.6 KB per outcome (it keeps one dict entry per
+#: outcome), so 15 qubits is about 82 MiB; a 10-qubit unitary check peaked 56 MiB above the
+#: footprint, measured. `energy` is also held to 10 by its Hamiltonian. Restated here
+#: because this package imports nothing internal; `leona_notebooks.checks` reads these.
+CHECK_STATE_MAX_QUBITS = 19
+CHECK_DISTRIBUTION_MAX_QUBITS = 15
 CHECK_UNITARY_MAX_QUBITS = 10
 #: The names an amplitude or probability expression may use. The evaluator
 #: (`leona_notebooks.checks.evaluate_expression`) walks an `ast` against this allowlist and
@@ -386,7 +389,7 @@ def _a(kind: str) -> str:
     return ("an " if kind[:1] in "aeio" else "a ") + kind  # "a unitary": a "you" sound
 
 
-def _validate_bitstring_keys(name: str, keys: list[str], *, max_width: int = 24) -> int:
+def _validate_bitstring_keys(name: str, keys: list[str], *, max_width: int) -> int:
     if not keys:
         raise ValueError(f"{name} must name at least one basis state")
     widths = {len(key) for key in keys}
@@ -510,7 +513,13 @@ class CheckProperty(_Model):
             mapping = getattr(self, name)
             if mapping is None:
                 continue
-            _validate_bitstring_keys(name, list(mapping))
+            _validate_bitstring_keys(
+                name,
+                list(mapping),
+                max_width=CHECK_STATE_MAX_QUBITS
+                if name == "amplitudes"
+                else CHECK_DISTRIBUTION_MAX_QUBITS,
+            )
             for key, entry in mapping.items():
                 if isinstance(entry, str):
                     _validate_check_expression(entry)

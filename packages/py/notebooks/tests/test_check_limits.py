@@ -86,11 +86,11 @@ def _bell() -> QuantumCircuit:
 @pytest.mark.parametrize(
     "fields",
     [
-        {"kind": "state", "reference": "ghz(24)"},
+        {"kind": "state", "reference": "ghz(19)"},
         {"kind": "unitary", "reference": "qft(10)"},
         {
             "kind": "state",
-            "reference_qasm": 'OPENQASM 3.0; include "stdgates.inc"; qubit[20] q; h q[0];',
+            "reference_qasm": 'OPENQASM 3.0; include "stdgates.inc"; qubit[19] q; h q[0];',
         },
         {
             "kind": "unitary",
@@ -331,3 +331,31 @@ def test_no_reader_facing_string_in_the_engine_has_a_dash_pair() -> None:
         and ("—" in node.value or "–" in node.value)
     ]
     assert offending == []
+
+
+def test_each_kind_stops_where_one_check_fits_in_about_150_mib() -> None:
+    """Coordinator, 512 MiB containers: state 19, distribution 15, unitary and energy 10.
+    The widths come from the measured and fitted costs in checks.py."""
+    from majorana_contracts.notebooks import (
+        CHECK_DISTRIBUTION_MAX_QUBITS,
+        CHECK_STATE_MAX_QUBITS,
+        CHECK_UNITARY_MAX_QUBITS,
+    )
+
+    assert (CHECK_STATE_MAX_QUBITS, CHECK_DISTRIBUTION_MAX_QUBITS, CHECK_UNITARY_MAX_QUBITS) == (
+        19,
+        15,
+        10,
+    )
+    with pytest.raises(ValidationError, match="not a library reference"):
+        CheckProperty(kind="state", subject="qc", reference="ghz(20)")
+    with pytest.raises(ValidationError, match="at most 15"):
+        CheckProperty(kind="distribution", subject="qc", probabilities={"0" * 16: 1})
+    wide = QuantumCircuit(16)
+    wide.measure_all()
+    verdict = evaluate_check(
+        CheckProperty(kind="distribution", subject="qc", probabilities={"0" * 15: 1}),
+        CheckCapture.from_circuit(wide),
+    )
+    assert verdict.status == "inconclusive" and "at most 15" in verdict.detail
+    assert verdict.qubits == 16, "a too-wide verdict says how wide"

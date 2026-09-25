@@ -172,3 +172,54 @@ async def test_a_child_that_crashes_says_so_and_blames_nothing_else() -> None:
         assert "stopped unexpectedly" in result.verdict.detail
         assert "memory" not in result.verdict.detail
         assert result.final is False
+
+
+_GROWS = (
+    "import sys, json, resource, time\n"
+    "sys.stdin.read()\n"
+    "rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss\n"
+    "rss = rss if sys.platform == 'darwin' else rss * 1024\n"
+    "print(json.dumps({'event': 'ready', 'rss_bytes': rss}), flush=True)\n"
+    "block = bytearray(96 * 2**20)\n"
+    "for i in range(0, len(block), 4096):\n"
+    "    block[i] = 1\n"
+    "time.sleep(30)\n"
+)
+
+
+async def test_the_parent_kills_a_child_that_outgrows_its_memory_on_any_platform() -> None:
+    """The coordinator's backstop: RLIMIT_AS is ignored on macOS, so the parent also reads
+    the child's resident size and kills it above footprint + headroom. The stand-in child
+    touches 96 MiB against 16 MiB of headroom (light, and far from the container's limit)."""
+    started = time.monotonic()
+    judged = await judge_checks(
+        _jobs(), budget_s=20, memory_headroom_bytes=16 * 2**20, _argv=[sys.executable, "-c", _GROWS]
+    )
+    assert time.monotonic() - started < 15, "killed by the memory watch, not the clock"
+    for result in judged.values():
+        assert result.verdict.status == "inconclusive"
+        assert "ran out of memory" in result.verdict.detail
+
+
+async def test_the_same_child_within_its_headroom_is_left_alone() -> None:
+    quick = _GROWS.replace("time.sleep(30)", "print(json.dumps({'event': 'done'}), flush=True)")
+    judged = await judge_checks(
+        _jobs(), budget_s=20, memory_headroom_bytes=512 * 2**20, _argv=[sys.executable, "-c", quick]
+    )
+    # the stand-in judged nothing, so every job is filled in, but NOT as out of memory
+    for result in judged.values():
+        assert "ran out of memory" not in result.verdict.detail
+
+
+def test_the_headroom_defaults_to_192_mib_and_the_environment_can_change_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from leona_notebooks.checks import CHECK_MEMORY_HEADROOM_BYTES, check_judge_headroom_bytes
+
+    monkeypatch.delenv("LEONA_CHECK_JUDGE_HEADROOM_MB", raising=False)
+    assert CHECK_MEMORY_HEADROOM_BYTES == 192 * 2**20
+    assert check_judge_headroom_bytes() == 192 * 2**20
+    monkeypatch.setenv("LEONA_CHECK_JUDGE_HEADROOM_MB", "96")
+    assert check_judge_headroom_bytes() == 96 * 2**20
+    monkeypatch.setenv("LEONA_CHECK_JUDGE_HEADROOM_MB", "lots")
+    assert check_judge_headroom_bytes() == 192 * 2**20

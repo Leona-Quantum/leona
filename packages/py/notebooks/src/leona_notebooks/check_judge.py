@@ -121,7 +121,8 @@ def main() -> int:
             )
         else:
             _emit({"event": "teeth", "id": job_id, "teeth": item.model_dump(mode="json")})
-    _emit({"event": "done"})
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    _emit({"event": "done", "peak_rss_bytes": peak if sys.platform == "darwin" else peak * 1024})
     return 0
 
 
