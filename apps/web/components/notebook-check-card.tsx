@@ -48,7 +48,7 @@ export function NotebookCheckCard({
   return (
     <div className="mj-notebook-check">
       <p className="mj-notebook-check-statement">{property.statement || cell.source}</p>
-      <p className="mj-notebook-check-basis mj-mono-muted">{copy.basisLabel[basis]}</p>
+      <p className="mj-notebook-check-basis">{copy.basisLabel[basis]}</p>
 
       <div className="mj-notebook-check-author">
         <span className="mj-notebook-check-author-text">
@@ -85,7 +85,7 @@ export function NotebookCheckCard({
           ) : null}
         </div>
       ) : (
-        <p className="mj-notebook-check-not-run mj-mono-muted">{copy.notRunYet}</p>
+        <p className="mj-notebook-check-not-run">{copy.notRunYet}</p>
       )}
 
       {/* Teeth only when the verdict IS a pass — a fail or inconclusive check was never
@@ -98,8 +98,8 @@ export function NotebookCheckCard({
           <summary>{copy.qasmDisclosureLabel}</summary>
           {verdict.subject_qasm ? <NotebookCheckQasm qasm={verdict.subject_qasm} copy={copy} /> : null}
           {verdict.subject_fingerprint ? (
-            <p className="mj-notebook-check-fingerprint mj-mono-muted">
-              {copy.fingerprintLabel}: <code>{verdict.subject_fingerprint}</code>
+            <p className="mj-notebook-check-fingerprint">
+              {copy.fingerprintLabel}: <code className="mj-mono-muted">{verdict.subject_fingerprint}</code>
             </p>
           ) : null}
         </details>
@@ -135,7 +135,7 @@ function NotebookCheckQasm({ qasm, copy }: { qasm: string; copy: NotebookCheckCo
 function NotebookCheckTeeth({ teeth, copy }: { teeth: CheckTeeth; copy: NotebookCheckCopy }) {
   if (teeth.status === "not_measured") {
     return (
-      <p className="mj-notebook-check-teeth mj-mono-muted" title={copy.teethTooltip}>
+      <p className="mj-notebook-check-teeth" title={copy.teethTooltip}>
         {copy.teethNotMeasured(teeth.reason)}
       </p>
     );
@@ -162,7 +162,9 @@ function NotebookCheckTeeth({ teeth, copy }: { teeth: CheckTeeth; copy: Notebook
           </ul>
         </details>
       ) : null}
-      <p className="mj-notebook-check-teeth-equivalent mj-mono-muted">{copy.teethEquivalentLeftOut(teeth.equivalent)}</p>
+      {teeth.equivalent > 0 ? (
+        <p className="mj-notebook-check-teeth-equivalent">{copy.teethEquivalentLeftOut(teeth.equivalent)}</p>
+      ) : null}
     </div>
   );
 }

@@ -561,6 +561,26 @@ export function checkAuthorBadge(property: Pick<CheckProperty, "author" | "citat
   return { kind: "user" };
 }
 
+// ------------------------------------------------------------------------- the cell-head pill
+
+export type CheckCellPillStatus = "pass" | "fail" | "inconclusive" | "not_run" | "error";
+
+/** What a `role=check` cell's head pill should show: the VERDICT, not the generic
+ * capture status a plain code cell's pill shows. `cell.status === "ok"` only means the
+ * worker's capture function ran — a check that captured cleanly and then judged the
+ * subject as a fail is still "ok" by that measure, and a pill reading "Passed" on a
+ * failing check (DESIGN.md §1.5's own words never say "verified", and this bug says
+ * "Passed" regardless) is actively misleading. `"error"` is the one case the capture
+ * status still wins outright: the sandbox crashed before it ever captured a subject, a
+ * different failure from a judged check that failed, and there is no verdict to prefer
+ * over it (`cell.checkVerdict` is `null` in that case too, same as not-run — this check
+ * runs first so a genuine crash is never silently read as "not run yet"). */
+export function checkCellPillStatus(cell: Pick<NotebookCellView, "status" | "checkVerdict">): CheckCellPillStatus {
+  if (cell.status === "error") return "error";
+  if (!cell.checkVerdict) return "not_run";
+  return cell.checkVerdict.status;
+}
+
 // ------------------------------------------------------------------------- notebook-level summary
 
 export interface CheckSummaryCounts {

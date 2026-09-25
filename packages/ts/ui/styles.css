@@ -15027,6 +15027,26 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
   border-left-color: var(--accent);
   border-color: var(--accent);
 }
+/* A check cell's card echoes its own VERDICT in the left border, not the generic
+   accent every other code cell gets — "ok" only means the worker's capture ran, and a
+   card left green over a failing verdict box would repeat the same bug the head pill
+   had. Colour is never the only signal here: the pill right below always carries the
+   matching word ("Pass"/"Fail"/"Inconclusive"/"Not run yet"/"Error"). */
+.mj-notebook-check-cell[data-status="pass"] {
+  border-left-color: var(--ok);
+}
+.mj-notebook-check-cell[data-status="fail"] {
+  border-left-color: var(--err);
+}
+.mj-notebook-check-cell[data-status="inconclusive"] {
+  border-left-color: var(--warn);
+}
+.mj-notebook-check-cell[data-status="not_run"] {
+  border-left-color: var(--border-0);
+}
+.mj-notebook-check-cell[data-status="error"] {
+  border-left-color: var(--err);
+}
 .mj-notebook-cell-edit-actions {
   display: flex;
   flex-wrap: wrap;
@@ -15070,6 +15090,18 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
 .mj-notebook-cell-pill[data-status="skipped"],
 .mj-notebook-cell-pill[data-status="not_run"] {
   color: var(--text-2);
+}
+/* A check cell's pill (ai-ops 382 fix): the verdict's own status values, reused
+   straight off `CheckVerdict.status` rather than invented pill-only names, so this
+   agrees by construction with `.mj-notebook-check-chip` further down the same card. */
+.mj-notebook-cell-pill[data-status="pass"] {
+  color: var(--ok);
+}
+.mj-notebook-cell-pill[data-status="fail"] {
+  color: var(--err);
+}
+.mj-notebook-cell-pill[data-status="inconclusive"] {
+  color: var(--warn);
 }
 .mj-notebook-cell-actions {
   margin-left: auto;
@@ -15353,6 +15385,7 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
 }
 .mj-notebook-check-basis {
   margin: 0;
+  color: var(--text-1);
   font-size: var(--fs-12);
 }
 .mj-notebook-check-author {
@@ -15416,13 +15449,19 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
 }
 .mj-notebook-check-not-run {
   margin: var(--sp-1) 0 0;
+  color: var(--text-1);
   font-size: var(--fs-13);
 }
+/* Also the not-measured teeth paragraph's own shell (`NotebookCheckTeeth` returns just
+   this `<p>` in that branch, no wrapping `<div>`), so it needs the muted colour a plain
+   selector on `<p>` would not reach once the "measured" branch's own `<p>`s (below) have
+   their own rules. */
 .mj-notebook-check-teeth {
   display: grid;
   gap: var(--sp-1);
   margin-top: var(--sp-1);
   padding: var(--sp-2) var(--sp-3);
+  color: var(--text-1);
   border: 1px solid var(--border-0);
   border-radius: var(--radius-control);
   background: var(--bg-0);
@@ -15461,6 +15500,7 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
 }
 .mj-notebook-check-fingerprint {
   margin: var(--sp-1) 0 0;
+  color: var(--text-1);
   font-size: var(--fs-12);
   word-break: break-all;
 }
@@ -15540,6 +15580,7 @@ html:not([data-auth="in"]) .mj-auth-slot[data-auth-slot="in"] {
   outline-offset: 2px;
 }
 .mj-notebook-add-check-hint {
+  color: var(--text-1);
   font-size: var(--fs-12);
 }
 .mj-notebook-add-check-table {

@@ -11,7 +11,7 @@ import { NotebookAddCheckForm } from "./notebook-add-check-form";
 import { cellDomId } from "../lib/notebook-ide";
 import { lintMessage, lintNotebook, type LintFinding } from "../lib/notebook-lint";
 import { NotebookHardwareRequests, type NotebookHardwareContext } from "./notebook-hardware-card";
-import { checkSummaryCounts, type CheckProperty } from "../lib/notebook-checks";
+import { checkCellPillStatus, checkSummaryCounts, type CheckProperty } from "../lib/notebook-checks";
 import type { NotebookCellStatus, NotebookCellView } from "../lib/notebook-view";
 import type { PublicLocale } from "../lib/public-locale";
 import { NOTEBOOK_CHECK_COPY, WORKSPACE_COPY } from "../lib/workspace-locale";
@@ -419,6 +419,24 @@ function NotebookCellCard({
   const showExplainError = cell.error !== null;
   const showCheckAttempt = cell.role !== null && CHECKABLE_ROLES.has(cell.role);
   const isCheckCell = cell.role === "check" && cell.checkProperty !== null;
+  // A check cell's head pill shows the VERDICT (pass/fail/inconclusive/not run yet),
+  // never the generic capture status a plain code cell's pill shows — "ok" only means
+  // the worker's capture function ran, and a check that captured cleanly then judged
+  // its subject a FAIL must never read "Passed" (the bug this fixes). `error` still
+  // wins: that means the sandbox itself crashed before capturing anything. Kept as its
+  // own nullable value (not folded into one ternary with `pillLabel`) so its type stays
+  // `CheckCellPillStatus`, not the union with `NotebookCellStatus` a single combined
+  // ternary would widen it to — TS cannot otherwise prove `checkCopy.statusChip` is
+  // indexed with one of its three keys rather than "ok"/"skipped" too.
+  const checkPillStatus = isCheckCell ? checkCellPillStatus(cell) : null;
+  const pillStatus = checkPillStatus ?? cell.status;
+  const pillLabel = checkPillStatus
+    ? checkPillStatus === "error"
+      ? copy.cellStatus.error
+      : checkPillStatus === "not_run"
+        ? checkCopy.notRunYet
+        : checkCopy.statusChip[checkPillStatus]
+    : copy.cellStatus[cell.status];
 
   function submitAttempt() {
     if (!onCellAction || !attemptText.trim() || locked) return;
@@ -429,14 +447,14 @@ function NotebookCellCard({
   return (
     <article
       id={cellDomId(cell.id)}
-      className="mj-notebook-cell"
+      className={isCheckCell ? "mj-notebook-cell mj-notebook-check-cell" : "mj-notebook-cell"}
       data-kind={cell.kind}
-      data-status={cell.status}
+      data-status={pillStatus}
       tabIndex={0}
     >
       <div className="mj-notebook-cell-head">
         {cell.role ? <span className="mj-notebook-cell-role">{cell.role}</span> : null}
-        <span className="mj-notebook-cell-pill" data-status={cell.status}>{copy.cellStatus[cell.status]}</span>
+        <span className="mj-notebook-cell-pill" data-status={pillStatus}>{pillLabel}</span>
         {onCellAction ? (
           <div className="mj-notebook-cell-actions mj-library-row-actions">
             <button type="button" disabled={busy} onClick={() => onCellAction(cell.id, "explain")}>{copy.actionExplain}</button>

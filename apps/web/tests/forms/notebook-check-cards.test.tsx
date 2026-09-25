@@ -95,13 +95,76 @@ function renderCheck(
   return render(<NotebookView cells={cells} locale="en" framework="qiskit" {...extra} />);
 }
 
+/** The cell-head pill's own text — scoped to that one element, since the verdict chip
+ * inside the card can carry the same word ("Pass"/"Fail"/"Inconclusive"), and a plain
+ * `getByText` would throw on the ambiguity rather than tell them apart. */
+function pillText(view: ReturnType<typeof render>): string {
+  const pill = view.container.querySelector(".mj-notebook-cell-pill");
+  assert.ok(pill, "no cell-head pill on screen");
+  return pill!.textContent ?? "";
+}
+
 // -------------------------------------------------------------------------- verdict states
 
 test("a not-yet-run check says so, and shows no verdict chip", () => {
   const view = renderCheck(baseProperty(), null);
-  assert.ok(view.getByText("Not run yet"));
+  assert.equal(pillText(view), "Not run yet");
+  assert.ok(view.getAllByText("Not run yet").length >= 2); // the pill AND the card body
   assert.equal(view.queryByText("Pass"), null);
   assert.equal(view.queryByText("Fail"), null);
+});
+
+// The bug this guards: the pill is `NotebookCellCard`'s generic head pill, which for
+// every other cell just reflects `cell.status` (ok/error/skipped/not_run). For a check
+// cell, `status: "ok"` only means the worker's capture ran — the verdict can still be a
+// fail, and a pill reading "Passed" over a failing verdict box is actively misleading.
+test("a check cell with status ok and verdict fail renders \"Fail\" in the pill — never \"Passed\"", () => {
+  const view = renderCheck(
+    baseProperty(),
+    { status: "fail", basis: "circuit", checked_against: "a reference", measure: "off by a lot", detail: "wrong phase", qubits: 1, subject_fingerprint: null, subject_qasm: null, teeth: null },
+  );
+  assert.equal(pillText(view), "Fail");
+  assert.equal(view.queryByText("Passed"), null);
+});
+
+test("a check cell with status ok and an inconclusive verdict renders \"Inconclusive\" in the pill — never \"Passed\"", () => {
+  const view = renderCheck(
+    baseProperty(),
+    { status: "inconclusive", basis: "circuit", checked_against: "", measure: "", detail: "could not judge it", qubits: null, subject_fingerprint: null, subject_qasm: null, teeth: null },
+  );
+  assert.equal(pillText(view), "Inconclusive");
+  assert.equal(view.queryByText("Passed"), null);
+});
+
+// The capture itself crashing is a different failure from a judged check that failed —
+// the pill keeps showing Error, not a verdict there is none of.
+test("a check cell whose capture crashed (status error) shows Error, not a verdict word", () => {
+  const cells = notebookCellViews([checkCell("c01", baseProperty())], {
+    notebook_slug: "s",
+    ok: false,
+    runner: "sandbox",
+    duration_ms: 0,
+    environment: {},
+    dropped_bytes: 0,
+    note: "",
+    cells: [
+      {
+        id: "c01",
+        status: "error",
+        stdout: "",
+        stderr: "",
+        outputs: [],
+        error: { ename: "RuntimeError", evalue: "sandbox crashed", traceback: [] },
+        duration_ms: 1,
+        execution_count: 1,
+        note: "",
+        check: null,
+      },
+    ],
+  });
+  const view = render(<NotebookView cells={cells} locale="en" framework="qiskit" />);
+  assert.equal(pillText(view), "Error");
+  assert.equal(view.queryByText("Passed"), null);
 });
 
 test("a passing check with teeth measured shows the chip, the caught line, and the survivor disclosure", () => {
@@ -117,7 +180,8 @@ test("a passing check with teeth measured shows the chip, the caught line, and t
     baseProperty(),
     { status: "pass", basis: "circuit", checked_against: "Qiskit's Bell state, exact fidelity", measure: "fidelity 0.999999 (needs ≥ 0.999999)", detail: "", qubits: 2, subject_fingerprint: FINGERPRINT, subject_qasm: "OPENQASM 3;\nqubit[2] q;\nh q[0];\ncx q[0], q[1];\n", teeth },
   );
-  assert.ok(view.getByText("Pass"));
+  assert.equal(pillText(view), "Pass");
+  assert.ok(view.getAllByText("Pass").length >= 2); // the pill AND the verdict chip
   assert.ok(view.getByText("Checked against Qiskit's Bell state, exact fidelity"));
   assert.match(view.getByText(/fidelity 0.999999/).textContent ?? "", /needs/);
   assert.ok(view.getByText("Caught 11 of 12 changes that alter the circuit's output"));
@@ -166,7 +230,8 @@ test("a failing check shows the diagnosis prominently; teeth are not shown at al
       teeth,
     },
   );
-  assert.ok(view.getByText("Fail"));
+  assert.equal(pillText(view), "Fail");
+  assert.ok(view.getAllByText("Fail").length >= 2); // the pill AND the verdict chip
   assert.ok(view.getByText(/qubit order reversed/));
   // DESIGN.md §1.5: teeth are only ever reported for a check that PASSED this run.
   assert.equal(view.queryByText(/Caught \d+ of/), null);
@@ -188,7 +253,8 @@ test("an inconclusive check shows why, never counted as a fail", () => {
       teeth: null,
     },
   );
-  assert.ok(view.getByText("Inconclusive"));
+  assert.equal(pillText(view), "Inconclusive");
+  assert.ok(view.getAllByText("Inconclusive").length >= 2); // the pill AND the verdict chip
   assert.ok(view.getByText(/mid-circuit measurement/));
   assert.equal(view.queryByText("Fail"), null);
 });

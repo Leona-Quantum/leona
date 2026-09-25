@@ -257,7 +257,7 @@ export function NotebookAddCheckForm({
           WHOLE text content as the accessible name, so a hint sentence inside it would
           fold into "Tolerance Default for this kind: 0.000001" instead of "Tolerance" —
           the exact mistake `getByLabelText("Tolerance")` caught in this form's own test. */}
-      <p className="mj-notebook-add-check-hint mj-mono-muted">
+      <p className="mj-notebook-add-check-hint">
         {copy.toleranceDefaultHint(String(CHECK_DEFAULT_TOLERANCE[draft.kind]))}
       </p>
 

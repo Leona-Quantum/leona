@@ -7,6 +7,7 @@ import {
   buildCheckProperty,
   buildReferenceString,
   checkAuthorBadge,
+  checkCellPillStatus,
   checkCellSource,
   checkExpectationMode,
   checkExpressionError,
@@ -306,6 +307,26 @@ test("checkAuthorBadge classifies the three authors, citation carried through fo
     kind: "source",
     citation: "arXiv:1234.5678",
   });
+});
+
+// -------------------------------------------------------------- the cell-head pill
+
+test("checkCellPillStatus prefers the verdict over the generic capture status", () => {
+  assert.equal(checkCellPillStatus({ status: "ok", checkVerdict: { status: "fail" } as never }), "fail");
+  assert.equal(checkCellPillStatus({ status: "ok", checkVerdict: { status: "inconclusive" } as never }), "inconclusive");
+  assert.equal(checkCellPillStatus({ status: "ok", checkVerdict: { status: "pass" } as never }), "pass");
+});
+
+test("checkCellPillStatus is not_run when the capture ran but no verdict exists yet", () => {
+  assert.equal(checkCellPillStatus({ status: "ok", checkVerdict: null }), "not_run");
+});
+
+test("checkCellPillStatus is error when the capture itself crashed, even with a stale verdict", () => {
+  // A crashed capture never carries a verdict in practice (the join sets checkVerdict
+  // from THIS run's result), but error wins even if one were somehow present — the
+  // sandbox crashing is a different failure from a judged check that failed.
+  assert.equal(checkCellPillStatus({ status: "error", checkVerdict: null }), "error");
+  assert.equal(checkCellPillStatus({ status: "error", checkVerdict: { status: "pass" } as never }), "error");
 });
 
 // -------------------------------------------------------------- notebook-level summary
