@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from functools import cache
-from importlib import resources
+from pathlib import Path
 from typing import Any
 
 #: The data file's shape this loader understands (`PLANNER_PORT_FORMAT` in TS).
@@ -140,5 +140,7 @@ def parse(raw: dict[str, Any]) -> PlannerData:
 
 @cache
 def load() -> PlannerData:
-    text = resources.files("leona_planner").joinpath("planner_data.json").read_text("utf-8")
+    # Beside this file: the package is installed from source (editable in the
+    # workspace and the API image), never zipped.
+    text = Path(__file__).with_name("planner_data.json").read_text("utf-8")
     return parse(json.loads(text))

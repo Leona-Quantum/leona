@@ -42,7 +42,7 @@ import functools
 import json
 import logging
 import sys
-from importlib import resources
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import anyio
@@ -242,7 +242,7 @@ CHECK_CIRCUIT_DESCRIPTION = _NEEDS_TOKEN + (
 #: current by `apps/web/lib/workflow-planner-python-port.test.ts`. Package data, not an
 #: import: this package reaches the planner only through `POST /v1/plans`.
 PLAN_CATALOG: dict[str, Any] = json.loads(
-    resources.files("leona_mcp").joinpath("plan_catalog.json").read_text("utf-8")
+    Path(__file__).with_name("plan_catalog.json").read_text("utf-8")
 )
 PLAN_PROBLEMS: tuple[str, ...] = tuple(problem["id"] for problem in PLAN_CATALOG["problems"])
 
