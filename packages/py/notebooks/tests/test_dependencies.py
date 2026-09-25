@@ -55,9 +55,17 @@ def _spec_with_cells(cells: list[Cell], *, slug: str = "s") -> NotebookSpec:
 
 
 def test_plain_assignment_defines_and_a_later_read_depends_on_it() -> None:
+    # B1a fix: `defined` is folded INTO `read`, not excluded from it — every
+    # definition is also treated as reading its own name, so a cell whose static
+    # shape LOOKS like an unconditional redefinition still chains back to whatever
+    # defined the name before it (see `analyze_cell_source`'s docstring: the
+    # conditional-definition, try/except-import-fallback and empty-`for` cases this
+    # exists for). For the very FIRST definer of a name there is nothing to chain
+    # back to, so this is harmless here — no edge is created either way, because
+    # `build_dependency_graph` skips a read with no earlier definer.
     defined, read, barriers = analyze_cell_source("x = 1\n")
     assert defined == {"x"}
-    assert read == set()
+    assert read == {"x"}
     assert barriers == ()
 
 
@@ -589,3 +597,409 @@ def test_run_plan_partitions_every_code_cell_exactly_once() -> None:
 def test_run_plan_is_a_dataclass_with_the_documented_fields() -> None:
     # A cheap contract test: a caller (`_handle_author`) reads these by name.
     assert set(RunPlan.__dataclass_fields__) == {"execute", "reused", "not_run", "cache_keys"}
+
+
+# --------------------------------------------------------------------------- ground truth
+#
+# The adversarial review that found B1(a)-(e) and S3 built a small harness comparing
+# `plan_run`'s reuse decision against a FULL re-run of the child spec (`shown` vs
+# `full-rerun`, ported here from the review's own scratch scripts) — every scenario it
+# named is a regression test below, run against this harness, so "shown vs full-rerun
+# must agree" is checked mechanically rather than merely argued in a docstring.
+
+
+def _cells_of(pairs: list[tuple[str, str]]) -> NotebookSpec:
+    header = "# ---\n# title: T\n# kind: scratch\n# ---\n"
+    body = "".join(f"# %% id={cid}\n{src.rstrip()}\n" for cid, src in pairs)
+    return parse_source(header + body)
+
+
+def _execute_ground_truth(spec: NotebookSpec) -> dict[str, tuple[str, str]]:
+    """A full, in-process re-run of every graph cell in document order, one shared
+    namespace, mimicking `sandbox_program`'s own semantics closely enough for this
+    comparison: a `leona_submit` stub, Jupyter-style auto-display, and "stop after
+    the first error unless raises-exception is tagged." Returns `cell_id ->
+    (status, stdout)`."""
+    import contextlib
+    import io
+
+    from leona_notebooks.sandbox_program import prepare_cell_source
+
+    ns: dict = {}
+
+    def display(value: object) -> None:
+        if value is not None:
+            print(repr(value))
+
+    ns["__leona_display__"] = display
+    ns["display"] = display
+    ns["leona_submit"] = lambda *a, **k: None
+    out: dict[str, tuple[str, str]] = {}
+    stopped = False
+    for cell in spec.cells:
+        if not cell.is_code:
+            continue
+        source, reason = prepare_cell_source(cell)
+        if reason is not None:
+            out[cell.id] = ("skipped", "")
+            continue
+        if stopped:
+            out[cell.id] = ("not_run", "")
+            continue
+        buf = io.StringIO()
+        status = "ok"
+        with contextlib.redirect_stdout(buf):
+            try:
+                exec(compile(source, f"<cell {cell.id}>", "exec"), ns)
+            except BaseException:  # noqa: BLE001 - a notebook cell can raise anything
+                status = "error"
+                if "raises-exception" not in cell.tags:
+                    stopped = True
+        out[cell.id] = (status, buf.getvalue())
+    return out
+
+
+def _assert_reuse_matches_a_full_rerun(
+    parent_pairs: list[tuple[str, str]], child_pairs: list[tuple[str, str]]
+) -> None:
+    """The reviewer's `check()`: run the PARENT in full to build a real parent
+    report, plan the CHILD against it, and assert every cell `plan` reuses
+    produced the IDENTICAL (status, stdout) a full re-run of the child gives that
+    same cell — "shown" (what the reader would see reused) must equal
+    "full-rerun" (what actually running it now would show)."""
+    parent_spec = _cells_of(parent_pairs)
+    child_spec = _cells_of(child_pairs)
+    parent_results = _execute_ground_truth(parent_spec)
+    parent_keys = cache_keys(parent_spec)
+    parent_report = ExecutionReport(
+        notebook_slug=parent_spec.slug,
+        ok=all(status != "error" for status, _ in parent_results.values()),
+        runner="sandbox",
+        cells=[
+            CellResult(id=cid, status=status, stdout=stdout, cache_key=parent_keys.get(cid))
+            for cid, (status, stdout) in parent_results.items()
+        ],
+    )
+    plan = plan_run(child_spec, parent_spec, parent_report, None)
+    truth = _execute_ground_truth(child_spec)
+    for cell_id, prior in plan.reused.items():
+        assert (prior.status, prior.stdout) == truth[cell_id], (
+            f"{cell_id}: reused {prior.stdout!r} but a full rerun gives {truth[cell_id]!r}"
+        )
+
+
+# --------------------------------------------------------------------------- B1c: alias / closure
+
+
+def test_alias_mutation_through_a_second_name_invalidates_the_original_readers() -> None:
+    _assert_reuse_matches_a_full_rerun(
+        [("c1", "qc = []"), ("c2", "a = qc"), ("c3", "a.append('h')"), ("c4", "print(qc)")],
+        [("c1", "qc = []"), ("c2", "a = qc"), ("c3", "a.append('x')"), ("c4", "print(qc)")],
+    )
+
+
+def test_a_function_closure_over_a_mutated_name_invalidates_its_callers_siblings() -> None:
+    # The exact case B1c names: `def f(): qc.append('x')` defined once, called from
+    # a cell that is itself unedited — only the READER's own cell changes, and it
+    # must still see the effect of calling `f()` an extra time.
+    _assert_reuse_matches_a_full_rerun(
+        [
+            ("c1", "qc = []"),
+            ("c2", "def f():\n    qc.append('x')"),
+            ("c3", "f()"),
+            ("c4", "print(qc)"),
+        ],
+        [
+            ("c1", "qc = []"),
+            ("c2", "def f():\n    qc.append('x')"),
+            ("c3", "f(); f()"),
+            ("c4", "print(qc)"),
+        ],
+    )
+
+
+def test_alias_before_mutation_b_reads_a_mutated_through_the_original_name() -> None:
+    _assert_reuse_matches_a_full_rerun(
+        [("c1", "a = []"), ("c2", "b = a"), ("c3", "a.append(1)"), ("c4", "print(b)")],
+        [("c1", "a = []"), ("c2", "b = a"), ("c3", "a.append(2)"), ("c4", "print(b)")],
+    )
+
+
+def test_a_decorator_registering_into_a_registry_invalidates_the_registry_reader() -> None:
+    _assert_reuse_matches_a_full_rerun(
+        [
+            ("c1", "registry = []"),
+            ("c2", "def reg(f):\n    registry.append(f.__name__)\n    return f"),
+            ("c3", "@reg\ndef a(): pass"),
+            ("c4", "print(registry)"),
+        ],
+        [
+            ("c1", "registry = []"),
+            ("c2", "def reg(f):\n    registry.append(f.__name__)\n    return f"),
+            ("c3", "@reg\ndef a(): pass\n@reg\ndef b(): pass"),
+            ("c4", "print(registry)"),
+        ],
+    )
+
+
+# --------------------------------------------------------------------------- B1b: match captures
+
+
+def test_match_capture_pattern_binds_a_name_a_later_reader_depends_on() -> None:
+    _assert_reuse_matches_a_full_rerun(
+        [("c1", "match 5:\n    case n:\n        pass"), ("c2", "print(n)")],
+        [("c1", "match 6:\n    case n:\n        pass"), ("c2", "print(n)")],
+    )
+
+
+def test_match_sequence_star_capture_binds_both_names() -> None:
+    _assert_reuse_matches_a_full_rerun(
+        [("c1", "match [1, 2, 3]:\n    case [h, *rest]:\n        pass"), ("c2", "print(h, rest)")],
+        [("c1", "match [4, 5, 6]:\n    case [h, *rest]:\n        pass"), ("c2", "print(h, rest)")],
+    )
+
+
+# --------------------------------------------------------------------------- B1a: definition-is-also-a-read
+
+
+def test_conditional_never_taken_redefinition_still_depends_on_the_real_definer() -> None:
+    _assert_reuse_matches_a_full_rerun(
+        [("c1", "x = 1"), ("c2", "if False:\n    x = 99"), ("c3", "print(x)")],
+        [("c1", "x = 5"), ("c2", "if False:\n    x = 99"), ("c3", "print(x)")],
+    )
+
+
+def test_try_except_import_fallback_still_depends_on_the_real_definer() -> None:
+    _assert_reuse_matches_a_full_rerun(
+        [
+            ("c1", "backend = 'cpu'"),
+            ("c2", "try:\n    import not_a_real_mod_xyz as backend\nexcept ImportError:\n    pass"),
+            ("c3", "print(backend)"),
+        ],
+        [
+            ("c1", "backend = 'numpy'"),
+            ("c2", "try:\n    import not_a_real_mod_xyz as backend\nexcept ImportError:\n    pass"),
+            ("c3", "print(backend)"),
+        ],
+    )
+
+
+def test_for_over_an_empty_sequence_still_depends_on_the_real_definer() -> None:
+    _assert_reuse_matches_a_full_rerun(
+        [("c1", "item = 'a'"), ("c2", "for item in []:\n    pass"), ("c3", "print(item)")],
+        [("c1", "item = 'b'"), ("c2", "for item in []:\n    pass"), ("c3", "print(item)")],
+    )
+
+
+def test_bare_annotation_with_no_value_still_depends_on_the_real_definer() -> None:
+    _assert_reuse_matches_a_full_rerun(
+        [("c1", "lst = []"), ("c2", "lst.append(1)"), ("c3", "lst: list"), ("c4", "print(lst)")],
+        [("c1", "lst = []"), ("c2", "lst.append(2)"), ("c3", "lst: list"), ("c4", "print(lst)")],
+    )
+
+
+# --------------------------------------------------------------------------- B1d: class-body comprehension
+
+
+def test_a_comprehension_inside_a_class_body_reads_the_module_scope_not_the_class_attr() -> None:
+    # Real Python scoping: a comprehension is its own implicit function scope, and
+    # function scopes skip a CLASS scope entirely (only the outermost `for`'s
+    # iterable is evaluated in the class body itself) — `z = [y for _ in range(2)]`
+    # inside `class K: y = 100; ...` reads the MODULE-level `y`, not `K`'s own, so
+    # editing the module-level `y` must invalidate this cell.
+    _assert_reuse_matches_a_full_rerun(
+        [
+            ("c1", "y = 1"),
+            ("c2", "class K:\n    y = 100\n    z = [y for _ in range(2)]\nprint(K.z)"),
+        ],
+        [
+            ("c1", "y = 2"),
+            ("c2", "class K:\n    y = 100\n    z = [y for _ in range(2)]\nprint(K.z)"),
+        ],
+    )
+
+
+def test_class_body_comprehension_still_correctly_sees_its_own_outermost_iterable() -> None:
+    # The control for the fix above: the FIRST `for`'s iterable really is evaluated
+    # in the class's own scope (only the elt/later clauses skip it) — editing a
+    # module-level name the class body does NOT use for its iterable must not
+    # spuriously invalidate this cell.
+    graph = build_dependency_graph(
+        _spec(
+            "# ---\n# title: T\n# kind: scratch\n# ---\n"
+            "# %% id=c1\nunrelated = 1\n"
+            "# %% id=c2\nclass K:\n    n = 3\n    z = [i for i in range(n)]\nprint(K.z)\n"
+        )
+    )
+    assert "c1" not in graph.direct["c2"]
+
+
+# --------------------------------------------------------------------------- B1e: structural change
+
+
+def test_reordering_two_definers_forces_a_full_run_no_reuse() -> None:
+    parent_spec = _cells_of([("c1", "x = 1"), ("c2", "x = 2"), ("c3", "print(x)")])
+    child_spec = _cells_of([("c2", "x = 2"), ("c1", "x = 1"), ("c3", "print(x)")])
+    keys = cache_keys(parent_spec)
+    parent_report = _ok_report_from_keys(parent_spec, keys)
+    plan = plan_run(child_spec, parent_spec, parent_report, None)
+    assert plan.reused == {}
+    assert plan.execute == {"c1", "c2", "c3"}
+
+
+def test_deleting_a_cell_that_existed_in_the_parent_forces_a_full_run_no_reuse() -> None:
+    parent_spec = _cells_of([("c1", "x = 1"), ("c2", "x = 2"), ("c3", "print(x)")])
+    child_spec = _cells_of([("c1", "x = 1"), ("c3", "print(x)")])  # c2 deleted
+    keys = cache_keys(parent_spec)
+    parent_report = _ok_report_from_keys(parent_spec, keys)
+    plan = plan_run(child_spec, parent_spec, parent_report, None)
+    assert plan.reused == {}
+    assert plan.execute == {"c1", "c3"}
+
+
+def test_adding_a_cell_without_reordering_existing_ones_is_not_a_structural_change() -> None:
+    # The control: an ordinary insertion (the common case) must NOT force a full
+    # run — only a reorder or deletion AMONG the cells the parent already had.
+    parent_spec = _cells_of([("c1", "x = 1"), ("c3", "print(x)")])
+    child_spec = _cells_of([("c1", "x = 1"), ("c2", "y = 2"), ("c3", "print(x)")])  # c2 inserted
+    keys = cache_keys(parent_spec)
+    parent_report = _ok_report_from_keys(parent_spec, keys)
+    plan = plan_run(child_spec, parent_spec, parent_report, None)
+    assert "c1" in plan.reused  # untouched, unrelated to the insertion
+    assert "c3" in plan.reused  # untouched: reads x, c1's key is unchanged
+    assert plan.execute == {"c2"}  # only the newly-inserted cell
+
+
+# --------------------------------------------------------------------------- S3: fixpoint
+
+
+def test_fixpoint_pulls_in_a_sibling_of_a_barrier_forced_to_re_execute_as_a_dependency() -> None:
+    """S3's own gap, isolated: a name-sharing scenario ("c1 defines x, two cells
+    both read x") turns out to be caught ANYWAY by the ordinary `readers_since`
+    chain (any two readers of the SAME name are already linked to each other,
+    with or without the fixpoint) — so the case that actually needs the
+    bidirectional fixpoint is a BARRIER pulled in purely as a DEPENDENCY, not
+    because it is itself stale.
+
+    c1 is a barrier (`exec`). c2/c3 are one independent chain after it (h); c4/c5
+    are another (g), sharing NO name with c2/c3 at all. Only c5 is edited, so the
+    backward pass pulls in ITS OWN ancestors — c4, then c1 (the barrier) — but c2
+    and c3 are neither downstream of c5 nor an ancestor of it: a ONE-DIRECTIONAL
+    closure leaves them "reused" even though c1 (which the barrier rule says could
+    have touched literally anything, including `h`) is being re-executed fresh
+    alongside c4/c5 in the SAME dispatch. Without the fixpoint, `plan.execute` is
+    `{c1, c4, c5}` and c2/c3 are wrongly `reused` — verified by temporarily
+    reverting the fixpoint to the old two-pass version and watching this test go
+    red (`plan.reused == {"c2": ..., "c3": ...}`) before restoring it.
+    """
+    parent_spec = _cells_of(
+        [
+            ("c1", "exec('pass')"),
+            ("c2", "h = 5"),
+            ("c3", "print(h)"),
+            ("c4", "g = 10"),
+            ("c5", "print(g)"),
+        ]
+    )
+    child_spec = _cells_of(
+        [
+            ("c1", "exec('pass')"),
+            ("c2", "h = 5"),
+            ("c3", "print(h)"),
+            ("c4", "g = 10"),
+            ("c5", "print('g =', g)"),  # only c5 edited
+        ]
+    )
+    keys = cache_keys(parent_spec)
+    parent_report = _ok_report_from_keys(parent_spec, keys)
+    plan = plan_run(child_spec, parent_spec, parent_report, None)
+    assert plan.execute == {"c1", "c2", "c3", "c4", "c5"}
+    assert plan.reused == {}
+
+
+# --------------------------------------------------------------------------- impurity barrier
+
+
+def test_rcparams_assignment_through_an_imported_module_is_a_barrier() -> None:
+    _assert_reuse_matches_a_full_rerun(
+        [
+            ("c1", "import matplotlib as mpl"),
+            ("c2", "mpl.rcParams['font.size'] = 8"),
+            ("c3", "print(mpl.rcParams['font.size'])"),
+        ],
+        [
+            ("c1", "import matplotlib as mpl"),
+            ("c2", "mpl.rcParams['font.size'] = 20"),
+            ("c3", "print(mpl.rcParams['font.size'])"),
+        ],
+    )
+    graph = build_dependency_graph(
+        _spec(
+            "# ---\n# title: T\n# kind: scratch\n# ---\n"
+            "# %% id=c1\nimport matplotlib as mpl\n"
+            "# %% id=c2\nmpl.rcParams['font.size'] = 8\n"
+        )
+    )
+    assert graph.analyses["c2"].is_barrier
+
+
+def test_random_seed_via_an_aliased_import_is_a_barrier() -> None:
+    # `from random import seed as set_seed` — the call's own final name is
+    # `set_seed`, one of the recognised impure names, regardless of the alias.
+    graph = build_dependency_graph(
+        _spec(
+            "# ---\n# title: T\n# kind: scratch\n# ---\n"
+            "# %% id=c1\nfrom random import seed as set_seed\n"
+            "# %% id=c2\nset_seed(1)\n"
+        )
+    )
+    assert graph.analyses["c2"].is_barrier
+    _assert_reuse_matches_a_full_rerun(
+        [
+            ("c1", "import random as rnd"),
+            ("c2", "rnd.seed(1)"),
+            ("c3", "print(rnd.random())"),
+        ],
+        [
+            ("c1", "import random as rnd"),
+            ("c2", "rnd.seed(2)"),
+            ("c3", "print(rnd.random())"),
+        ],
+    )
+
+
+def test_a_file_written_then_read_across_cells_is_a_barrier(tmp_path) -> None:
+    path = str(tmp_path / "f.txt")
+    _assert_reuse_matches_a_full_rerun(
+        [
+            ("c1", f"open({path!r}, 'w').write('1')"),
+            ("c2", f"print(open({path!r}).read())"),
+        ],
+        [
+            ("c1", f"open({path!r}, 'w').write('2')"),
+            ("c2", f"print(open({path!r}).read())"),
+        ],
+    )
+    graph = build_dependency_graph(
+        _spec(
+            f"# ---\n# title: T\n# kind: scratch\n# ---\n# %% id=c1\nopen({path!r}, 'w').write('1')\n"
+        )
+    )
+    assert graph.analyses["c1"].is_barrier
+
+
+def test_an_ordinary_qiskit_circuit_building_cell_is_not_a_barrier() -> None:
+    # The control S2's own instruction names explicitly: nothing in the impurity
+    # heuristic may fire on the common case, or reuse stops working for it.
+    graph = build_dependency_graph(
+        _spec(
+            "# ---\n# title: T\n# kind: scratch\n# ---\n"
+            "# %% id=c1\nfrom qiskit import QuantumCircuit\n"
+            "# %% id=c2\nqc = QuantumCircuit(2)\nqc.h(0)\nqc.cx(0, 1)\nqc.measure_all()\n"
+            "# %% id=c3\nprint(qc)\n"
+        )
+    )
+    assert graph.analyses["c1"].is_barrier is False
+    assert graph.analyses["c2"].is_barrier is False
+    assert graph.analyses["c3"].is_barrier is False
+    assert graph.analyses["c2"].defined == {"qc"}

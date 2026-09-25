@@ -149,6 +149,10 @@ def _scope_locals(stmts: list[ast.stmt]) -> set[str]:
                     names.update(_target_names(item.optional_vars))
         elif isinstance(node, ast.ExceptHandler) and node.name:
             names.add(node.name)
+        elif isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name:
+            names.add(node.name)
+        elif isinstance(node, ast.MatchMapping) and node.rest:
+            names.add(node.rest)
         for child in ast.iter_child_nodes(node):
             visit(child)
 
@@ -171,10 +175,29 @@ def _scope_reads(stmts: list[ast.stmt], local: frozenset[str]) -> set[str]:
     A class body is different: its statements run immediately when the `class`
     statement executes, so its reads are real reads of the defining cell, not a
     later-maybe.
+
+    `class_scope` carries the names bound by the CLASS BODY immediately enclosing
+    the node being visited — never composed with an outer one, always the nearest —
+    because Python's own scoping rule for a comprehension is asymmetric: the class
+    body's own statements see their own class-level names (`nested_local` folded
+    into `local` the way it already was), but a comprehension written directly in
+    that body does NOT — a comprehension is its own implicit function scope, and
+    function scopes skip over an enclosing CLASS scope entirely (they resolve
+    straight through to the next enclosing function/module scope), the one
+    exception being the OUTERMOST `for`'s iterable, which the class body evaluates
+    itself, before the comprehension's own scope exists at all. Get this wrong
+    (as this module did before) and `class K: y = 100; z = [y for _ in range(2)]`
+    reads as `z = [100, 100]` when Python actually gives `[<module y>, <module y>]`
+    — the class's own `y` is invisible there, and an edit to the notebook-level `y`
+    silently would not invalidate a cell that, per real Python semantics, depends on
+    it. Reset to empty on entering a nested function/lambda/class: those already
+    build their OWN `local` from scratch (never unioned with the outer one), so they
+    were never exposed to class scope in the first place and the hiding rule has
+    nothing left to do there.
     """
     reads: set[str] = set()
 
-    def visit(node: ast.AST, local: frozenset[str]) -> None:
+    def visit(node: ast.AST, local: frozenset[str], class_scope: frozenset[str]) -> None:
         if isinstance(node, ast.Name):
             if isinstance(node.ctx, ast.Load) and node.id not in local:
                 reads.add(node.id)
@@ -186,61 +209,67 @@ def _scope_reads(stmts: list[ast.stmt], local: frozenset[str]) -> set[str]:
             for name in _target_names(node.target):
                 if name not in local:
                     reads.add(name)
-            visit(node.value, local)
+            visit(node.value, local, class_scope)
             return
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             for default in (*node.args.defaults, *node.args.kw_defaults):
                 if default is not None:
-                    visit(default, local)
+                    visit(default, local, class_scope)
             for decorator in node.decorator_list:
-                visit(decorator, local)
+                visit(decorator, local, class_scope)
             if node.returns is not None:
-                visit(node.returns, local)
+                visit(node.returns, local, class_scope)
             nested_local = frozenset(_param_names(node.args) | _scope_locals(node.body))
             for stmt in node.body:
-                visit(stmt, nested_local)
+                visit(stmt, nested_local, frozenset())
             return
         if isinstance(node, ast.Lambda):
             for default in (*node.args.defaults, *node.args.kw_defaults):
                 if default is not None:
-                    visit(default, local)
+                    visit(default, local, class_scope)
             nested_local = frozenset(_param_names(node.args))
-            visit(node.body, nested_local)
+            visit(node.body, nested_local, frozenset())
             return
         if isinstance(node, ast.ClassDef):
             for base in node.bases:
-                visit(base, local)
+                visit(base, local, class_scope)
             for keyword in node.keywords:
-                visit(keyword.value, local)
+                visit(keyword.value, local, class_scope)
             for decorator in node.decorator_list:
-                visit(decorator, local)
+                visit(decorator, local, class_scope)
             nested_local = frozenset(_scope_locals(node.body))
             for stmt in node.body:
-                visit(stmt, nested_local)
+                visit(stmt, nested_local, nested_local)  # THIS class's own scope
             return
         if isinstance(node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
             comp_local = set()
             for generator in node.generators:
                 comp_local.update(_target_names(generator.target))
-            inner = local | comp_local
+            # The comprehension's OWN scope (elt, conditions, every iterable but the
+            # first) skips the immediately enclosing class scope, per the docstring.
+            inner = (local - class_scope) | comp_local
             for index, generator in enumerate(node.generators):
                 # The FIRST generator's iterable runs in the ENCLOSING scope
-                # (`local`); everything else already sees the comprehension's own
-                # bound names too.
-                visit(generator.iter, local if index == 0 else inner)
+                # (`local`, WITH class scope still visible); everything else
+                # already sees the comprehension's own bound names instead, and is
+                # past the point where class scope is visible.
+                if index == 0:
+                    visit(generator.iter, local, class_scope)
+                else:
+                    visit(generator.iter, inner, frozenset())
                 for condition in generator.ifs:
-                    visit(condition, inner)
+                    visit(condition, inner, frozenset())
             if isinstance(node, ast.DictComp):
-                visit(node.key, inner)
-                visit(node.value, inner)
+                visit(node.key, inner, frozenset())
+                visit(node.value, inner, frozenset())
             else:
-                visit(node.elt, inner)
+                visit(node.elt, inner, frozenset())
             return
         for child in ast.iter_child_nodes(node):
-            visit(child, local)
+            visit(child, local, class_scope)
 
     for stmt in stmts:
-        visit(stmt, local)
+        visit(stmt, local, frozenset())
     return reads
 
 
@@ -264,6 +293,121 @@ def _barrier_reasons(tree: ast.Module) -> tuple[str, ...]:
     return tuple(reasons)
 
 
+#: Final call attribute (or bare name) that marks a cell IMPURE (module/process
+#: state a later cell can read, or an earlier cell can be read BY, without either
+#: one naming a tracked notebook-level variable): an RNG seed, a plotting backend
+#: choice, the recursion limit, the working directory, or a file/OS write. This is
+#: a HEURISTIC, matched on the call's spelling alone (no type information) — see
+#: `_impurity_reason`'s own docstring for exactly what it cannot see.
+_IMPURE_CALL_NAMES = frozenset(
+    {
+        "seed",
+        "set_seed",
+        "manual_seed",
+        "use",  # matplotlib.use(...): the plotting backend
+        "setrecursionlimit",
+        "chdir",
+        "putenv",
+        "open",
+        "write",
+        "writelines",
+        "savefig",
+        "to_csv",
+        "to_json",
+        "to_pickle",
+        "dump",
+        "save",
+        "savez",
+        "savetxt",
+        "mkdir",
+        "makedirs",
+        "remove",
+        "unlink",
+        "rename",
+        "write_text",
+        "write_bytes",
+    }
+)
+
+
+def _call_final_name(node: ast.Call) -> str | None:
+    """`f(...)` -> `"f"`; `a.b.f(...)` -> `"f"`; anything else (a call through a
+    subscript, a call on the result of another call, ...) -> `None` — not matched
+    by this heuristic at all, which is exactly its documented blind spot."""
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return None
+
+
+def _is_environ_setdefault(node: ast.Call) -> bool:
+    """`<anything>.environ.setdefault(...)` — kept OUT of `_IMPURE_CALL_NAMES`
+    because a bare `"setdefault"` is an ordinary dict method used constantly for
+    reasons that have nothing to do with the environment; only the specific
+    `X.environ.setdefault` shape is meant."""
+    func = node.func
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr == "setdefault"
+        and isinstance(func.value, ast.Attribute)
+        and func.value.attr == "environ"
+    )
+
+
+def _assignment_root_name(target: ast.expr) -> str | None:
+    """The `Name` at the base of an attribute/subscript chain (`mpl.rcParams['x']`
+    -> `"mpl"`; `os.environ['K']` -> `"os"`) — `None` for a target that has no
+    single base name at all (a plain `Name`, which `_target_names` already
+    handles as a real definition, not a mutation; a tuple/list unpack; a call
+    result subscripted in place)."""
+    node = target
+    while isinstance(node, (ast.Attribute, ast.Subscript)):
+        node = node.value
+    return node.id if isinstance(node, ast.Name) else None
+
+
+def _impurity_reason(tree: ast.Module, import_bound_names: frozenset[str]) -> str | None:
+    """A cell is IMPURE — and therefore a BARRIER (module docstring: depends on
+    everything before it, everything after depends on it) — when it looks, from
+    its own text alone, like it sets state OUTSIDE any notebook-level variable
+    this module tracks by name: an RNG seed, a plotting backend, the process's
+    cwd or environment, a recursion limit, or a file/OS write. The mutation rule
+    already handles `obj.attr = value` and `obj[i] = value` as reads of `obj` — the
+    gap this closes is specifically LIBRARY/PROCESS state, whose readers (another
+    cell that calls `plt.figure()`, say) do not have to mention `mpl`, `rcParams`,
+    or anything else this cell touched, so no amount of name-based dependency
+    tracking can find that edge. Marking the cell a barrier is the safe fallback:
+    it re-runs whenever anything earlier changes, and forces a re-run of
+    everything after it whenever IT changes, without trying to name the specific
+    edge.
+
+    Heuristic, not a proof, and this says exactly where it stops seeing: a syntax
+    match on the CALL'S OWN SPELLING (`_IMPURE_CALL_NAMES`, `_is_environ_setdefault`)
+    or an assignment whose root name was bound by an `import` ANYWHERE in the
+    notebook (`_assignment_root_name`). It cannot see the same effect through an
+    unrecognised wrapper (`my_helpers.seed_everything()`), a call reached through a
+    subscript or another call's return value, or state changed inside an ordinary
+    library call this list does not name — DESIGN's own residual gap (module
+    docstring) is what survives this rule, nothing more.
+    """
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            name = _call_final_name(node)
+            if name in _IMPURE_CALL_NAMES:
+                return f"looks impure: calls .{name}(...)"
+            if _is_environ_setdefault(node):
+                return "looks impure: calls ....environ.setdefault(...)"
+        elif isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                root = _assignment_root_name(target)
+                if root is not None and root in import_bound_names:
+                    return f"looks impure: assigns into {root}...."
+    return None
+
+
 @dataclass(frozen=True)
 class CellAnalysis:
     """One graph cell's syntactic footprint."""
@@ -282,24 +426,44 @@ class CellAnalysis:
         return bool(self.barrier_reasons)
 
 
-def analyze_cell_source(source: str) -> tuple[frozenset[str], frozenset[str], tuple[str, ...]]:
+def analyze_cell_source(
+    source: str, import_bound_names: frozenset[str] = frozenset()
+) -> tuple[frozenset[str], frozenset[str], tuple[str, ...]]:
     """`(defined, read, barrier_reasons)` for one cell's PREPARED source (the exact
     text `sandbox_program` will exec — see `prepare_cell_source`). A cell that fails
-    to parse is itself a barrier, per DESIGN §3."""
+    to parse is itself a barrier, per DESIGN §3. `import_bound_names` is every name
+    ANY cell in the notebook binds via `import` — only used by the impurity check
+    (`_impurity_reason`); a call site that never heard of the impurity heuristic
+    (this module's own tests, mostly) gets it empty and simply never trips that
+    branch, which is why it defaults to `frozenset()` rather than being required.
+    """
     try:
         tree = ast.parse(source)
     except (SyntaxError, ValueError):
         return frozenset(), frozenset(), ("could not be parsed",)
     reasons = _barrier_reasons(tree)
+    if not reasons:
+        impure = _impurity_reason(tree, import_bound_names)
+        if impure is not None:
+            reasons = (impure,)
     if reasons:
         return frozenset(), frozenset(), reasons
     defined = frozenset(_scope_locals(tree.body))
-    # No exclusion set at cell (module) level: a name this SAME cell both reads and
-    # redefines (`counter = counter + 1`) must still show up as a read, because the
-    # graph looks up the PRIOR definer before applying this cell's own definitions
-    # (see `build_dependency_graph`) — excluding `defined` here would silently drop
-    # exactly the self-referential case the mutation rule exists to catch.
-    read = frozenset(_scope_reads(tree.body, frozenset()))
+    # `defined` is folded INTO `read`, not excluded from it (the reverse of an
+    # earlier version of this function, and the fix for B1a): a binding this
+    # module's own static analysis cannot prove ALWAYS happens at runtime — a
+    # conditional (`if False: x = 99`), a try/except import fallback, a `for`
+    # over a sequence that might be empty, a bare annotation with no value — must
+    # still chain back to whatever defined the name BEFORE this cell, because the
+    # REAL value in effect after this cell runs might still be the earlier one.
+    # Treating every definition as also a read of its own name means this cell
+    # always picks up an edge to its own predecessor definer (if any) in addition
+    # to becoming the new one — always safe to add (the module's own conservative
+    # rule: an extra edge never hides a real change, only a missing one does), and
+    # it is what makes a downstream reader's cache key transitively pick up an
+    # edit to the cell that ACTUALLY still supplies the value at runtime, even
+    # when this cell's own static shape makes it look like the new definer.
+    read = frozenset(_scope_reads(tree.body, frozenset())) | defined
     return defined, read, ()
 
 
@@ -350,6 +514,27 @@ class DependencyGraph:
         return frozenset(seen)
 
 
+def _import_bound_names(sources: list[str]) -> frozenset[str]:
+    """Every name bound by `import`/`from ... import` ANYWHERE in these prepared
+    cell sources — used only by `_impurity_reason`, to recognise "this base name is
+    a reference to a library/module object" regardless of which cell imported it.
+    A cell that fails to parse contributes nothing here; it is already its own
+    barrier via `_barrier_reasons`, so its content plays no further part."""
+    names: set[str] = set()
+    for source in sources:
+        try:
+            tree = ast.parse(source)
+        except (SyntaxError, ValueError):
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                for alias in node.names:
+                    if alias.name == "*":
+                        continue
+                    names.add(alias.asname or alias.name.split(".")[0])
+    return frozenset(names)
+
+
 def build_dependency_graph(spec: NotebookSpec) -> DependencyGraph:
     graph_cells: list[Cell] = []
     for cell in spec.cells:
@@ -360,6 +545,10 @@ def build_dependency_graph(spec: NotebookSpec) -> DependencyGraph:
             continue  # execute=false, tagged skip-execution, or a %% cell magic
         graph_cells.append(cell)
 
+    import_bound_names = _import_bound_names(
+        [prepare_cell_source(cell)[0] for cell in graph_cells if cell.role != CHECK_ROLE]
+    )
+
     order = tuple(cell.id for cell in graph_cells)
     analyses: dict[str, CellAnalysis] = {}
     direct: dict[str, set[str]] = {}
@@ -369,6 +558,27 @@ def build_dependency_graph(spec: NotebookSpec) -> DependencyGraph:
     barrier_cells: list[str] = []  # the subset that are real barriers (not checks)
     last_definer: dict[str, str] = {}
     readers_since: dict[str, list[str]] = {}
+    #: name -> the (already-expanded) reads of whatever cell most recently defined
+    #: it — B1c's alias/closure chain. `a = qc` makes `closure["a"] = {"qc"}`, so a
+    #: LATER cell reading only "a" (`a.append(...)`) is treated as ALSO reading
+    #: "qc" (`_effective_read`, below) — the two names become, for dependency
+    #: purposes, one object. `def f(): qc.append(...)` gets the same treatment
+    #: through the SAME mechanism: `f`'s own raw read already contains "qc" (the
+    #: existing free-variable bubble-up in `_scope_reads`), so `closure["f"]` is
+    #: `{"qc"}` too, and CALLING `f()` later — a plain read of the name "f" — picks
+    #: up "qc" the same way a plain alias read would. One dict, two source shapes.
+    closure: dict[str, frozenset[str]] = {}
+
+    def _effective_read(raw_read: frozenset[str]) -> frozenset[str]:
+        """`raw_read`, expanded one level through `closure` for every name in it.
+        One level is enough: `closure[name]` is already fully expanded itself, by
+        construction below (`closure[name] = <that definer's own effective read>`),
+        so a chain `a = b; c = a` still resolves all the way back to whatever `b`
+        itself was linked to, without this function needing to recurse."""
+        expanded = set(raw_read)
+        for name in raw_read:
+            expanded |= closure.get(name, frozenset())
+        return frozenset(expanded)
 
     for cell in graph_cells:
         is_check = cell.role == CHECK_ROLE
@@ -377,7 +587,8 @@ def build_dependency_graph(spec: NotebookSpec) -> DependencyGraph:
             deps_here: set[str] = set(seen_cells)  # a barrier READER: everything before it
         else:
             prepared_source, _ = prepare_cell_source(cell)
-            defined, read, reasons = analyze_cell_source(prepared_source)
+            defined, raw_read, reasons = analyze_cell_source(prepared_source, import_bound_names)
+            read = raw_read if reasons else _effective_read(raw_read)
             analysis = CellAnalysis(cell.id, defined, read, reasons)
             deps_here = set(barrier_cells)  # every cell depends on every earlier barrier
             if reasons:
@@ -406,6 +617,7 @@ def build_dependency_graph(spec: NotebookSpec) -> DependencyGraph:
                 for name in analysis.defined:
                     last_definer[name] = cell.id
                     readers_since[name] = []
+                    closure[name] = analysis.read - {name}
                 for name in analysis.read:
                     # Only track a reader for a name that is already a tracked,
                     # notebook-level definition — see the matching skip above.
@@ -532,6 +744,42 @@ class RunPlan:
     cache_keys: dict[str, str]
 
 
+def _structural_change(spec: NotebookSpec, parent_spec: NotebookSpec | None) -> bool:
+    """True when the code cells' relative ORDER differs from the parent, or a code
+    cell that existed in the parent no longer exists in `spec` — either one makes
+    the whole per-cell graph's document-order assumptions (and every cache key
+    derived from it) untrustworthy enough that the simple, sound answer is a full
+    re-run rather than trying to reason about what changed. This is intentionally
+    coarser than the mutation-rule machinery elsewhere in this module: a reorder or
+    a deletion can change what "depends on" means for cells that never touched a
+    shared name at all (two cells reordered around a THIRD, unrelated one whose own
+    output nonetheless now lands in a different place relative to them), which is
+    exactly the class of thing name-based analysis cannot see by construction.
+
+    `parent_spec is None` (a notebook's first save, or a caller that never resolved
+    one) is NOT a structural change — `plan_run` already treats a missing parent
+    REPORT as everything stale, which is the correct, simpler answer for that case.
+
+    A cell ADDED without disturbing the relative order of the cells already there
+    is not a structural change either: nothing about an existing cell's position
+    relative to the OTHER existing cells moved, so the ordinary per-cell staleness
+    check already has everything it needs.
+    """
+    if parent_spec is None:
+        return False
+    parent_ids = [cell.id for cell in parent_spec.code_cells()]
+    child_ids = [cell.id for cell in spec.code_cells()]
+    parent_id_set = set(parent_ids)
+    child_id_set = set(child_ids)
+    if any(cid not in child_id_set for cid in parent_ids):
+        return True  # a cell that existed in the parent was deleted
+    # Ignore cells ADDED in the child (not a structural change on their own):
+    # compare only the RELATIVE order of cells present in both.
+    common_parent_order = [cid for cid in parent_ids if cid in child_id_set]
+    common_child_order = [cid for cid in child_ids if cid in parent_id_set]
+    return common_parent_order != common_child_order
+
+
 def plan_run(
     spec: NotebookSpec,
     parent_spec: NotebookSpec | None,
@@ -539,12 +787,21 @@ def plan_run(
     target_cell_id: str | None = None,
 ) -> RunPlan:
     """DESIGN §3's plan: a cell is STALE if its (this run's) cache key has no
-    `status == "ok"` result under the same key in `parent_report`. `execute` = stale
-    cells UNION everything downstream of a stale cell UNION the transitive
-    dependencies of all of those — "run cell X" is the same rule with `target_cell_id
-    = X`, which is why it reads as "X ∪ deps(X)" whenever X happens to be the only
-    stale cell in range: nothing downstream of X survives the cut, so the
-    downstream-union step contributes nothing, and deps(X) is exactly what is left.
+    `status == "ok"` result under the same key in `parent_report`. `execute` is the
+    FIXPOINT closure of the stale set under both graph directions at once —
+    everything downstream of anything in `execute`, and everything any of THOSE
+    depend on, repeated until nothing new is added — not a single downstream pass
+    followed by a single backward pass. The two-pass version missed a real case: a
+    cell pulled into `execute` only via the backward (dependency) pass can have ITS
+    OWN other downstream readers that were never independently stale and are not
+    downstream of the originally-stale cell either (two sibling readers of one
+    nondeterministic definer, say) — those must join `execute` too, or the notebook
+    re-executes the shared upstream cell with a FRESH value while a sibling reader
+    keeps showing the OLD one, and the page presents two cells as consistent with
+    each other when they came from two different runs. "Run cell X" is the same
+    fixpoint with `target_cell_id = X` restricting `considered` to cells at or
+    before X — it reads as "X ∪ deps(X)" whenever X is the only stale cell in
+    range, because nothing downstream of X survives the cut.
 
     A parent result with `status != "ok"` is NEVER reused, whatever its key — an
     error is not a cached value to trust; a cell that raised gets another chance
@@ -555,14 +812,12 @@ def plan_run(
     likewise always stale — correct, not a regression: it was never computed as a
     cache key of anything, so "matches" is not a question that has an answer.
 
-    `parent_spec` is accepted for symmetry with what a caller (`_handle_author`)
-    already has on hand — the notebook's current version — and so this signature
-    reads as a complete pair; nothing here actually reads it, because a cache key
-    already encodes everything about a cell's own upstream shape, and reuse is
-    matched to `parent_report`'s cells by id, never by position (the same join
-    `notebook-view.ts` uses).
+    `parent_spec` decides one more thing before any of the above runs at all:
+    `_structural_change` — a reordering or deletion among the cells the parent
+    report was computed against makes the parent's cache keys untrustworthy as a
+    SET (not just individually), so a structural change treats the parent as if it
+    had no report at all, the same "everything stale" answer a missing parent gets.
     """
-    del parent_spec
     graph = build_dependency_graph(spec)
     keys = _cache_keys_from_graph(graph, spec)
 
@@ -577,7 +832,13 @@ def plan_run(
     considered_set = set(considered)
 
     parent_by_id: dict[str, Any] = (
-        {result.id: result for result in parent_report.cells} if parent_report is not None else {}
+        {}
+        if _structural_change(spec, parent_spec)
+        else (
+            {result.id: result for result in parent_report.cells}
+            if parent_report is not None
+            else {}
+        )
     )
 
     def is_stale(cell_id: str) -> bool:
@@ -592,11 +853,13 @@ def plan_run(
 
     stale = {cid for cid in considered if is_stale(cid)}
     execute: set[str] = set(stale)
-    for cid in stale:
-        execute.update(name for name in graph.downstream(cid) if name in considered_set)
     frontier = set(execute)
     while frontier:
         cid = frontier.pop()
+        for dep in graph.direct_downstream.get(cid, ()):
+            if dep in considered_set and dep not in execute:
+                execute.add(dep)
+                frontier.add(dep)
         for dep in graph.direct_deps(cid):
             if dep in considered_set and dep not in execute:
                 execute.add(dep)
