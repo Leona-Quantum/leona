@@ -556,6 +556,11 @@ from .lifecycle import (
 # status on the `notebook.cells` event's `NotebookLiveCellResult`. Additive: one enum
 # value, three models, three optional fields that default to None, so every stored spec,
 # report and event still parses. No route and no migration (spec and report are JSONB).
+# Review round 1 of the same unreleased 2.38.0 (PR 1011): a unitary check stops at 10
+# qubits (`CHECK_UNITARY_MAX_QUBITS`) and a `reference_qasm` may not declare more qubits
+# than its kind judges; `CheckTeeth.could_not_run` (default 0); and `NotebookSpec` gains
+# `carries_secrets()` and `learner_report()`, with `for_learner()` dropping check cells and
+# `leaks_answer_key()` naming them in a notebook with anything secret (ai-ops 260).
 # 2.39.0: the agent connector's first headless tool, `check_circuit` (ai-ops 382 option 1,
 # "move the connector up to ship with it"; VISION §5.8). New: `CircuitCheckRequest`
 # (an OpenQASM 3 circuit plus a `CheckProperty`), `CircuitCheckResponse` (a `CheckVerdict`

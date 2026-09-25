@@ -2002,6 +2002,12 @@
             "title": "Caught",
             "type": "integer"
           },
+          "could_not_run": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Could Not Run",
+            "type": "integer"
+          },
           "equivalent": {
             "default": 0,
             "minimum": 0,

@@ -43,8 +43,11 @@ _CELL_MARK = re.compile(r"^# %%")
 _ROLE_TOKEN = re.compile(r'(?:^|\s)role=("?)([A-Za-z0-9_-]+)\1')
 #: Presence only. `check=` and `answer=` values are their own thing to redact (an
 #: assertion, an answer key); the guard does not need to parse either to know a
-#: cell that carries one must be withheld.
-_SENSITIVE_KEY = re.compile(r"(?:^|\s)(?:check|answer)=")
+#: cell that carries one must be withheld. `property=` is a check cell's expectation: it
+#: is secret only in a notebook with a solution or an exercise (`for_learner()`), and the
+#: solution may stream AFTER the check, so live, every check cell is withheld. The parsed
+#: event that follows the draft releases the checks `for_learner()` keeps.
+_SENSITIVE_KEY = re.compile(r"(?:^|\s)(?:check|answer|property)=")
 
 _SENSITIVE_ROLE_NAMES = frozenset(role.value for role in SOLUTION_ONLY_ROLES)
 
@@ -53,7 +56,7 @@ def _cell_header_is_sensitive(header_line: str) -> bool:
     if _SENSITIVE_KEY.search(header_line):
         return True
     match = _ROLE_TOKEN.search(header_line)
-    return bool(match) and match.group(2) in _SENSITIVE_ROLE_NAMES
+    return bool(match) and match.group(2) in _SENSITIVE_ROLE_NAMES | {"check"}
 
 
 class LiveDraftGuard:

@@ -239,8 +239,15 @@ CheckStatus = Literal["pass", "fail", "inconclusive"]
 CHECK_STATE_REFERENCE_RE = re.compile(
     r"^(?:bell(?::(?:phi|psi)[+-])?|(?:ghz|w|uniform)\((?:[1-9]|1\d|2[0-4])\))$"
 )
-#: Library references a `unitary` check may name. 12 is `UNITARY_MAX_QUBITS`, restated.
-CHECK_UNITARY_REFERENCE_RE = re.compile(r"^i?qft\((?:[1-9]|1[0-2])\)$")
+#: Library references a `unitary` check may name, up to `CHECK_UNITARY_MAX_QUBITS`.
+CHECK_UNITARY_REFERENCE_RE = re.compile(r"^i?qft\((?:[1-9]|10)\)$")
+#: The widest circuit a check of each kind judges. `state`, `distribution` and `energy` stop
+#: at `STATEVECTOR_MAX_QUBITS` (24; `energy` is also held to 10 by its Hamiltonian); `unitary`
+#: stops at 10, below the verification package's 12, because the worker is one instance
+#: running every user's jobs and a 12-qubit unitary is 256 MiB (review of PR 1011). Restated
+#: here because this package imports nothing internal; `leona_notebooks.checks` reads these.
+CHECK_STATE_MAX_QUBITS = 24
+CHECK_UNITARY_MAX_QUBITS = 10
 #: The names an amplitude or probability expression may use. The evaluator
 #: (`leona_notebooks.checks.evaluate_expression`) walks an `ast` against this allowlist and
 #: never calls `eval`; the validator below walks the same allowlist without evaluating, so a
@@ -299,6 +306,29 @@ _CHECK_ALL_OF: dict[str, tuple[str, ...]] = {
 }
 
 _BITSTRING_RE = re.compile(r"^[01]+$")
+_QASM_COMMENTS = re.compile(r"//[^\n]*|/\*.*?\*/", re.S)
+_QASM_QUBIT_ARRAY = re.compile(r"\bqubit\s*\[\s*(\d+)\s*\]")
+_QASM_QUBIT_SINGLE = re.compile(r"\bqubit\s+[^\W\d]\w*\s*;")
+_QASM_QREG = re.compile(r"\bqreg\s+[^\W\d]\w*\s*\[\s*(\d+)\s*\]")
+_QASM_PHYSICAL = re.compile(r"\$(\d+)\b")
+
+
+def declared_qubits(qasm: str) -> int:
+    """How many qubits an OpenQASM program declares, read from its text without parsing it.
+
+    Registers (`qubit[n] q;`, `qubit q;`, `qreg q[n];`) plus physical qubits (`$k`, which
+    Qiskit's importer turns into a circuit `k + 1` qubits wide). An upper bound for the
+    shapes Qiskit writes, used to refuse a too-wide reference BEFORE anything is built;
+    `leona_notebooks.checks` measures the parsed program again before simulating it.
+    """
+    text = _QASM_COMMENTS.sub(" ", qasm)
+    count = sum(int(n) for n in _QASM_QUBIT_ARRAY.findall(text))
+    count += len(_QASM_QUBIT_SINGLE.findall(text))
+    count += sum(int(n) for n in _QASM_QREG.findall(text))
+    physical = [int(n) for n in _QASM_PHYSICAL.findall(text)]
+    return count + (max(physical) + 1 if physical else 0)
+
+
 _PAULI_RE = re.compile(r"^[IXYZ]+$")
 
 
@@ -353,7 +383,7 @@ def _validate_check_expression(text: str) -> None:
 
 def _a(kind: str) -> str:
     """ "a state", "an energy" — for messages a reader sees."""
-    return ("an " if kind[:1] in "aeiou" else "a ") + kind
+    return ("an " if kind[:1] in "aeio" else "a ") + kind  # "a unitary": a "you" sound
 
 
 def _validate_bitstring_keys(name: str, keys: list[str], *, max_width: int = 24) -> int:
@@ -502,6 +532,14 @@ class CheckProperty(_Model):
             if widths.pop() > MAX_CHECK_HAMILTONIAN_QUBITS:
                 raise ValueError(
                     f"an energy check diagonalises at most {MAX_CHECK_HAMILTONIAN_QUBITS} qubits"
+                )
+        if self.reference_qasm is not None:
+            ceiling = CHECK_UNITARY_MAX_QUBITS if self.kind == "unitary" else CHECK_STATE_MAX_QUBITS
+            width = declared_qubits(self.reference_qasm)
+            if width > ceiling:
+                raise ValueError(
+                    f"the reference circuit declares {width} qubits; {_a(self.kind)} check "
+                    f"judges at most {ceiling}"
                 )
         if isinstance(self.target, float) and not math.isfinite(self.target):
             raise ValueError("target must be a finite number or 'ground'")
@@ -760,11 +798,21 @@ class NotebookSpec(_Model):
         secret can be represented, and a `role=answer` markdown cell represents it as
         text.
 
+        A fifth, since check cells (review of PR 1011): in a notebook that
+        `carries_secrets()`, every `role=check` cell is **removed**. Its property is a
+        structured expectation of the very object the exercise asks the reader to build
+        (`reference="ghz(3)"`, `value=0.4375`), so it states the answer as plainly as an
+        answer key does. A notebook with nothing secret keeps its checks: there they are the
+        evidence a reader is meant to see.
+
         Returns a copy; the authored spec is never mutated.
         """
+        drop_checks = self.carries_secrets()
         cells: list[Cell] = []
         for cell in self.cells:
             if cell.role in SOLUTION_ONLY_ROLES and not (cell.is_code and cell.stub is not None):
+                continue
+            if drop_checks and cell.role == CellRole.CHECK:
                 continue
             data = cell.model_dump()
             data["check"] = None
@@ -809,10 +857,16 @@ class NotebookSpec(_Model):
         3. an unredacted solution — a `solution` cell whose source is not its stub;
         4. **prose** — any surviving cell in `SOLUTION_ONLY_ROLES`, whose secret is the
            cell itself.
+        5. **a structured expectation** — a check cell's `property`, in a notebook that
+           `carries_secrets()`. A learner build still shows that it came from one (its
+           exercises, its answer prompts), so a surviving check there is named.
         """
+        secrets = self.carries_secrets()
         leaked: list[str] = []
         for cell in self.cells:
             if cell.check is not None or cell.answer is not None:
+                leaked.append(cell.id)
+            elif cell.property is not None and secrets:
                 leaked.append(cell.id)
             elif cell.role in SOLUTION_ONLY_ROLES:
                 # A surviving solution/answer cell. For a code solution the stub swap is
@@ -822,6 +876,43 @@ class NotebookSpec(_Model):
                 if not (cell.is_code and cell.stub is not None and cell.source == cell.stub):
                     leaked.append(cell.id)
         return leaked
+
+    def carries_secrets(self) -> bool:
+        """Whether this notebook holds anything a learner must not see before they try.
+
+        True for an authored notebook with a solution, an answer, an exercise, a hidden
+        grader or an answer key, and for the learner build of one, which still has its
+        exercises and answer prompts. Deliberately wider than `SOLUTION_ONLY_ROLES`: an
+        exercise the reader fills in has an answer even when no solution cell is written
+        down, and a check on the object it builds would state it.
+        """
+        return any(
+            cell.role in SOLUTION_ONLY_ROLES
+            or cell.role == CellRole.EXERCISE
+            or cell.check is not None
+            or cell.answer is not None
+            or cell.answer_prompt is not None
+            for cell in self.cells
+        )
+
+    def learner_report(self, report: ExecutionReport | None) -> ExecutionReport | None:
+        """The run report a learner reads beside `for_learner()`.
+
+        Without the result of every check cell `for_learner()` removed. A verdict carries
+        the subject's OpenQASM, which is the solution's circuit, and `checked_against`,
+        `measure` and `detail` repeat the expected values, so a hidden check's verdict gives
+        away exactly what hiding the check was for. Every learner door (the public share,
+        a workspace member's view) passes the report through this.
+        """
+        if report is None:
+            return None
+        kept = {cell.id for cell in self.for_learner().cells}
+        hidden = {cell.id for cell in self.cells if cell.role == CellRole.CHECK} - kept
+        if not hidden:
+            return report
+        return report.model_copy(
+            update={"cells": [result for result in report.cells if result.id not in hidden]}
+        )
 
     def graded_cells(self) -> list[Cell]:
         return [cell for cell in self.cells if cell.is_graded]
@@ -910,6 +1001,9 @@ class CheckTeeth(_Model):
     equivalent: int = Field(default=0, ge=0)
     caught: int = Field(default=0, ge=0)
     survivors: list[str] = Field(default_factory=list, max_length=8)
+    #: Broken copies the simulator refused to run. Counted, never silently dropped, and
+    #: counted in neither `mutants` nor `equivalent`.
+    could_not_run: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def _caught_within_mutants(self) -> CheckTeeth:
