@@ -74,6 +74,8 @@ function checkResult(id: string, check: CellResult["check"]): CellResult {
     execution_count: 1,
     note: "",
     check,
+    cache_key: null,
+    cached_from_seq: null,
   };
 }
 
@@ -159,6 +161,8 @@ test("a check cell whose capture crashed (status error) shows Error, not a verdi
         execution_count: 1,
         note: "",
         check: null,
+        cache_key: null,
+        cached_from_seq: null,
       },
     ],
   });
@@ -173,6 +177,7 @@ test("a passing check with teeth measured shows the chip, the caught line, and t
     reason: "",
     mutants: 12,
     equivalent: 2,
+    could_not_run: 0,
     caught: 11,
     survivors: ["negating the rz angle on q1, gate 4"],
   };
@@ -195,7 +200,7 @@ test("a passing check with teeth measured shows the chip, the caught line, and t
 });
 
 test("a passing check that caught nothing shows the warning line", () => {
-  const teeth: CheckTeeth = { status: "measured", reason: "", mutants: 5, equivalent: 0, caught: 0, survivors: [] };
+  const teeth: CheckTeeth = { status: "measured", reason: "", mutants: 5, equivalent: 0, could_not_run: 0, caught: 0, survivors: [] };
   const view = renderCheck(
     baseProperty(),
     { status: "pass", basis: "circuit", checked_against: "a reference", measure: "fidelity 1.0", detail: "", qubits: 1, subject_fingerprint: null, subject_qasm: null, teeth },
@@ -205,7 +210,7 @@ test("a passing check that caught nothing shows the warning line", () => {
 });
 
 test("a passing check whose teeth were not measured shows the reason, not a score", () => {
-  const teeth: CheckTeeth = { status: "not_measured", reason: "over the time budget", mutants: 0, equivalent: 0, caught: 0, survivors: [] };
+  const teeth: CheckTeeth = { status: "not_measured", reason: "over the time budget", mutants: 0, equivalent: 0, could_not_run: 0, caught: 0, survivors: [] };
   const view = renderCheck(
     baseProperty(),
     { status: "pass", basis: "circuit", checked_against: "a reference", measure: "fidelity 1.0", detail: "", qubits: 20, subject_fingerprint: null, subject_qasm: null, teeth },
@@ -215,7 +220,7 @@ test("a passing check whose teeth were not measured shows the reason, not a scor
 });
 
 test("a failing check shows the diagnosis prominently; teeth are not shown at all", () => {
-  const teeth: CheckTeeth = { status: "measured", reason: "", mutants: 4, equivalent: 0, caught: 4, survivors: [] };
+  const teeth: CheckTeeth = { status: "measured", reason: "", mutants: 4, equivalent: 0, could_not_run: 0, caught: 4, survivors: [] };
   const view = renderCheck(
     baseProperty(),
     {

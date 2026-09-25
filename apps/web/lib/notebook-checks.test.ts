@@ -345,6 +345,7 @@ function checkCellView(overrides: Partial<NotebookCellView> = {}): NotebookCellV
     error: null,
     truncated: false,
     durationMs: 10,
+    cachedFromSeq: null,
     graded: false,
     answerPrompt: null,
     hardwareRequests: [],
