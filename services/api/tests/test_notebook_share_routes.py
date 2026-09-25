@@ -120,3 +120,56 @@ def test_report_redaction_drops_only_the_secret_cells_results():
 def test_report_redaction_passes_through_none():
     spec = _spec_with_roles(CellRole.OBJECTIVE)
     assert _redact_report_for_public(spec, None) is None
+
+
+def _challenge_with_checks():
+    """A challenge whose check states the answer, and a report whose verdict repeats the
+    solution's circuit (review of PR 1011, blocker 2)."""
+    spec = contracts.NotebookSpec.model_validate(
+        {
+            "slug": "t",
+            "title": "GHZ",
+            "kind": "challenge",
+            "cells": [
+                {
+                    "id": "c01",
+                    "kind": "code",
+                    "role": "solution",
+                    "stub": "qc = None\n",
+                    "source": "qc = build_ghz(3)\n",
+                },
+                {
+                    "id": "k01",
+                    "kind": "code",
+                    "role": "check",
+                    "property": {"kind": "value", "subject": "answer", "value": 0.4375},
+                },
+            ],
+        }
+    )
+    verdict = contracts.CheckVerdict(
+        status="pass",
+        basis="circuit",
+        checked_against="the 3-qubit GHZ state",
+        measure="fidelity 1.0000000",
+        subject_qasm="OPENQASM 3.0;\nqubit[3] q;\nh q[0];\ncx q[0], q[1];\n",
+    )
+    report = contracts.ExecutionReport(
+        notebook_slug="t",
+        ok=True,
+        runner="sandbox",
+        cells=[
+            contracts.CellResult(id="c01", status="ok"),
+            contracts.CellResult(id="k01", status="ok", check=verdict),
+        ],
+    )
+    return spec, report
+
+
+def test_the_public_report_drops_a_hidden_checks_verdict():
+    spec, report = _challenge_with_checks()
+    redacted = _redact_report_for_public(spec, report)
+    assert redacted is not None
+    assert [cell.id for cell in redacted.cells] == []
+    assert "GHZ" not in redacted.model_dump_json() and "cx q" not in redacted.model_dump_json()
+    assert [cell.id for cell in spec.for_learner().cells] == ["c01"]

@@ -498,13 +498,21 @@ async def get_notebook_version(
     if scope.user_id == notebook.owner_user_id:
         return resource
     learner = resource.spec.for_learner() if resource.spec is not None else None
+    # A check hidden from the learner build must not come back through the report: its
+    # verdict repeats the solution's circuit and the expected values (review of PR 1011).
+    report = (
+        resource.spec.learner_report(resource.report)
+        if resource.spec is not None
+        else resource.report
+    )
     return resource.model_copy(
         update={
             "spec": learner,
             "source": render_source(learner) if learner is not None else "",
-            "ipynb": to_ipynb(learner, build=build_for_kind(learner.kind), report=resource.report)
+            "ipynb": to_ipynb(learner, build=build_for_kind(learner.kind), report=report)
             if learner is not None
             else None,
+            "report": report,
         }
     )
 
