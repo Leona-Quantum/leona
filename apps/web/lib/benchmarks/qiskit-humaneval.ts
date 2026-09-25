@@ -38,7 +38,12 @@ export interface QiskitHumanEvalRun {
   passedOfGradable: number | null;
   /** Real spend in USD, from the budget tracker at run time. */
   spendUsd: number | null;
-  /** `total_wall_time_s` from the report, converted to hours. */
+  /**
+   * `total_wall_time_s` from the report, divided by 3600 and stored at full
+   * precision — this file does not round it. `qiskit-humaneval-view.ts`'s
+   * `formatWallTimeHours` rounds to 2 decimal places for display, which is
+   * the "page's own formatter" the number is allowed to pass through.
+   */
   wallTimeHours: number | null;
   /** One or two sentences of plain context for this specific run. */
   notes: string;
@@ -100,7 +105,8 @@ export const QISKIT_HUMANEVAL_RUNS: QiskitHumanEvalRun[] = [
     gradable: 106,
     passedOfGradable: 64,
     spendUsd: 6.474,
-    wallTimeHours: 2.46,
+    // 8865.488357494003 / 3600, from the report's total_wall_time_s.
+    wallTimeHours: 2.4626356548594455,
     notes:
       "Nala's review step was rejecting some code that had already passed the benchmark's own test, before it ever reached a user. PR 1010 fixes that.",
     pending: false,
@@ -109,15 +115,18 @@ export const QISKIT_HUMANEVAL_RUNS: QiskitHumanEvalRun[] = [
     date: "2026-09-25",
     label: "Re-run, after the review-step fix (PR 1010)",
     model: "deepseek-v4-pro",
-    pipelineCommit: null,
-    datasetCommit: null,
-    passed: null,
-    total: null,
-    gradable: null,
-    passedOfGradable: null,
-    spendUsd: null,
-    wallTimeHours: null,
-    notes: "Started 2026-09-25 at 10:05 UTC on PR 1010's merged code. Expected to take about 2.5 hours.",
-    pending: true,
+    // report's pipeline_commit_sha: PR 1010's merged code on dev.
+    pipelineCommit: "dbdddd5ff6323ca55b45944e8088def4239ec0d6",
+    datasetCommit: "c98ba538239fcfd554aa89627ee8026f4b5de450",
+    passed: 85,
+    total: 151,
+    gradable: 106,
+    passedOfGradable: 75,
+    spendUsd: 4.8147,
+    // 6632.884912294001 / 3600, from the report's total_wall_time_s.
+    wallTimeHours: 1.8424680311927781,
+    notes:
+      "After the fix to Nala's review step (PR 1010); 10 of the 45 tasks the sandbox blocks by design passed through the model's own workarounds.",
+    pending: false,
   },
 ];

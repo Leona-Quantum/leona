@@ -68,6 +68,35 @@ export function headlineFacts(runs: readonly QiskitHumanEvalRun[]): CompletedRun
   return run ? completedRunFacts(run) : null;
 }
 
+export interface RunComparison {
+  first: CompletedRunFacts;
+  latest: CompletedRunFacts;
+}
+
+/**
+ * The very first run's facts alongside the latest COMPLETED run's facts —
+ * what the history table's "what changed" line compares. `null` when either
+ * side has no real facts yet (an empty run list, or a first run that is
+ * itself still pending), so the page has nothing to fall back to inventing.
+ */
+export function firstAndLatestCompletedFacts(runs: readonly QiskitHumanEvalRun[]): RunComparison | null {
+  if (runs.length === 0) return null;
+  const first = completedRunFacts(runs[0]);
+  const latest = headlineFacts(runs);
+  if (!first || !latest) return null;
+  return { first, latest };
+}
+
+/**
+ * The one place `wallTimeHours` is rounded — the data file stores the raw
+ * `total_wall_time_s / 3600` quotient at full precision (see
+ * `qiskit-humaneval.ts`), and this is the page's own formatter for it,
+ * matching how `spendUsd` is already rendered with `.toFixed(2)`.
+ */
+export function formatWallTimeHours(hours: number): string {
+  return hours.toFixed(2);
+}
+
 /**
  * Whether a single row of the history table must show the fixed "in
  * progress" status instead of a score. True whenever the run is flagged
