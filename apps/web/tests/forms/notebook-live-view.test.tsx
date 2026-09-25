@@ -15,6 +15,7 @@ function cell(overrides: Partial<LiveCellView> = {}): LiveCellView {
     status: "queued",
     ename: null,
     evalue: null,
+    check: null,
     ...overrides,
   };
 }
