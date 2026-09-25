@@ -1785,3 +1785,151 @@ async def test_a_member_sees_no_hidden_check_through_any_field(client, monkeypat
         dumped = json_module.dumps(body[field])
         assert "0.4375" not in dumped, field
         assert "cx q[0]" not in dumped, field
+
+
+# ------------------------------------------------------------ block cells (Phase B, S1)
+
+_NALA_BLOCK = {
+    "method": "grover-fixed-iteration-search",
+    "plan": {"problem": "search", "params": {"domainSize": 1024, "markedCount": 1}},
+    "size_param": "domainSize",
+    "author": "nala",
+    "accepted": False,
+}
+
+
+def _block_cell(cell_id: str, **block) -> dict:
+    return {"id": cell_id, "kind": "markdown", "role": "block", "block": block}
+
+
+@pytest.mark.parametrize("execute", [True, False])
+async def test_the_author_route_stamps_block_authorship_against_the_current_version(
+    client, author_state, execute
+):
+    """The same door that stamps checks stamps blocks: the reader may accept Nala's
+    block, may not relabel it `source`, and owns any block they add. The stored source is
+    the prose rendered from the block, whatever was submitted."""
+    author_state["versions"][0].spec = _checked_spec(_block_cell("b01", **_NALA_BLOCK))
+    submitted = _checked_spec(
+        {
+            **_block_cell("b01", **{**_NALA_BLOCK, "accepted": True}),
+            "source": "Verified at every size.",
+        },
+        _block_cell("b02", method="register-phase-estimation", author="nala", accepted=False),
+    )
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{author_state['notebook'].id}/versions",
+            json={"spec": submitted, "execute": execute},
+        )
+    assert response.status_code == 201, response.text
+    stored = (
+        author_state["jobs"][0]["payload"]["request"]["spec"]
+        if execute
+        else author_state["result_kwargs"]["spec"]
+    )
+    by_id = {cell["id"]: cell for cell in stored["cells"]}
+    assert (by_id["b01"]["block"]["author"], by_id["b01"]["block"]["accepted"]) == ("nala", True)
+    assert (by_id["b02"]["block"]["author"], by_id["b02"]["block"]["accepted"]) == ("user", True)
+    assert "Verified" not in by_id["b01"]["source"]
+    assert by_id["b01"]["source"].startswith("**Leona block: `grover-fixed-iteration-search`**")
+
+
+async def test_an_import_honours_only_block_claims_that_lower_trust(client, monkeypatch):
+    from leona_notebooks.ipynb import to_ipynb
+    from leona_notebooks.spec import NotebookSpec as Spec
+
+    spec = Spec.model_validate(
+        _checked_spec(
+            _block_cell("b01", **{**_NALA_BLOCK, "accepted": True}),
+            _block_cell("b02", method="qaoa-cost-mixer-alternation", author="source", citation="x"),
+        )
+    )
+    ipynb = to_ipynb(spec)
+    created: dict = {}
+
+    async def fake_create_notebook(_scope, _session, **kwargs):
+        notebook = _notebook_row(slug=kwargs["slug"], title=kwargs["title"], kind=kwargs["kind"])
+        created["notebook"] = notebook
+        created["version"] = _version_row(notebook_id=notebook.id, created_by="user")
+        return notebook, created["version"]
+
+    async def fake_set_version_result(_scope, _session, _version_id, **kwargs):
+        created["result_kwargs"] = kwargs
+        version = created["version"]
+        version.status = kwargs["status"]
+        version.spec = kwargs["spec"]
+        version.ipynb = kwargs["ipynb"]
+        version.source = kwargs["source"]
+        created["notebook"].current_version_id = version.id
+        return version
+
+    async def fake_list_versions(_scope, _session, _notebook_id):
+        return [created["version"]]
+
+    monkeypatch.setattr(notebooks_repo, "create_notebook", fake_create_notebook)
+    monkeypatch.setattr(notebooks_repo, "set_version_result", fake_set_version_result)
+    monkeypatch.setattr(notebooks_repo, "list_versions", fake_list_versions)
+    async with client as c:
+        response = await c.post("/v1/notebooks/import", json={"ipynb": ipynb, "execute": False})
+    assert response.status_code == 201, response.text
+    stamped = {
+        c["id"]: (c["block"]["author"], c["block"]["accepted"])
+        for c in created["result_kwargs"]["spec"]["cells"]
+        if c.get("block")
+    }
+    assert stamped == {"b01": ("nala", False), "b02": ("user", True)}
+
+
+_CHALLENGE_WITH_A_BLOCK = {
+    "schema_version": 1,
+    "slug": "grover",
+    "title": "Grover",
+    "kind": "challenge",
+    "cells": [
+        {
+            "id": "c01",
+            "kind": "markdown",
+            "role": "exercise",
+            "source": "How many iterations for N = 1024?",
+        },
+        _block_cell(
+            "b01",
+            method="grover-fixed-iteration-search",
+            plan={"problem": "search", "params": {"domainSize": 1024, "markedCount": 1}},
+        ),
+    ],
+}
+
+
+async def test_a_member_sees_no_hidden_block_through_any_field(client, monkeypatch):
+    """A block's plan is the input to a cost line that can be the exercise's answer (the
+    Grover iteration count at N = 1024). A workspace member who is not the author gets
+    it through none of the spec, the source or the compile."""
+    notebook = _notebook_row(slug="grover", owner_user_id=uuid_module.uuid4())
+    version = _version_row(
+        notebook_id=notebook.id,
+        seq=1,
+        status="ready",
+        spec=_CHALLENGE_WITH_A_BLOCK,
+        source="",
+        report=None,
+    )
+
+    async def fake_get_notebook(_scope, _session, _notebook_id):
+        return notebook
+
+    async def fake_get_version_by_seq(_scope, _session, _notebook_id, _seq):
+        return version
+
+    monkeypatch.setattr(notebooks_repo, "get_notebook", fake_get_notebook)
+    monkeypatch.setattr(notebooks_repo, "get_version_by_seq", fake_get_version_by_seq)
+    async with client as c:
+        response = await c.get(f"/v1/notebooks/{notebook.id}/versions/1")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert "b01" not in [cell["id"] for cell in body["spec"]["cells"]]
+    for field in ("spec", "source", "ipynb"):
+        dumped = json_module.dumps(body[field])
+        assert "grover-fixed-iteration-search" not in dumped, field
+        assert "domainSize" not in dumped, field

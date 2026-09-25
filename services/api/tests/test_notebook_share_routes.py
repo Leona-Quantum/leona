@@ -173,3 +173,42 @@ def test_the_public_report_drops_a_hidden_checks_verdict():
     assert [cell.id for cell in redacted.cells] == []
     assert "GHZ" not in redacted.model_dump_json() and "cx q" not in redacted.model_dump_json()
     assert [cell.id for cell in spec.for_learner().cells] == ["c01"]
+
+
+def test_the_public_share_drops_a_block_that_could_give_an_exercise_away():
+    """The public share reads `for_learner()` for the cells and `_redact_report_for_public`
+    for the report. In a notebook with an exercise, a block's plan (N = 1024) is the input
+    to the Grover iteration count the exercise asks for; neither door lets it through."""
+    spec = contracts.NotebookSpec.model_validate(
+        {
+            "slug": "t",
+            "title": "Grover",
+            "kind": "lesson",
+            "cells": [
+                {
+                    "id": "c01",
+                    "kind": "markdown",
+                    "role": "exercise",
+                    "source": "How many iterations?",
+                },
+                {
+                    "id": "b01",
+                    "kind": "markdown",
+                    "role": "block",
+                    "block": {
+                        "method": "grover-fixed-iteration-search",
+                        "plan": {"problem": "search", "params": {"domainSize": 1024}},
+                    },
+                },
+            ],
+        }
+    )
+    report = contracts.ExecutionReport(
+        notebook_slug="t",
+        ok=True,
+        runner="sandbox",
+        cells=[contracts.CellResult(id="b01", status="skipped")],
+    )
+    assert [cell.id for cell in spec.for_learner().cells] == ["c01"]
+    redacted = _redact_report_for_public(spec, report)
+    assert redacted is not None and [cell.id for cell in redacted.cells] == []

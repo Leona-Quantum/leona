@@ -1297,6 +1297,59 @@ async def test_a_repair_that_only_touches_a_check_is_a_failed_repair() -> None:
     assert failed and all("only changed a check" in a.detail for a in failed)
 
 
+# --------------------------------------------------------------------------- block cells
+
+_BLOCK_MARKER = (
+    '# %% [markdown] id=b01 role=block block={"method":"amplitude-estimation-readout",'
+    '"plan":{"problem":"amplitude-estimation","params":{"epsilon":0.01}},'
+    '"size_param":"epsilon","author":"user","accepted":true}\n'
+    "# anything\n\n"
+)
+BLOCKED_LESSON = BROKEN_LESSON.replace(
+    "# %% [markdown] role=summary", _BLOCK_MARKER + "# %% [markdown] role=summary"
+)
+
+
+async def test_generated_blocks_are_nalas_proposals_whatever_the_draft_claims() -> None:
+    ports = ScriptedPorts(drafts=[BLOCKED_LESSON.replace("undefined_name\n", "")])
+    outcome = await generate(ports, GenerationRequest(brief="b"))
+    assert outcome.status == "ready", outcome.error
+    block = outcome.spec.cell_by_id("b01").block
+    assert block is not None
+    assert (block.author, block.accepted) == ("nala", False)
+
+
+async def test_a_repair_that_moves_a_block_gets_the_block_back_unchanged() -> None:
+    moved = (
+        '# %% [markdown] id=b01 role=block block={"method":"amplitude-estimation-readout",'
+        '"plan":{"problem":"amplitude-estimation","params":{"epsilon":0.4}}}\n# smaller\n'
+    )
+    fixed_cell = LESSON.split("# %% role=run\n", 1)[1].split("\n# %% [markdown]", 1)[0]
+    repair = "# %% id=c05 role=run\n" + fixed_cell + "\n\n" + moved
+    ports = ScriptedPorts(drafts=[BLOCKED_LESSON], repairs=[repair])
+    outcome = await generate(ports, GenerationRequest(brief="b"))
+    assert outcome.status == "ready", outcome.error
+    block = outcome.spec.cell_by_id("b01").block
+    assert block is not None and block.plan is not None
+    assert block.plan.params == {"epsilon": 0.01} and block.size_param == "epsilon"
+    assert "undefined_name" not in outcome.spec.cell_by_id("c05").source  # the real fix kept
+    repairs = [a for a in outcome.attempts if a.stage == "notebook.repair"]
+    assert repairs and "b01 (a block, put back unchanged)" in repairs[0].detail
+
+
+async def test_a_repair_that_only_touches_a_block_is_a_failed_repair() -> None:
+    only_block = (
+        '# %% [markdown] id=b01 role=block block={"method":"amplitude-estimation-readout"}\n'
+        "# nothing to see\n"
+    )
+    ports = ScriptedPorts(drafts=[BLOCKED_LESSON], repairs=[only_block, only_block, only_block])
+    outcome = await generate(ports, GenerationRequest(brief="b"))
+    block = outcome.spec.cell_by_id("b01").block
+    assert block is not None and block.plan is not None
+    failed = [a for a in outcome.attempts if a.stage == "notebook.repair" and not a.ok]
+    assert failed and all("only changed a check or a block" in a.detail for a in failed)
+
+
 async def test_a_revise_turn_owns_the_checks_it_changes_and_keeps_the_rest() -> None:
     base = parse_source(CHECKED_LESSON.replace("undefined_name\n", ""))
     from leona_notebooks.checks import enforce_check_authorship
