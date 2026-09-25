@@ -293,24 +293,16 @@ def _barrier_reasons(tree: ast.Module) -> tuple[str, ...]:
     return tuple(reasons)
 
 
-#: Final call attribute (or bare name) that marks a cell IMPURE (module/process
-#: state a later cell can read, or an earlier cell can be read BY, without either
-#: one naming a tracked notebook-level variable): an RNG seed, a plotting backend
-#: choice, the recursion limit, the working directory, or a file/OS write. This is
-#: a HEURISTIC, matched on the call's spelling alone (no type information) — see
-#: `_impurity_reason`'s own docstring for exactly what it cannot see.
-_IMPURE_CALL_NAMES = frozenset(
+#: File-writing (or otherwise unambiguous external-effect) method names that
+#: mark impurity REGARDLESS of what the call is made through — `df.to_csv(...)`
+#: genuinely writes a file whether or not `df` itself came from an import, unlike
+#: a generic mutator (`.remove`, `.update`, `.append`...), which is far too common
+#: a plain-object method name to treat as touching global state on its spelling
+#: alone (`qubits.remove(1)` is not a file operation just because `os.remove`
+#: exists). `open` is handled separately (`_open_call_is_impure`): only a
+#: WRITING open is impure, so it cannot live in this unconditional set.
+_FILE_WRITE_METHOD_NAMES = frozenset(
     {
-        "seed",
-        "set_seed",
-        "manual_seed",
-        "use",  # matplotlib.use(...): the plotting backend
-        "setrecursionlimit",
-        "chdir",
-        "putenv",
-        "open",
-        "write",
-        "writelines",
         "savefig",
         "to_csv",
         "to_json",
@@ -321,51 +313,100 @@ _IMPURE_CALL_NAMES = frozenset(
         "savetxt",
         "mkdir",
         "makedirs",
-        "remove",
         "unlink",
-        "rename",
         "write_text",
         "write_bytes",
     }
 )
 
+#: Method/function final names that mark impurity ONLY when the call's RECEIVER
+#: is rooted at (for `x.y.method(...)`) — or, for a bare call, the name itself
+#: IS — a name bound by an `import` statement somewhere in the notebook:
+#: `plt.rcParams.update(...)`, `np.set_printoptions(...)`, `sys.path.insert(...)`,
+#: `os.environ.setdefault(...)` (via the `set*` prefix below), a bare
+#: `seed(...)`/`set_seed(...)` reached through `from random import seed as
+#: set_seed`. Never `qubits.remove(1)` or `df.rename(...)` — `qubits`/`df` were
+#: never imported, so the root check excludes them; this is the fix for both
+#: (an EARLIER version of this heuristic matched these bare, by spelling alone,
+#: which is exactly the false-positive class an adversarial review found).
+#: Matched by exact name OR by prefix (`set*`, `filter*`, `reset*`), so
+#: `setrecursionlimit`, `set_printoptions`, `filterwarnings`, `setdefault` all
+#: match without being individually listed.
+_ROOTED_MUTATOR_EXACT = frozenset(
+    {
+        "update",
+        "insert",
+        "append",
+        "extend",
+        "pop",
+        "clear",
+        "remove",
+        "use",  # matplotlib.use(...): the plotting backend
+        "seed",
+        "setstate",
+        "manual_seed",
+        "putenv",
+        "chdir",
+    }
+)
 
-def _call_final_name(node: ast.Call) -> str | None:
-    """`f(...)` -> `"f"`; `a.b.f(...)` -> `"f"`; anything else (a call through a
-    subscript, a call on the result of another call, ...) -> `None` — not matched
-    by this heuristic at all, which is exactly its documented blind spot."""
-    func = node.func
-    if isinstance(func, ast.Name):
-        return func.id
-    if isinstance(func, ast.Attribute):
-        return func.attr
-    return None
+
+def _is_rooted_mutator_name(name: str) -> bool:
+    return name in _ROOTED_MUTATOR_EXACT or name.startswith(("set", "filter", "reset"))
 
 
-def _is_environ_setdefault(node: ast.Call) -> bool:
-    """`<anything>.environ.setdefault(...)` — kept OUT of `_IMPURE_CALL_NAMES`
-    because a bare `"setdefault"` is an ordinary dict method used constantly for
-    reasons that have nothing to do with the environment; only the specific
-    `X.environ.setdefault` shape is meant."""
-    func = node.func
-    return (
-        isinstance(func, ast.Attribute)
-        and func.attr == "setdefault"
-        and isinstance(func.value, ast.Attribute)
-        and func.value.attr == "environ"
-    )
-
-
-def _assignment_root_name(target: ast.expr) -> str | None:
+def _root_name_of_expr(node: ast.expr) -> str | None:
     """The `Name` at the base of an attribute/subscript chain (`mpl.rcParams['x']`
-    -> `"mpl"`; `os.environ['K']` -> `"os"`) — `None` for a target that has no
-    single base name at all (a plain `Name`, which `_target_names` already
-    handles as a real definition, not a mutation; a tuple/list unpack; a call
-    result subscripted in place)."""
-    node = target
-    while isinstance(node, (ast.Attribute, ast.Subscript)):
-        node = node.value
-    return node.id if isinstance(node, ast.Name) else None
+    -> `"mpl"`; `os.environ['K']` -> `"os"`; a call's own receiver,
+    `plt.rcParams.update`'s `plt.rcParams` -> `"plt"`) — `None` for anything with
+    no single base name (a plain `Name` target, which `_target_names` already
+    handles as a real definition rather than a mutation; a tuple/list unpack; a
+    chain rooted at a CALL, e.g. `Path(x).unlink()` — not matched, a documented
+    gap rather than an attempt at real dataflow tracing)."""
+    current = node
+    while isinstance(current, (ast.Attribute, ast.Subscript)):
+        current = current.value
+    return current.id if isinstance(current, ast.Name) else None
+
+
+def _open_call_is_impure(call: ast.Call) -> bool:
+    """`open(...)` is impure only when its mode contains w/a/x/+ (creates,
+    appends, truncates, or otherwise modifies a file) — reading (the default
+    with no mode argument, or an explicit `'r'`/`'rb'`/`'rt'`) is not. A
+    NON-LITERAL mode (a variable, an f-string, a concatenation...) cannot be read
+    statically, so it is treated as impure — this module's own conservative
+    direction throughout: an extra edge is always safe, a missing one is not."""
+    mode_node: ast.expr | None = None
+    if len(call.args) >= 2:
+        mode_node = call.args[1]
+    for keyword in call.keywords:
+        if keyword.arg == "mode":
+            mode_node = keyword.value
+    if mode_node is None:
+        return False
+    if isinstance(mode_node, ast.Constant) and isinstance(mode_node.value, str):
+        return any(flag in mode_node.value for flag in "wax+")
+    return True
+
+
+def _impure_call_reason(call: ast.Call, import_bound_names: frozenset[str]) -> str | None:
+    func = call.func
+    if isinstance(func, ast.Name):
+        name = func.id
+    elif isinstance(func, ast.Attribute):
+        name = func.attr
+    else:
+        return None  # a call through a subscript or another call's result: not matched
+    if name == "open":
+        return "looks impure: opens a file for writing" if _open_call_is_impure(call) else None
+    if name in _FILE_WRITE_METHOD_NAMES:
+        return f"looks impure: calls .{name}(...)"
+    if not _is_rooted_mutator_name(name):
+        return None
+    root = name if isinstance(func, ast.Name) else _root_name_of_expr(func.value)
+    if root is not None and root in import_bound_names:
+        return f"looks impure: calls {name}(...) on something imported"
+    return None
 
 
 def _impurity_reason(tree: ast.Module, import_bound_names: frozenset[str]) -> str | None:
@@ -373,7 +414,7 @@ def _impurity_reason(tree: ast.Module, import_bound_names: frozenset[str]) -> st
     everything before it, everything after depends on it) — when it looks, from
     its own text alone, like it sets state OUTSIDE any notebook-level variable
     this module tracks by name: an RNG seed, a plotting backend, the process's
-    cwd or environment, a recursion limit, or a file/OS write. The mutation rule
+    cwd or environment, a recursion limit, or a file write. The mutation rule
     already handles `obj.attr = value` and `obj[i] = value` as reads of `obj` — the
     gap this closes is specifically LIBRARY/PROCESS state, whose readers (another
     cell that calls `plt.figure()`, say) do not have to mention `mpl`, `rcParams`,
@@ -383,26 +424,28 @@ def _impurity_reason(tree: ast.Module, import_bound_names: frozenset[str]) -> st
     everything after it whenever IT changes, without trying to name the specific
     edge.
 
-    Heuristic, not a proof, and this says exactly where it stops seeing: a syntax
-    match on the CALL'S OWN SPELLING (`_IMPURE_CALL_NAMES`, `_is_environ_setdefault`)
-    or an assignment whose root name was bound by an `import` ANYWHERE in the
-    notebook (`_assignment_root_name`). It cannot see the same effect through an
-    unrecognised wrapper (`my_helpers.seed_everything()`), a call reached through a
-    subscript or another call's return value, or state changed inside an ordinary
-    library call this list does not name — DESIGN's own residual gap (module
-    docstring) is what survives this rule, nothing more.
+    Heuristic, not a proof, and this says exactly where it stops seeing: a call
+    match requires either an UNCONDITIONAL file-write method name
+    (`_FILE_WRITE_METHOD_NAMES`) or a mutator name (`_is_rooted_mutator_name`)
+    whose call is rooted at an imported name (`_impure_call_reason`); an
+    assignment match requires the same rootedness on its target
+    (`_root_name_of_expr`). It cannot see the same effect through an
+    unrecognised wrapper (`my_helpers.seed_everything()`), a call reached
+    through a subscript or another call's return value (`Path(x).unlink()`),
+    a mutator called on a LOCAL object with no import behind it at all, or state
+    changed inside an ordinary library call this heuristic does not name —
+    DESIGN's own residual gap (module docstring) is what survives this rule,
+    nothing more.
     """
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
-            name = _call_final_name(node)
-            if name in _IMPURE_CALL_NAMES:
-                return f"looks impure: calls .{name}(...)"
-            if _is_environ_setdefault(node):
-                return "looks impure: calls ....environ.setdefault(...)"
+            reason = _impure_call_reason(node, import_bound_names)
+            if reason is not None:
+                return reason
         elif isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             for target in targets:
-                root = _assignment_root_name(target)
+                root = _root_name_of_expr(target)
                 if root is not None and root in import_bound_names:
                     return f"looks impure: assigns into {root}...."
     return None

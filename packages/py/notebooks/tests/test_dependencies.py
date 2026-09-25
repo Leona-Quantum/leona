@@ -908,6 +908,35 @@ def test_adding_a_cell_without_reordering_existing_ones_is_not_a_structural_chan
     assert plan.execute == {"c2"}  # only the newly-inserted cell
 
 
+def test_reordering_only_markdown_cells_is_not_a_structural_change() -> None:
+    # `_structural_change` compares `code_cells()` order specifically — a reader
+    # moving prose around, or deleting a markdown cell, must never force a full
+    # run: nothing about what any CODE cell reads or writes changed.
+    parent_spec = parse_source(
+        "# ---\n# title: T\n# kind: scratch\n# ---\n"
+        "# %% [markdown]\n# before\n"
+        "# %% id=c1\nx = 1\n"
+        "# %% [markdown]\n# between\n"
+        "# %% id=c2\nprint(x)\n"
+    )
+    # Both markdown cells swapped to the opposite ends, no code cell touched.
+    child_spec = parent_spec.model_copy(
+        update={
+            "cells": [
+                parent_spec.cells[2],  # "between" markdown, now first
+                parent_spec.cells[1],  # c1
+                parent_spec.cells[3],  # c2
+                parent_spec.cells[0],  # "before" markdown, now last
+            ]
+        }
+    )
+    keys = cache_keys(parent_spec)
+    parent_report = _ok_report_from_keys(parent_spec, keys)
+    plan = plan_run(child_spec, parent_spec, parent_report, None)
+    assert plan.execute == frozenset()
+    assert set(plan.reused) == {"c1", "c2"}
+
+
 # --------------------------------------------------------------------------- S3: fixpoint
 
 
@@ -1041,3 +1070,124 @@ def test_an_ordinary_qiskit_circuit_building_cell_is_not_a_barrier() -> None:
     assert graph.analyses["c2"].is_barrier is False
     assert graph.analyses["c3"].is_barrier is False
     assert graph.analyses["c2"].defined == {"qc"}
+
+
+# --------------------------------------------------------------------------- impurity precision
+#
+# Round 2 of the adversarial review: the FIRST impurity heuristic over-triggered (any
+# receiver, matched by the method's spelling alone) and under-triggered (module-level
+# mutator calls it never listed). Every named case below, both directions: a false
+# positive must NOT be a barrier (so reuse still works for the ordinary case), a miss
+# must NOW be a barrier.
+
+
+def _is_barrier_of(source: str, cell_id: str = "c1") -> bool:
+    graph = build_dependency_graph(
+        _spec(f"# ---\n# title: T\n# kind: scratch\n# ---\n# %% id={cell_id}\n{source}\n")
+    )
+    return graph.analyses[cell_id].is_barrier
+
+
+# ---- false positives (must NOT be barriers)
+
+
+def test_list_remove_on_a_local_object_is_not_impure() -> None:
+    assert _is_barrier_of("qubits = [0, 1, 2]\nqubits.remove(1)\n") is False
+
+
+def test_dataframe_rename_on_a_local_object_is_not_impure() -> None:
+    assert (
+        _is_barrier_of(
+            "class Frame:\n    def rename(self, **kw):\n        pass\ndf = Frame()\ndf.rename(columns={'a': 'b'})\n"
+        )
+        is False
+    )
+
+
+def test_sys_stdout_write_is_not_impure() -> None:
+    assert _is_barrier_of("import sys\nsys.stdout.write('hi')\n") is False
+
+
+def test_open_for_reading_with_no_mode_argument_is_not_impure() -> None:
+    assert _is_barrier_of("f = open('/tmp/whatever-leona-notebook-test.txt')\n") is False
+
+
+def test_open_with_an_explicit_read_mode_is_not_impure() -> None:
+    assert _is_barrier_of("f = open('/tmp/whatever-leona-notebook-test.txt', 'r')\n") is False
+
+
+# ---- misses (must NOW be barriers)
+
+
+def test_plt_rcparams_update_is_impure() -> None:
+    assert (
+        _is_barrier_of("import matplotlib.pyplot as plt\nplt.rcParams.update({'font.size': 8})\n")
+        is True
+    )
+
+
+def test_np_set_printoptions_is_impure() -> None:
+    assert _is_barrier_of("import numpy as np\nnp.set_printoptions(precision=3)\n") is True
+
+
+def test_random_setstate_is_impure() -> None:
+    assert (
+        _is_barrier_of("import random\nstate = random.getstate()\nrandom.setstate(state)\n") is True
+    )
+
+
+def test_warnings_filterwarnings_is_impure() -> None:
+    assert _is_barrier_of("import warnings\nwarnings.filterwarnings('ignore')\n") is True
+
+
+def test_os_environ_update_is_impure() -> None:
+    assert _is_barrier_of("import os\nos.environ.update({'X': '1'})\n") is True
+
+
+def test_sys_path_insert_is_impure() -> None:
+    assert _is_barrier_of("import sys\nsys.path.insert(0, '/tmp')\n") is True
+
+
+# ---- open()'s own mode-based gate, isolated
+
+
+def test_open_with_a_write_mode_is_impure() -> None:
+    assert _is_barrier_of("f = open('/tmp/whatever-leona-notebook-test.txt', 'w')\n") is True
+
+
+def test_open_with_a_non_literal_mode_is_conservatively_impure() -> None:
+    mode = "'w' if True else 'r'"
+    assert _is_barrier_of(f"f = open('/tmp/whatever-leona-notebook-test.txt', {mode})\n") is True
+
+
+# ---- reuse-vs-full-rerun for the fixed misses, end to end through plan_run
+
+
+def test_rcparams_update_via_a_method_call_invalidates_the_reader() -> None:
+    _assert_reuse_matches_a_full_rerun(
+        [
+            ("c1", "import matplotlib as mpl"),
+            ("c2", "mpl.rcParams.update({'font.size': 8})"),
+            ("c3", "print(mpl.rcParams['font.size'])"),
+        ],
+        [
+            ("c1", "import matplotlib as mpl"),
+            ("c2", "mpl.rcParams.update({'font.size': 20})"),
+            ("c3", "print(mpl.rcParams['font.size'])"),
+        ],
+    )
+
+
+def test_sys_path_insert_invalidates_a_later_cell() -> None:
+    _assert_reuse_matches_a_full_rerun(
+        [
+            ("c1", "import sys"),
+            ("c2", "sys.path.insert(0, '/tmp/a')"),
+            ("c3", "print(len(sys.path))"),
+        ],
+        [
+            ("c1", "import sys"),
+            ("c2", "sys.path.insert(0, '/tmp/b')\nsys.path.insert(0, '/tmp/a')"),
+            ("c3", "print(len(sys.path))"),
+        ],
+    )
