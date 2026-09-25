@@ -39,6 +39,7 @@ from .repos import AuthzError, NotFoundError
 from .routes.artifacts import router as artifacts_router
 from .routes.billing import router as billing_router
 from .routes.catalog import router as catalog_router
+from .routes.checks import router as checks_router
 from .routes.comments import router as comments_router
 from .routes.estimates import router as estimates_router
 from .routes.me import router as me_router
@@ -251,6 +252,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         limit=app.state.settings.token_rate_limit_per_minute,
         bucket="personal access token",
         warn_hint="check whether an integration is looping, or the token is compromised.",
+    )
+    # Per ACCOUNT, the shape of `comment_limiter`: consulted by one route only
+    # (`routes/checks.py::_meter`), because the user id is not known until the scope
+    # dependency has run. The one meter on a route that spends CPU and stores nothing
+    # (`DEFAULT_CHECK_LIMIT` in rate_limit.py). No warning thresholds: one account
+    # reaching its own check ceiling is nobody on call's business.
+    app.state.check_limiter = FixedWindowLimiter(
+        limit=app.state.settings.check_rate_limit_per_minute,
+        bucket="circuit check",
+        warn_thresholds=(),
     )
 
     @app.middleware("http")
@@ -562,6 +573,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(shares_router, prefix="/v1")
     app.include_router(catalog_router, prefix="/v1")
     app.include_router(estimates_router, prefix="/v1")
+    app.include_router(checks_router, prefix="/v1")
     app.include_router(qpu_router, prefix="/v1")
     app.include_router(qapps_router, prefix="/v1")
     app.include_router(notebooks_router, prefix="/v1")

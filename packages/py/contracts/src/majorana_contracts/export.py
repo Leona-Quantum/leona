@@ -15,6 +15,7 @@ from pydantic.json_schema import models_json_schema
 
 from . import (
     CONTRACTS_VERSION,
+    circuit_checks,
     comments,
     courses,
     events,
@@ -178,6 +179,10 @@ EXPORTED = [
     # NotificationKind is an enum and reaches the document as a hoisted $def.
     notifications.Notification,
     notifications.NotificationList,
+    # ai-ops 382 option 1: the agent connector's `check_circuit` (POST /v1/checks/circuit).
+    # CheckProperty and CheckVerdict are hoisted as $defs of these two.
+    circuit_checks.CircuitCheckRequest,
+    circuit_checks.CircuitCheckResponse,
 ]
 
 

@@ -206,6 +206,30 @@ def test_a_run_token_may_call_a_qapp_as_an_api_but_a_read_token_may_not():
     assert refusal.reason == token_access.INSUFFICIENT_SCOPE
 
 
+def test_a_run_token_may_check_a_circuit_but_a_read_token_may_not():
+    """The agent connector's `check_circuit` (ai-ops 382 option 1), named rather than
+    left to the generic sweeps, for the reason the Qapp test above gives: those sweeps
+    prove properties of whatever the sets contain, never that this route is in one.
+
+    `run`, not `read`, although the route stores nothing like `/estimates/logical`
+    (which IS in `READ_WRITES`): a check parses and simulates the caller's circuit and
+    its broken copies on Leona's CPU, which is spending compute on the caller's behalf.
+    """
+    template, path = "/checks/circuit", "/v1/checks/circuit"
+    assert ("POST", template) in token_access.RUN_WRITES
+    assert ("POST", template) not in token_access.READ_WRITES
+
+    assert token_access.check("POST", template, path, READ_AND_RUN) is None
+
+    refusal = token_access.check("POST", template, path, READ_ONLY)
+    assert refusal is not None
+    assert refusal.reason == token_access.INSUFFICIENT_SCOPE
+
+    hardware_only = token_access.check("POST", template, path, READ_AND_HARDWARE)
+    assert hardware_only is not None
+    assert hardware_only.reason == token_access.INSUFFICIENT_SCOPE
+
+
 @pytest.mark.parametrize(
     ("method", "template", "path"),
     [

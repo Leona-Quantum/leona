@@ -1,11 +1,12 @@
-"""The control-plane client: notebooks, verified runs, estimates, and Qapps.
+"""The control-plane client: notebooks, verified runs, estimates, circuit checks, and Qapps.
 
 One bearer-token client for everything `%nala`, the `leona-notebooks` CLI and
 `leona-mcp`'s acting tools need from the API. Generalised from
 `leona_notebooks.jupyter.Client` (proposal 7 Phase A/B); the notebook methods below
 are that class, unchanged in behaviour. `run`/`estimate` methods are new in Phase C;
 `run_qapp` and its two lower-level halves are ai-ops 349 option 2's "call it as an
-API" endpoint.
+API" endpoint. `check_circuit` is the agent connector's first headless tool (ai-ops
+382 option 1): a circuit judged against a property, with no run and nothing stored.
 
 Configuration is two environment variables — never a token as a constructor argument
 from untrusted input, and never a token in a log line or an exception message:
@@ -38,9 +39,9 @@ if TYPE_CHECKING:
     # `leona_notebooks.jupyter`/`leona_notebooks.leona`/`leona_submit` — can be
     # imported without `majorana-contracts` installed. `from __future__ import
     # annotations` (above) already makes every annotation in this file a
-    # string at runtime, so these two names are never looked up unless
+    # string at runtime, so these names are never looked up unless
     # something calls `typing.get_type_hints` on this module.
-    from majorana_contracts import QappExecution, Run
+    from majorana_contracts import CheckProperty, CheckVerdict, QappExecution, Run
 
 from .atlas import (
     SearchLimits,
@@ -586,6 +587,48 @@ class Client:
         if assumptions is not None:
             payload["assumptions"] = assumptions
         return self._authenticated_call("POST", "/estimates/logical", payload)
+
+    # -- checks: the agent connector's check_circuit (ai-ops 382 option 1) -----
+
+    def check_circuit(self, qasm: str, property: CheckProperty | dict[str, Any]) -> CheckVerdict:
+        """`POST /v1/checks/circuit`: judge an OpenQASM 3 circuit against a property.
+
+        `property` is a `majorana_contracts.CheckProperty` or the dict of one: `kind`
+        (`state`, `unitary`, `distribution` or `energy`) and that kind's expectation.
+        Its `subject` is ignored by the route; `"circuit"` is filled in when a dict has
+        none. The authorship fields (`author`, `citation`, `accepted`) are not sent: the
+        verdict never depends on them and nothing is stored.
+
+        Returns the `CheckVerdict`: `status` is `pass`, `fail` or `inconclusive` (never
+        "verified"), and `teeth` is always set, saying whether deliberately broken copies
+        of the circuit were caught or why none were tried. The request is validated here
+        first, so a malformed property raises `LeonaClientError` with the contract's own
+        words instead of the API's bare 422. A circuit that does not parse, or a `value`
+        check, comes back from the API as a 400 and is raised with its message. Needs the
+        token's `run` scope: a check spends compute on Leona's side the way a run does.
+        """
+        from majorana_contracts import CircuitCheckRequest, CircuitCheckResponse
+        from pydantic import ValidationError
+
+        if isinstance(property, dict):
+            raw = {"subject": "circuit", **property}
+        else:
+            raw = property.model_dump(mode="json")
+        try:
+            request = CircuitCheckRequest.model_validate({"qasm": qasm, "property": raw})
+        except ValidationError as exc:
+            problems = "; ".join(
+                f"{'.'.join(str(part) for part in error['loc']) or 'body'}: {error['msg']}"
+                for error in exc.errors()
+            )
+            raise LeonaClientError(f"This check is not valid: {problems}") from None
+        payload = request.model_dump(
+            mode="json",
+            exclude_none=True,
+            exclude={"property": {"author", "accepted", "citation"}},
+        )
+        answer = self._authenticated_call("POST", "/checks/circuit", payload)
+        return CircuitCheckResponse.model_validate(answer).verdict
 
     # -- Qapps: "call it as an API" (ai-ops 349 option 2, ai-ops 362) --------
 
