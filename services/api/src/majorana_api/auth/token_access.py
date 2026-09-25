@@ -104,6 +104,13 @@ READ_DENIED: frozenset[tuple[str, str]] = frozenset(
 #:   and this is that decision, made because a token-holding MCP client
 #:   (`leona_mcp`'s `estimate_resources` tool) is the first caller who needs it
 #:   and the route has no side effect a `read` token shouldn't already have.
+#: - `POST /plans` (ai-ops 382, Phase B slice S2) is the same shape again:
+#:   `routes/plans.py::plan` takes no session and evaluates the workflow
+#:   planner's closed-form formulas (`leona_planner`) over the numbers the caller
+#:   sends, nothing stored, nothing charged, no provider, nothing executed. A
+#:   POST only because it takes a body. Added deliberately for `leona_mcp`'s
+#:   `plan_workflow` tool, whose answer is meant to be handed straight to
+#:   `/estimates/logical` above, so a token that may estimate may plan.
 #:
 #: The plan's own pitch for this feature is "an Atlas method, a verified run or an
 #: estimate", and an estimate should not need the power to start a run.
@@ -111,6 +118,7 @@ READ_WRITES: frozenset[tuple[str, str]] = frozenset(
     {
         ("POST", "/qpu/estimates"),
         ("POST", "/estimates/logical"),
+        ("POST", "/plans"),
     }
 )
 

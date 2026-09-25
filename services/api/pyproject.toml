@@ -13,6 +13,9 @@ dependencies = [
     # conversion (leona_notebooks.ipynb) for routes/notebooks.py. The worker,
     # not the API, owns generation, revision and sandbox execution.
     "leona-notebooks",
+    # The workflow planner's arithmetic for `POST /v1/plans` (routes/plans.py, ai-ops
+    # 382 S2): standard library only, generated data from apps/web's TS planner.
+    "leona-planner",
     "pillow>=12.3.0",
     "alembic>=1.20.0",
     "sqlalchemy[asyncio]>=2.0.54",
@@ -40,6 +43,7 @@ majorana-estimation = { workspace = true }
 majorana-openqasm = { workspace = true }
 majorana-qpu = { workspace = true }
 leona-notebooks = { workspace = true }
+leona-planner = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

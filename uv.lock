@@ -15,6 +15,7 @@ members = [
     "leona-client",
     "leona-mcp",
     "leona-notebooks",
+    "leona-planner",
     "majorana-agent",
     "majorana-api",
     "majorana-contracts",
@@ -1617,6 +1618,11 @@ requires-dist = [
 provides-extras = ["execute"]
 
 [[package]]
+name = "leona-planner"
+version = "0.1.0"
+source = { editable = "packages/py/planner" }
+
+[[package]]
 name = "llvmlite"
 version = "0.49.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1669,6 +1675,7 @@ dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },
     { name = "leona-notebooks" },
+    { name = "leona-planner" },
     { name = "majorana-contracts" },
     { name = "majorana-estimation" },
     { name = "majorana-openqasm" },
@@ -1690,6 +1697,7 @@ requires-dist = [
     { name = "cryptography", specifier = ">=50.0.1" },
     { name = "fastapi", specifier = ">=0.121" },
     { name = "leona-notebooks", editable = "packages/py/notebooks" },
+    { name = "leona-planner", editable = "packages/py/planner" },
     { name = "majorana-contracts", editable = "packages/py/contracts" },
     { name = "majorana-estimation", editable = "packages/py/estimation" },
     { name = "majorana-openqasm", editable = "packages/py/openqasm" },
