@@ -10,11 +10,12 @@ import {
   blockEvidence,
   blockPlanLink,
   CHECK_QUBIT_CEILING,
-  checkedBoundary,
   claimSources,
+  evidenceBoundary,
   insertBlockCellAfter,
   resolveBlockPlan,
   searchMethods,
+  sizeParamChoicesFor,
   sizeStanding,
   stagePositions,
   type BlockRef,
@@ -212,21 +213,78 @@ test("evidence is the checks that name the block, with the width the worker judg
       ["k4", "not_run", null],
     ],
   );
-  // Only a PASSING check with a circuit moves the boundary: the failing 12 does not.
-  assert.equal(checkedBoundary(rows), 10);
-  assert.equal(checkedBoundary(rows.filter((row) => row.cellId !== "k1")), null);
+  // Only a PASSING check with a circuit sets the width; the fail above it is counted.
+  assert.deepEqual(evidenceBoundary(rows), { counted: 4, passing: 2, widest: 10, conflicts: 0 });
+  assert.equal(evidenceBoundary(rows.filter((row) => row.cellId !== "k1")).widest, null);
 });
 
 test("the boundary is capped at the width a check of that kind can judge", () => {
   const rows = blockEvidence("b1", [checkView("k1", "unitary", "b1", { status: "pass", qubits: 12 })]);
-  assert.equal(checkedBoundary(rows), CHECK_QUBIT_CEILING.unitary);
+  assert.equal(evidenceBoundary(rows).widest, CHECK_QUBIT_CEILING.unitary);
+});
+
+test("B1: only checks a person wrote or accepted count toward the boundary", () => {
+  const nala = (accepted: boolean) =>
+    blockEvidence("b1", [checkView("k1", "state", "b1", { status: "pass", qubits: 18 }, { author: "nala", accepted })]);
+  const proposed = nala(false);
+  assert.equal(proposed[0].counted, false);
+  assert.deepEqual(evidenceBoundary(proposed), { counted: 0, passing: 0, widest: null, conflicts: 0 });
+  assert.equal(sizeStanding(14, evidenceBoundary(proposed)), "unchecked");
+  assert.equal(evidenceBoundary(nala(true)).widest, 18);
+  const sourced = blockEvidence("b1", [checkView("k1", "state", "b1", { status: "pass", qubits: 6 }, { author: "source", citation: "x" })]);
+  assert.equal(evidenceBoundary(sourced).widest, 6);
+});
+
+test("B2: a counted fail or inconclusive at or below the widest pass cancels the boundary", () => {
+  const rows = blockEvidence("b1", [
+    checkView("pass-2q", "state", "b1", { status: "pass", qubits: 2 }),
+    checkView("fail-2q", "state", "b1", { status: "fail", qubits: 2 }),
+    checkView("fail-10q", "unitary", "b1", { status: "fail", qubits: 10 }),
+  ]);
+  const boundary = evidenceBoundary(rows);
+  assert.deepEqual(boundary, { counted: 3, passing: 1, widest: 2, conflicts: 1 });
+  for (const width of [1, 2, 3, 10, null]) assert.equal(sizeStanding(width, boundary), "contradicted");
+  // A fail ABOVE the widest pass is stated in the counts, and does not cancel.
+  const above = evidenceBoundary(rows.filter((row) => row.cellId !== "fail-2q"));
+  assert.equal(above.conflicts, 0);
+  assert.equal(sizeStanding(2, above), "within");
+  // An inconclusive, or a fail with no width to compare (a value check), cancels too.
+  const inconclusive = blockEvidence("b1", [
+    checkView("p", "state", "b1", { status: "pass", qubits: 4 }),
+    checkView("i", "state", "b1", { status: "inconclusive", qubits: null }),
+  ]);
+  assert.equal(evidenceBoundary(inconclusive).conflicts, 1);
+  const value = blockEvidence("b1", [
+    checkView("p", "state", "b1", { status: "pass", qubits: 4 }),
+    checkView("v", "value", "b1", { status: "fail", qubits: null }),
+  ]);
+  assert.equal(evidenceBoundary(value).conflicts, 1);
+  // An unaccepted Nala fail neither sets nor cancels anything.
+  const proposedFail = blockEvidence("b1", [
+    checkView("p", "state", "b1", { status: "pass", qubits: 4 }),
+    checkView("n", "state", "b1", { status: "fail", qubits: 2 }, { author: "nala", accepted: false }),
+  ]);
+  assert.equal(evidenceBoundary(proposedFail).conflicts, 0);
 });
 
 test("a width sits within, beyond, or unplaced against the boundary", () => {
-  assert.equal(sizeStanding(10, 10), "within");
-  assert.equal(sizeStanding(11, 10), "beyond");
-  assert.equal(sizeStanding(null, 10), "unplaced");
-  assert.equal(sizeStanding(4, null), "unchecked");
+  const at10 = { counted: 1, passing: 1, widest: 10, conflicts: 0 };
+  assert.equal(sizeStanding(10, at10), "within");
+  assert.equal(sizeStanding(11, at10), "beyond");
+  assert.equal(sizeStanding(null, at10), "unplaced");
+  assert.equal(sizeStanding(4, { counted: 0, passing: 0, widest: null, conflicts: 0 }), "unchecked");
+});
+
+test("S4: the size control only offers parameters that move the qubit count, when any do", () => {
+  // Search: markedCount and oracleToffolis move the cost but never the width.
+  assert.deepEqual(sizeParamChoicesFor(CATALOG.graph, "search", { domainSize: 1024, markedCount: 1 }, {}), ["domainSize"]);
+  const stored = resolveBlockPlan(CATALOG.graph, { ...GROVER, size_param: "markedCount" });
+  assert.equal(stored.kind === "placed" ? stored.sizeParam : null, "domainSize");
+  // A problem whose plan states no width falls back to what moves any logical figure.
+  const noWidth = sizeParamChoicesFor(CATALOG.graph, "amplitude-estimation", { epsilon: 0.01 }, {});
+  assert.deepEqual(noWidth, ["epsilon"]);
+  // Nothing set, nothing to move.
+  assert.deepEqual(sizeParamChoicesFor(CATALOG.graph, "amplitude-estimation", {}, {}), []);
 });
 
 // ------------------------------------------------------------------------- the audit

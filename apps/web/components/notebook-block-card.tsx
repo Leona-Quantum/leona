@@ -8,15 +8,16 @@ import {
   blockAudit,
   blockCostAt,
   blockEvidence,
-  checkedBoundary,
   CHECK_QUBIT_CEILING,
   claimSources,
+  evidenceBoundary,
   resolveBlockPlan,
   sizeStanding,
   type BlockAuditSummary,
   type BlockCatalog,
   type BlockEvidence,
   type BlockMethod,
+  type EvidenceBoundary,
 } from "../lib/notebook-blocks";
 import { checkAuthorBadge } from "../lib/notebook-checks";
 import type { NotebookCellView } from "../lib/notebook-view";
@@ -80,12 +81,17 @@ export function NotebookBlockCard({
   const method = useMemo(() => ready?.methods.find((candidate) => candidate.id === ref?.method) ?? null, [ready, ref]);
   const resolved = useMemo(() => (index && ref ? resolveBlockPlan(index, ref) : null), [index, ref]);
   const placed = resolved?.kind === "placed" ? resolved : null;
-  const [chosenIndex, setChosenIndex] = useState<number | null>(null);
+  // The reader's slider position belongs to the plan it was moved on. Keyed rather than
+  // reset in an effect, so a block whose plan changes (a new version, another block in
+  // the same slot) opens at its own plan's size, never at an index into a different list.
+  const planKey = JSON.stringify([ref?.method ?? null, ref?.plan ?? null, ref?.size_param ?? null]);
+  const [chosen, setChosen] = useState<{ planKey: string; index: number } | null>(null);
+  const chosenIndex = chosen?.planKey === planKey ? chosen.index : null;
   const sizeIndex = placed ? (chosenIndex ?? placed.planSizeIndex) : 0;
   const size = placed?.sizeParam ? (placed.sizes[sizeIndex] ?? null) : null;
   const cost = useMemo(() => (index && placed ? blockCostAt(index, placed, size) : null), [index, placed, size]);
   const evidence = useMemo(() => blockEvidence(cell.id, cells), [cell.id, cells]);
-  const boundary = checkedBoundary(evidence);
+  const boundary = evidenceBoundary(evidence);
   const audit = ready && ref ? blockAudit(ready.audit, ref.method) : null;
   const papers = useMemo(() => new Map((ready?.papers ?? []).map((paper) => [paper.id, paper])), [ready]);
   if (!ref) return null;
@@ -141,7 +147,8 @@ export function NotebookBlockCard({
           </p>
           {placed.sizeParam && placed.sizes.length > 1 ? (
             <label className="mj-notebook-block-size">
-              <span>{copy.sizeLabel}</span>
+              {/* The parameter's own name: "Items to search (N)", never a generic "size". */}
+              <span>{paramName(placed.sizeParam)}</span>
               <input
                 type="range"
                 min={0}
@@ -149,10 +156,10 @@ export function NotebookBlockCard({
                 step={1}
                 value={sizeIndex}
                 aria-valuetext={size === null ? undefined : copy.sizeReadout(paramName(placed.sizeParam), formatPlain(size))}
-                onChange={(event) => setChosenIndex(Number(event.target.value))}
+                onChange={(event) => setChosen({ planKey, index: Number(event.target.value) })}
               />
               <output className="mj-notebook-block-size-readout">
-                {size === null ? "" : copy.sizeReadout(paramName(placed.sizeParam), formatPlain(size))}
+                {size === null ? "" : formatPlain(size)}
                 {sizeIndex === placed.planSizeIndex ? <span className="mj-plan-note">{copy.planSize}</span> : null}
               </output>
             </label>
@@ -398,7 +405,7 @@ function BlockEvidenceSection({
   checkCopy,
 }: {
   evidence: readonly BlockEvidence[];
-  boundary: number | null;
+  boundary: EvidenceBoundary;
   width: number | null;
   /** What the card shows as the cost: the planner's numbers at a size, the source's own
    * words, or nothing (a hole, or the Atlas not loaded). Nothing shown, nothing claimed. */
@@ -421,7 +428,7 @@ function BlockEvidenceSection({
                 {row.status === "not_run" ? checkCopy.notRunYet : checkCopy.statusChip[row.status]}
               </span>{" "}
               <span className="mj-notebook-block-evidence-statement">{row.statement}</span>
-              {evidenceQualifiers(row, copy, checkCopy).map((words) => (
+              {evidenceQualifiers(row, copy).map((words) => (
                 <span key={words} className="mj-notebook-block-muted">
                   {" · "}
                   {words}
@@ -431,21 +438,31 @@ function BlockEvidenceSection({
           ))}
         </ul>
       )}
-      {shown === "none" ? (
-        boundary !== null ? <p className="mj-notebook-block-boundary">{copy.boundary(formatPlain(boundary))}</p> : null
-      ) : (
-        <p className="mj-notebook-block-boundary" data-standing={standing}>
-          {boundary === null ? copy.noBoundary : copy.boundary(formatPlain(boundary))}{" "}
-          {standing === "within" && width !== null
-            ? copy.within(formatPlain(width))
-            : standing === "beyond" && width !== null && boundary !== null
-              ? copy.beyond(formatPlain(boundary), formatPlain(width), source)
-              : standing === "unplaced" && boundary !== null
-                ? shown === "prose"
-                  ? copy.proseBeyond(formatPlain(boundary), source)
-                  : copy.unplacedStanding(formatPlain(boundary), source)
-                : copy.uncheckedClaim(source)}
+      {boundary.counted > 0 ? (
+        <p className="mj-notebook-block-muted">
+          {copy.evidenceCount(boundary.passing, boundary.counted, boundary.widest === null ? null : formatPlain(boundary.widest))}
         </p>
+      ) : null}
+      {/* With no cost on the card (a hole, or the Atlas not loaded) there is nothing to
+          back or to call anyone's claim, so only what the checks themselves reach is said. */}
+      {shown === "none" && boundary.widest === null ? null : (
+      <p className="mj-notebook-block-boundary" data-standing={standing}>
+        {boundarySentence(standing, boundary, copy)}
+        {shown === "none" ? null : (
+          <>
+            {" "}
+            {standing === "within"
+              ? copy.within
+              : standing === "beyond" && width !== null && boundary.widest !== null
+                ? copy.beyond(formatPlain(boundary.widest), formatPlain(width), source)
+                : standing === "unplaced" && boundary.widest !== null
+                  ? shown === "prose"
+                    ? copy.proseBeyond(formatPlain(boundary.widest), source)
+                    : copy.unplacedStanding(formatPlain(boundary.widest), source)
+                  : copy.uncheckedClaim(source)}
+          </>
+        )}
+      </p>
       )}
       {standing === "beyond" ? (
         <p className="mj-notebook-block-muted">
@@ -461,15 +478,23 @@ function BlockEvidenceSection({
   );
 }
 
+/** The first sentence under the evidence: what the linked checks establish, if anything. */
+function boundarySentence(standing: ReturnType<typeof sizeStanding>, boundary: EvidenceBoundary, copy: BlockCopy): string {
+  if (boundary.widest === null) return copy.noBoundary;
+  if (standing === "contradicted") return copy.conflict(boundary.conflicts, formatPlain(boundary.widest));
+  return copy.boundary(formatPlain(boundary.widest));
+}
+
 /** What to say after a check's statement: the width it was checked at (from the report),
- * and whether a person has accepted it. A check not run yet says so in its chip already. */
-function evidenceQualifiers(row: BlockEvidence, copy: BlockCopy, checkCopy: CheckCopy): string[] {
+ * and, for an unaccepted Nala proposal, that it is not counted. A check not run yet says
+ * so in its chip already. */
+function evidenceQualifiers(row: BlockEvidence, copy: BlockCopy): string[] {
   const out: string[] = [];
   if (row.status !== "not_run") {
     if (row.kind === "value") out.push(copy.evidenceValue);
     else if (row.qubits !== null) out.push(copy.evidenceChecked(formatPlain(row.qubits)));
   }
-  if (row.author === "nala" && !row.accepted) out.push(`${checkCopy.authorNalaProposed}, ${checkCopy.authorNotAccepted}`);
+  if (!row.counted) out.push(copy.notCounted);
   return out;
 }
 

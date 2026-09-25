@@ -191,7 +191,9 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   // The Atlas slice block cards are drawn from. Fetched once, and only when the notebook
   // on screen has a block cell or one is being added: no other notebook load pays for it.
   const [blockCatalog, setBlockCatalog] = useState<BlockCatalogState>({ status: "loading" });
-  const blockCatalogRequested = useRef(false);
+  // The language the catalog on screen (or in flight) was asked for: a locale switch asks
+  // again, because every label and cost text in it is in one language.
+  const blockCatalogLocale = useRef<string | null>(null);
   // Whether a per-cell save (edit, add, delete, move, duplicate) is in flight — kept
   // apart from `saving`, which is specifically the page-level editor's own save, so the
   // two surfaces' busy states cannot be confused for one another.
@@ -419,17 +421,21 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   const needsBlockCatalog =
     blockForm !== null || (version?.spec?.cells ?? []).some((cell) => cell.role === "block");
   useEffect(() => {
-    if (!needsBlockCatalog || blockCatalogRequested.current) return;
-    blockCatalogRequested.current = true;
-    fetch(`/api/notebook-blocks?locale=${locale === "ja" ? "ja" : "en"}`)
+    const wanted = locale === "ja" ? "ja" : "en";
+    if (!needsBlockCatalog || blockCatalogLocale.current === wanted) return;
+    blockCatalogLocale.current = wanted;
+    setBlockCatalog({ status: "loading" });
+    fetch(`/api/notebook-blocks?locale=${wanted}`)
       .then(async (response) => {
         if (!response.ok) throw new Error(String(response.status));
         const catalog = (await response.json()) as BlockCatalog;
-        setBlockCatalog({ status: "ready", catalog });
+        // A response for a language the page has since left is dropped.
+        if (blockCatalogLocale.current === wanted) setBlockCatalog({ status: "ready", catalog });
       })
       .catch(() => {
+        if (blockCatalogLocale.current !== wanted) return;
         // A later need may try again: a failed load is not a permanent answer.
-        blockCatalogRequested.current = false;
+        blockCatalogLocale.current = null;
         setBlockCatalog({ status: "error" });
       });
   }, [needsBlockCatalog, locale]);

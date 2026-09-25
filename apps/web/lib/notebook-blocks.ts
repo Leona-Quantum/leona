@@ -14,8 +14,12 @@
  *    as its source states it; when that is missing too, the Atlas's stated reason.
  * 2. **The evidence**, from the report: the notebook's check cells that name this block
  *    (`CheckProperty.block`), with the verdict the worker wrote and the width it judged.
- *    The boundary is the widest PASSING check, capped by the contract's width ceilings.
- *    Past it, the number is the source's claim, and the card says so.
+ *    Only checks a person wrote or accepted count (review of PR 1019, B1: an unaccepted
+ *    Nala check linked to a block set its boundary). The boundary is the widest passing
+ *    counted check, capped by the contract's width ceilings; a counted fail or
+ *    inconclusive at or below it cancels it (B2). The link is the author's claim that a
+ *    check tests this method; Leona has not checked that, and the card says so. Past the
+ *    boundary, the number is the source's claim, and the card names the source.
  * 3. **The formula audit**, from `workflow-planner/block-audit.ts` (PR 1017): where Leona
  *    has counted its own block's gates against this stage's cost formula.
  *
@@ -26,11 +30,11 @@
  */
 import type { components } from "@majorana/contracts-gen";
 import { assembleWorkflow, flattenStages, type Stage } from "./workflow-planner/assemble.ts";
-import type { CostReport } from "./workflow-planner/costs.ts";
+import { costReport, type CostReport } from "./workflow-planner/costs.ts";
 import { indexPlannerGraph, type IndexedGraph, type PlannerGraph } from "./workflow-planner/graph.ts";
 import { planWorkflow } from "./workflow-planner/index.ts";
 import { PROBLEMS, problemById, type ProblemClass } from "./workflow-planner/problems.ts";
-import { sweepableParams, sweepValues } from "./workflow-planner/scaling.ts";
+import { nudge, sweepableParams, sweepValues, withValue } from "./workflow-planner/scaling.ts";
 import { validateStudioPlanPayload, type StudioPlanLink } from "./workflow-planner/studio-link.ts";
 import type { AuditRow } from "./workflow-planner/block-audit.ts";
 import type { SourceKey } from "./workflow-planner/sources.ts";
@@ -154,9 +158,9 @@ export function resolveBlockPlan(graph: PlannerGraph | IndexedGraph, ref: BlockR
   const plan = planWorkflow(index, "", { problem: link.problem, params: link.params, choices: link.choices });
   const stage = flattenStages(plan.root).find((candidate) => candidate.method?.id === ref.method);
   if (!stage || !plan.root) return { kind: "unplaced", problem };
-  const declared = problem.params.map((spec) => spec.key);
-  const stored = ref.size_param && declared.includes(ref.size_param as ParamKey) ? (ref.size_param as ParamKey) : null;
-  const sizeParam = stored ?? sweepableParams(problem.id, plan.params, plan.root)[0] ?? null;
+  const choices = sizeParamChoices(problem, plan.params, plan.root);
+  const stored = ref.size_param && choices.includes(ref.size_param as ParamKey) ? (ref.size_param as ParamKey) : null;
+  const sizeParam = stored ?? choices[0] ?? null;
   const spec = sizeParam ? problem.params.find((p) => p.key === sizeParam) : undefined;
   const current = sizeParam ? plan.params[sizeParam]?.value ?? null : null;
   const sizes = spec && current !== null ? sweepValues(spec, current) : [];
@@ -170,6 +174,40 @@ export function resolveBlockPlan(graph: PlannerGraph | IndexedGraph, ref: BlockR
     sizes,
     planSizeIndex: current !== null ? Math.max(0, sizes.indexOf(current)) : 0,
   };
+}
+
+/**
+ * The parameters the size control may move, best first. A "size" is what the evidence
+ * boundary is measured in, so the parameters whose change moves the plan's logical-qubit
+ * count come first, and only they are offered when there are any (review of PR 1019, S4:
+ * a block saved with `size_param="markedCount"` moved a slider that never changed the
+ * width). A problem whose plan states no width at all falls back to the parameters that
+ * move any logical figure, and the card then says a size cannot be placed against the
+ * checks.
+ */
+export function sizeParamChoices(problem: ProblemClass, params: ParamValues, root: Stage | null): ParamKey[] {
+  const width = (values: ParamValues) => costReport(problem.id, values, root).logical.logicalQubits?.value ?? null;
+  const base = width(params);
+  const movesWidth = problem.params
+    .filter((spec) => {
+      const value = params[spec.key]?.value;
+      if (value === null || value === undefined) return false;
+      const moved = nudge(spec, value);
+      return moved !== null && width(withValue(params, spec.key, moved)) !== base;
+    })
+    .map((spec) => spec.key);
+  return movesWidth.length > 0 ? movesWidth : sweepableParams(problem.id, params, root);
+}
+
+/** `sizeParamChoices` for a plan being typed into the "Add a block" form. */
+export function sizeParamChoicesFor(
+  graph: PlannerGraph | IndexedGraph,
+  problem: ProblemId,
+  params: Partial<Record<ParamKey, number | null>>,
+  choices: Record<string, string>,
+): ParamKey[] {
+  const plan = planWorkflow(asIndex(graph), "", { problem, params, choices });
+  return plan.problem ? sizeParamChoices(plan.problem, plan.params, plan.root) : [];
 }
 
 export interface BlockCostAtSize {
@@ -222,6 +260,10 @@ export interface BlockEvidence {
   author: CheckProperty["author"];
   accepted: boolean;
   citation: string;
+  /** Whether a person wrote or accepted this check, so it counts toward the boundary: a
+   * `user` or `source` check, or a Nala check someone accepted. An unaccepted Nala
+   * proposal is listed and never counted. */
+  counted: boolean;
 }
 
 /** The notebook's check cells that name `blockId`, with what the worker's report says of
@@ -242,36 +284,53 @@ export function blockEvidence(blockId: string, cells: readonly NotebookCellView[
       author: property.author,
       accepted: property.accepted,
       citation: property.citation,
+      counted: property.author !== "nala" || property.accepted,
     });
   }
   return rows;
 }
 
-/** The widest circuit a passing check of this block judged, capped at the width its kind
- * can judge at all. `null` when no check with a width has passed. */
-export function checkedBoundary(rows: readonly BlockEvidence[]): number | null {
+export interface EvidenceBoundary {
+  /** How many linked checks count (a person wrote or accepted them), and how many of
+   * those pass. The card states both, so a lone pass among fails reads as one. */
+  counted: number;
+  passing: number;
+  /** The widest circuit a passing counted check judged, capped at the width its kind can
+   * judge at all. `null` when no counted check with a circuit has passed. */
+  widest: number | null;
+  /** Counted checks that fail or could not judge at or below `widest` (or with no width
+   * to compare, such as a failing `value` check). Any one of them means the linked checks
+   * disagree about this method at sizes they all reached, so there is no boundary. */
+  conflicts: number;
+}
+
+export function evidenceBoundary(rows: readonly BlockEvidence[]): EvidenceBoundary {
+  const counted = rows.filter((row) => row.counted);
   let widest: number | null = null;
-  for (const row of rows) {
+  for (const row of counted) {
     if (row.status !== "pass" || row.qubits === null || row.kind === "value") continue;
     const capped = Math.min(row.qubits, CHECK_QUBIT_CEILING[row.kind]);
     widest = widest === null ? capped : Math.max(widest, capped);
   }
-  return widest;
+  const conflicts =
+    widest === null
+      ? 0
+      : counted.filter(
+          (row) => (row.status === "fail" || row.status === "inconclusive") && (row.qubits === null || row.qubits <= widest!),
+        ).length;
+  return { counted: counted.length, passing: counted.filter((row) => row.status === "pass").length, widest, conflicts };
 }
 
-/** Where a width sits against the boundary. `unplaced` when the plan states no width at
- * this size, so the card cannot say which side it is on. */
-export type SizeStanding = "within" | "beyond" | "unplaced" | "unchecked";
+/** Where a width sits against the evidence. `unchecked`: no counted check with a circuit
+ * passed. `contradicted`: a counted check fails where a counted one passes. `unplaced`:
+ * the plan states no width at this size, so the card cannot say which side it is on. */
+export type SizeStanding = "within" | "beyond" | "unplaced" | "unchecked" | "contradicted";
 
-export function sizeStanding(width: number | null, boundary: number | null): SizeStanding {
-  if (boundary === null) return "unchecked";
+export function sizeStanding(width: number | null, boundary: EvidenceBoundary): SizeStanding {
+  if (boundary.widest === null) return "unchecked";
+  if (boundary.conflicts > 0) return "contradicted";
   if (width === null) return "unplaced";
-  return width <= boundary ? "within" : "beyond";
-}
-
-/** The widest circuit ANY check can judge: past this the source is all there is. */
-export function widestCheckable(): number {
-  return Math.max(...Object.values(CHECK_QUBIT_CEILING));
+  return width <= boundary.widest ? "within" : "beyond";
 }
 
 // ------------------------------------------------------------------------- the formula audit

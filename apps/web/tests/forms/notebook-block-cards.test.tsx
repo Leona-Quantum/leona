@@ -249,7 +249,8 @@ test("evidence inside the checked range, then beyond it with the source named", 
   let shown = text(view);
   assert.ok(shown.includes(COPY.boundary("10")));
   // The plan's size (N = 1,024) needs 10 qubits: inside what the checks ran.
-  assert.ok(shown.includes(COPY.within("10")));
+  assert.ok(shown.includes(COPY.within));
+  assert.ok(shown.includes(COPY.evidenceCount(2, 3, "10")));
   assert.ok(shown.includes(COPY.evidenceChecked("10")));
   assert.ok(shown.includes(COPY.evidenceChecked("12"))); // listed, but a fail moves nothing
   assert.ok(shown.includes(COPY.evidenceValue));
@@ -455,4 +456,59 @@ test("a code cell offers Add a block where editing is allowed", () => {
   const view = renderNotebook([code], [], { onStartAddBlock: (id: string) => started.push(id) });
   fireEvent.click(view.getByText(COPY.addBlock));
   assert.deepEqual(started, ["c01"]);
+});
+
+// ------------------------------------------------------------------------- review round 1
+
+function nalaCheckCell(id: string, block: string, accepted: boolean): Cell {
+  const cell = checkCell(id, block);
+  return { ...cell, property: { ...cell.property!, author: "nala", accepted } };
+}
+
+function standing(view: ReturnType<typeof render>): string | null {
+  return view.container.querySelector(".mj-notebook-block-boundary")?.getAttribute("data-standing") ?? null;
+}
+
+test("B1: an unaccepted Nala check does not move the boundary, however wide it ran", () => {
+  const view = renderNotebook([blockCell("b01", GROVER), nalaCheckCell("k01", "b01", false)], [verdict("k01", "pass", 18)]);
+  assert.equal(standing(view), "unchecked");
+  const shown = text(view);
+  assert.doesNotMatch(shown, /inside/);
+  assert.ok(shown.includes(COPY.notCounted));
+  view.unmount();
+  // Accepted by a person, the same check counts, and the sentence is the author's link.
+  const accepted = renderNotebook([blockCell("b01", GROVER), nalaCheckCell("k01", "b01", true)], [verdict("k01", "pass", 18)]);
+  assert.equal(standing(accepted), "within");
+  assert.ok(text(accepted).includes(COPY.boundary("18")));
+  assert.ok(text(accepted).includes(COPY.within));
+  assert.doesNotMatch(text(accepted), /the circuit has/);
+});
+
+test("B2: a linked fail at or below the widest pass cancels 'within', and the counts are stated", () => {
+  const small: BlockRef = { ...GROVER, plan: { problem: "search", params: { domainSize: 4, markedCount: 1 }, choices: {} } };
+  const view = renderNotebook(
+    [blockCell("b01", small), checkCell("k01", "b01"), checkCell("k02", "b01"), checkCell("k03", "b01", "unitary")],
+    [verdict("k01", "pass", 2), verdict("k02", "fail", 2), verdict("k03", "fail", 10)],
+  );
+  assert.equal(standing(view), "contradicted");
+  const shown = text(view);
+  assert.ok(shown.includes(COPY.evidenceCount(1, 3, "2")));
+  assert.ok(shown.includes(COPY.conflict(1, "2")));
+  assert.doesNotMatch(shown, /inside/);
+});
+
+test("S4: the size control moves a parameter that changes the qubit count, named on its label", () => {
+  const view = renderNotebook([blockCell("b01", { ...GROVER, size_param: "markedCount" })]);
+  const label = view.container.querySelector(".mj-notebook-block-size > span");
+  assert.equal(label?.textContent, problemById("search")!.params.find((p) => p.key === "domainSize")!.label.en);
+});
+
+test("the size control goes back to the plan's size when the block's plan changes", () => {
+  const cells = (n: number) => [blockCell("b01", { ...GROVER, plan: { problem: "search", params: { domainSize: n, markedCount: 1 }, choices: {} } })];
+  const views = (n: number) => notebookCellViews(cells(n), null);
+  const view = render(<NotebookView cells={views(1024)} locale="en" framework="qiskit" blockCatalog={READY} />);
+  fireEvent.change(slider(view), { target: { value: "0" } });
+  view.rerender(<NotebookView cells={views(256)} locale="en" framework="qiskit" blockCatalog={READY} />);
+  const readout = view.container.querySelector(".mj-notebook-block-size-readout")?.textContent ?? "";
+  assert.match(readout, /^256/);
 });

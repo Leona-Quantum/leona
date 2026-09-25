@@ -72,7 +72,8 @@ const PUBLISHED_SERIES: ReadonlyMap<string, SeriesKey> = new Map([
   ["g2025-toffolis", "toffolis"],
 ]);
 
-function withValue(params: ParamValues, key: ParamKey, value: number): ParamValues {
+/** `params` with one value replaced, as if the reader had typed it. */
+export function withValue(params: ParamValues, key: ParamKey, value: number): ParamValues {
   return Object.fromEntries(
     Object.entries(params).map(([k, v]) => (k === key ? [k, { key, value, origin: "reader" as const }] : [k, v])),
   ) as ParamValues;
@@ -105,7 +106,7 @@ export function sweepableParams(problem: ProblemId, params: ParamValues, root: S
 }
 
 /** A different in-range value, for the "does it move anything" probe. */
-function nudge(spec: ParamSpec, value: number): number | null {
+export function nudge(spec: ParamSpec, value: number): number | null {
   for (const candidate of [value * 2, value / 2, value + 1, value - 1]) {
     const v = spec.integer ? Math.round(candidate) : candidate;
     if (v !== value && withinSpec(spec, v)) return v;

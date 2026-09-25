@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import {
   searchMethods,
+  sizeParamChoicesFor,
   stagePositions,
   type BlockCatalog,
   type BlockMethod,
@@ -62,6 +63,19 @@ export function NotebookAddBlockForm({
   );
   const chosen = position >= 0 ? (positions[position] ?? null) : null;
   const problem = chosen ? problemById(chosen.problem) : undefined;
+  // The sizes a reader could move, at the values typed so far: only parameters that move
+  // the qubit count, when any do (the card would ignore any other choice).
+  const sizeChoices = useMemo(() => {
+    if (!index || !chosen || !problem) return [];
+    const typed = Object.fromEntries(
+      problem.params.flatMap((spec) => {
+        const value = parseNumber((values.get(spec.key) ?? "").trim());
+        return value !== null && withinSpec(spec, value) ? [[spec.key, value]] : [];
+      }),
+    );
+    return sizeParamChoicesFor(index, chosen.problem, typed, chosen.choices);
+  }, [index, chosen, problem, values]);
+  const offeredSizeParam = sizeParam && sizeChoices.includes(sizeParam) ? sizeParam : "";
 
   function pick(next: BlockMethod | null) {
     setMethod(next);
@@ -98,7 +112,7 @@ export function NotebookAddBlockForm({
     onSubmit({
       method: method.id,
       plan: { problem: chosen.problem, params, choices: chosen.choices },
-      size_param: sizeParam || null,
+      size_param: offeredSizeParam || null,
       author: "user",
       citation: "",
       accepted: true,
@@ -201,9 +215,9 @@ export function NotebookAddBlockForm({
           <p className="mj-notebook-add-check-hint">{copy.paramsHint}</p>
           <label className="mj-notebook-add-check-field">
             <span>{copy.sizeParamLabel}</span>
-            <select value={sizeParam} disabled={busy} onChange={(event) => setSizeParam(event.target.value as ParamKey | "")}>
+            <select value={offeredSizeParam} disabled={busy} onChange={(event) => setSizeParam(event.target.value as ParamKey | "")}>
               <option value="">{copy.sizeParamAuto}</option>
-              {problem.params.map((spec) => (
+              {problem.params.filter((spec) => sizeChoices.includes(spec.key)).map((spec) => (
                 <option key={spec.key} value={spec.key}>
                   {locale === "ja" ? spec.label.ja : spec.label.en}
                 </option>

@@ -5183,7 +5183,6 @@ export const NOTEBOOK_BLOCK_COPY: Record<PublicLocale, {
   wholeWorkflow: string;
   unplaced: (problem: string) => string;
   invalidPlan: string;
-  sizeLabel: string;
   sizeReadout: (param: string, value: string) => string;
   planSize: string;
   widthAtSize: (qubits: string) => string;
@@ -5203,9 +5202,12 @@ export const NOTEBOOK_BLOCK_COPY: Record<PublicLocale, {
   evidenceEmpty: string;
   evidenceChecked: (qubits: string) => string;
   evidenceValue: string;
+  notCounted: string;
+  evidenceCount: (passing: number, total: number, widest: string | null) => string;
+  conflict: (count: number, widest: string) => string;
   boundary: (qubits: string) => string;
   noBoundary: string;
-  within: (width: string) => string;
+  within: string;
   beyond: (boundary: string, width: string, source: string) => string;
   unplacedStanding: (boundary: string, source: string) => string;
   proseBeyond: (boundary: string, source: string) => string;
@@ -5251,7 +5253,6 @@ export const NOTEBOOK_BLOCK_COPY: Record<PublicLocale, {
     unplaced: (problem) =>
       `The planner no longer puts this method in the "${problem}" workflow, so it has no numbers for it. The method's own cost text is below.`,
     invalidPlan: "The plan saved with this block is not one the planner can read, so no numbers are shown. The method's own cost text is below.",
-    sizeLabel: "Problem size",
     sizeReadout: (param, value) => `${param} = ${value}`,
     planSize: "the size in the plan",
     widthAtSize: (qubits) => `At this size the plan's qubit count is ${qubits}.`,
@@ -5278,11 +5279,19 @@ export const NOTEBOOK_BLOCK_COPY: Record<PublicLocale, {
       'No check in this notebook is marked as evidence for this block yet. Add a check and pick this block under "Evidence for block".',
     evidenceChecked: (qubits) => `checked on a ${qubits}-qubit circuit`,
     evidenceValue: "checked from a value, so it has no circuit width",
-    boundary: (qubits) => `The checks here pass on circuits up to ${qubits} qubits.`,
-    noBoundary: "No check with a circuit has passed yet, so nothing in this notebook backs this cost at any size.",
-    within: (width) => `At this size the circuit has ${width} qubits, inside what the checks here ran.`,
+    notCounted: "proposed by Nala, not counted until accepted",
+    evidenceCount: (passing, total, widest) =>
+      `${passing} of ${total} linked ${total === 1 ? "check" : "checks"} ${passing === 1 ? "passes" : "pass"}` +
+      (widest === null ? "." : passing === 1 ? `; it ran on ${widest} qubits.` : `; the widest ran on ${widest} qubits.`),
+    conflict: (count, widest) =>
+      `${count === 1 ? "One linked check fails or could not judge" : `${count} linked checks fail or could not judge`} at ${widest} qubits or fewer, so the linked checks do not back this cost at any size.`,
+    boundary: (qubits) =>
+      `Checks linked to this block pass on circuits up to ${qubits} qubits. Leona has not checked that they test this method.`,
+    noBoundary:
+      "No check that a person wrote or accepted has passed on a circuit yet, so nothing in this notebook backs this cost at any size.",
+    within: "This size is inside the widths those checks ran on.",
     beyond: (boundary, width, source) =>
-      `Beyond ${boundary} qubits, the cost above is ${source}'s claim. Nothing in this notebook has run a ${width}-qubit circuit.`,
+      `Beyond ${boundary} qubits, the cost above is ${source}'s claim. No linked check has passed on a ${width}-qubit circuit.`,
     unplacedStanding: (boundary, source) =>
       `The plan gives no qubit count at this size, so it cannot be placed against the checks, which reach ${boundary} qubits. The cost above is ${source}'s claim.`,
     proseBeyond: (boundary, source) => `Past ${boundary} qubits, the cost above is ${source}'s claim.`,
@@ -5331,7 +5340,6 @@ export const NOTEBOOK_BLOCK_COPY: Record<PublicLocale, {
     unplaced: (problem) =>
       `プランナーは現在この手法を「${problem}」ワークフローに入れていないため、数値はありません。手法自身のコストの記述を下に示します。`,
     invalidPlan: "このブロックに保存された計画はプランナーが読めないため、数値は表示しません。手法自身のコストの記述を下に示します。",
-    sizeLabel: "問題の規模",
     sizeReadout: (param, value) => `${param} = ${value}`,
     planSize: "計画の規模",
     widthAtSize: (qubits) => `この規模での計画の量子ビット数は ${qubits} です。`,
@@ -5358,11 +5366,19 @@ export const NOTEBOOK_BLOCK_COPY: Record<PublicLocale, {
       "このブロックの根拠として示されたチェックはまだありません。チェックを追加し、「根拠とするブロック」でこのブロックを選んでください。",
     evidenceChecked: (qubits) => `${qubits} 量子ビットの回路でチェック済み`,
     evidenceValue: "値からチェックしたため、回路の幅はありません",
-    boundary: (qubits) => `このノートブックのチェックは、${qubits} 量子ビットまでの回路で合格しています。`,
-    noBoundary: "回路を使うチェックはまだ合格していないため、どの規模でもこのコストを裏付けるものはこのノートブックにありません。",
-    within: (width) => `この規模では回路は ${width} 量子ビットで、チェックが実行した範囲に入っています。`,
+    notCounted: "Nala の提案で、承認されるまで数えません",
+    evidenceCount: (passing, total, widest) =>
+      `紐づけられたチェック ${total} 件のうち ${passing} 件が合格` +
+      (widest === null ? "。" : passing === 1 ? `（${widest} 量子ビットで実行）。` : `（最も広いもので ${widest} 量子ビット）。`),
+    conflict: (count, widest) =>
+      `紐づけられたチェックのうち ${count} 件が ${widest} 量子ビット以下で不合格か判定不能のため、これらのチェックはどの規模でもこのコストを裏付けません。`,
+    boundary: (qubits) =>
+      `このブロックに紐づけられたチェックは、${qubits} 量子ビットまでの回路で合格しています。それらがこの手法を確かめているかどうかは、Leona はまだ確認していません。`,
+    noBoundary:
+      "人が作成または承認したチェックで、回路で合格したものはまだないため、どの規模でもこのコストを裏付けるものはこのノートブックにありません。",
+    within: "この規模は、それらのチェックが実行した幅の範囲内です。",
     beyond: (boundary, width, source) =>
-      `${boundary} 量子ビットを超える規模では、上のコストは ${source} の主張です。このノートブックでは ${width} 量子ビットの回路を実行していません。`,
+      `${boundary} 量子ビットを超える規模では、上のコストは ${source} の主張です。${width} 量子ビットの回路で合格した紐づけチェックはありません。`,
     unplacedStanding: (boundary, source) =>
       `この規模では計画に量子ビット数がないため、${boundary} 量子ビットまでのチェックと比べられません。上のコストは ${source} の主張です。`,
     proseBeyond: (boundary, source) => `${boundary} 量子ビットを超える規模では、上のコストは ${source} の主張です。`,
