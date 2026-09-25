@@ -63,6 +63,7 @@ from majorana_contracts.plan import (
     ProblemTerm,
     ReferenceProblem,
     VerificationPlan,
+    artifact_promises_no_executed_result,
 )
 from majorana_verification import (
     BaselineProblemError,
@@ -5002,11 +5003,16 @@ class ProductionSimplePipelinePorts:
                 diagnostics.append(
                     "the circuit produced no result to report" + (f": {reason}" if reason else "")
                 )
-        else:
+        elif not artifact_promises_no_executed_result(plan.plan.artifact_contract):
             missing_keys = [
                 key for key in plan.plan.expected_output_keys if key not in execution.result
             ]
             diagnostics.extend(f"RESULT missing key {key!r}" for key in missing_keys)
+        # else: the plan's own artifact_contract says this deliverable is a
+        # FUNCTION/CLASS never meant to be executed by this pipeline (ai-ops 372)
+        # — there is no RESULT to be missing a key from, the same way a CIRCUIT
+        # "reports nothing" above. See artifact_promises_no_executed_result's
+        # docstring (majorana_contracts.plan) for why this is not a defect.
         if self._circuit_expected(plan.plan):
             metrics = execution.observation.get("resource_metrics")
             if execution.observation.get("resource_metrics_error"):
@@ -5628,4 +5634,4 @@ class ProductionSimplePipelinePorts:
         return (
             plan.artifact_contract is None
             or plan.artifact_contract.artifact_type is not ArtifactType.OTHER
-        )
+        ) and not artifact_promises_no_executed_result(plan.artifact_contract)

@@ -16,7 +16,7 @@ from majorana_agent import (
     ExecutionOutput,
 )
 from majorana_contracts.enums import ArtifactType
-from majorana_contracts.plan import Plan
+from majorana_contracts.plan import Plan, artifact_promises_no_executed_result
 from majorana_frameworks import FrameworkProgram, extract_interchange_qasm
 from majorana_frameworks.roles import ProgramRole
 from majorana_openqasm import OpenQASMError, normalize
@@ -61,7 +61,7 @@ class SandboxCandidateExecutor:
         circuit_expected = (
             plan.artifact_contract is None
             or plan.artifact_contract.artifact_type is not ArtifactType.OTHER
-        )
+        ) and not artifact_promises_no_executed_result(plan.artifact_contract)
         # Artifact-only delivery relaxes only the module-scope execution contract.
         # Syntax and selected-framework boundaries remain mandatory even when the
         # connected lane cannot execute the authored scale.
