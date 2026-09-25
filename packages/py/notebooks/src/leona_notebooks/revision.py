@@ -93,6 +93,24 @@ def _parse_cells(text: str, spec: NotebookSpec) -> list[Cell]:
     return out
 
 
+def _without_broken_links(cells: list[Cell]) -> list[Cell]:
+    """Every check's link to a block that is no longer a block cell, dropped.
+
+    The spec refuses a link to a cell that exists and is not a block, because on a save a
+    person makes that is a mistake to report. Here it is the consequence of Nala's own
+    edit (a block replaced with prose), and failing the whole revision over it would throw
+    the rest of the turn away (review of PR 1019, S3). So on Nala's path the link goes,
+    exactly as it does when the block is deleted; the check itself is kept."""
+    blocks = {cell.id for cell in cells if cell.block is not None}
+    out: list[Cell] = []
+    for cell in cells:
+        prop = cell.property
+        if prop is not None and prop.block is not None and prop.block not in blocks:
+            cell = cell.model_copy(update={"property": prop.model_copy(update={"block": None})})
+        out.append(cell)
+    return out
+
+
 def apply_revision(spec: NotebookSpec, plan: RevisionPlan) -> NotebookSpec:
     """Apply every operation in order. Raises `RevisionError` on the first bad one and
     leaves `spec` untouched (specs are immutable; a new one is returned)."""
@@ -140,7 +158,7 @@ def apply_revision(spec: NotebookSpec, plan: RevisionPlan) -> NotebookSpec:
 
     payload = working.model_dump()
     payload.update(header)
-    payload["cells"] = [cell.model_dump() for cell in cells]
+    payload["cells"] = [cell.model_dump() for cell in _without_broken_links(cells)]
     try:
         return NotebookSpec.model_validate(payload)
     except ValueError as exc:  # pydantic ValidationError is a ValueError

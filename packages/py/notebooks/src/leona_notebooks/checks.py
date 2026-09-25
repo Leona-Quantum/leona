@@ -498,9 +498,13 @@ def enforce_check_authorship(
 
     `block` (the block a check is evidence for) is outside "changed" too, because it does
     not change what the check judges: a reader who links Nala's check to a block leaves it
-    Nala's. When NALA links a check to a block, or moves the link, that is Nala's claim
-    that the check is evidence for it, so the check becomes Nala's unaccepted proposal
-    again. Nala removing a link claims nothing and changes nothing.
+    Nala's. When NALA changes what a check is evidence FOR, that is Nala's claim, so the
+    check becomes Nala's unaccepted proposal again. What a link points at is the linked
+    block's claim (`BlockRef.claim_key`), compared before and after, not its cell id: so
+    Nala adding a link, pointing it at another block, replacing the block under it (same
+    id, different method or plan), or swapping two blocks' ids all count (review of PR
+    1019, S1), while renumbering a block and moving the link with it does not. Nala
+    removing a link claims nothing and changes nothing.
 
     Every check cell's source is re-rendered from its property, so the comment always says
     what is actually judged.
@@ -518,6 +522,16 @@ def enforce_check_authorship(
 
     by_id: dict[str, CheckProperty] = {}
     by_key: dict[str, CheckProperty] = {}
+    blocks_before = {c.id: c.block for c in parent.cells if c.block} if parent is not None else {}
+    blocks_after = {c.id: c.block for c in new.cells if c.block}
+
+    def evidence_moved(prior: CheckProperty, prop: CheckProperty) -> bool:
+        if prop.block is None:
+            return False
+        before = blocks_before.get(prior.block) if prior.block is not None else None
+        after = blocks_after.get(prop.block)
+        return before is None or after is None or before.claim_key() != after.claim_key()
+
     if parent is not None:
         for earlier in parent.cells:
             if earlier.property is not None:
@@ -532,9 +546,9 @@ def enforce_check_authorship(
         prior = by_id.get(cell.id)
         if prior is None or key(prior) != key(prop):
             prior = by_key.get(key(prop))
-        if prior is not None and actor == "nala" and _relinked(prior, prop):
-            # Nala pointing a check at a block is a claim that it is evidence for that
-            # block, so the check is Nala's proposal again. Unlinking claims nothing.
+        if prior is not None and actor == "nala" and evidence_moved(prior, prop):
+            # Nala changing what a check is evidence for is Nala's claim, so the check is
+            # Nala's proposal again. Unlinking claims nothing.
             prior = None
         stamp = authorship_stamp(actor, prior=prior, submitted=prop, has_parent=parent is not None)
         stamped = prop.model_copy(update=stamp)
@@ -546,10 +560,6 @@ def enforce_check_authorship(
     from leona_notebooks.blocks import enforce_block_authorship
 
     return enforce_block_authorship(new.with_cells(cells), parent, actor)
-
-
-def _relinked(prior: CheckProperty, new: CheckProperty) -> bool:
-    return new.block is not None and new.block != prior.block
 
 
 #: The cells a repair may not touch: a check (it would weaken the test of its own fix) and
@@ -571,13 +581,14 @@ def restore_checks(before: NotebookSpec, after: NotebookSpec) -> tuple[NotebookS
     a repair somehow introduced is stamped as Nala's, unaccepted.
     """
     original = {cell.id: cell for cell in before.cells if cell.role in PROTECTED_ROLES}
+    blocks_after = {cell.id for cell in after.cells if cell.role == CellRole.BLOCK}
     restored: list[str] = []
     cells: list[Cell] = []
     present: set[str] = set()
     for cell in after.cells:
         kept = original.get(cell.id)
         if kept is not None:
-            if cell != kept:
+            if cell != kept and not _only_lost_its_link(kept, cell, blocks_after):
                 restored.append(cell.id)
             cells.append(kept)
             present.add(cell.id)
@@ -598,6 +609,18 @@ def restore_checks(before: NotebookSpec, after: NotebookSpec) -> tuple[NotebookS
         cells.insert(position, cell)
     spec = after.with_cells(cells)
     return enforce_check_authorship(spec, before, "nala"), restored
+
+
+def _only_lost_its_link(kept: Cell, now: Cell, blocks_after: set[str]) -> bool:
+    """Whether a check differs from before only by the link the spec dropped because its
+    block is gone. The repair did not touch it; putting the block back restores the link,
+    and reporting the check as "put back" would name a change nobody made."""
+    if kept.property is None or now.property is None or kept.property.block is None:
+        return False
+    if now.property.block is not None or kept.property.block in blocks_after:
+        return False
+    relinked = now.property.model_copy(update={"block": kept.property.block})
+    return now.model_copy(update={"property": relinked}) == kept
 
 
 # --------------------------------------------------------------------------- captures

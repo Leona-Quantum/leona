@@ -341,3 +341,90 @@ def test_the_live_draft_stream_withholds_every_block_cell() -> None:
     released = guard.feed(text) + guard.flush()
     assert "1024" not in released and "grover" not in released
     assert "print(x)" in released
+
+
+# --------------------------------------------------------------------------- review round 1
+
+
+SHOR: dict[str, Any] = {
+    "method": "cyclic-period-finding",
+    "plan": {"problem": "factoring", "params": {"bits": 8}},
+}
+
+
+def _users_linked_check(block: str = "b01") -> Cell:
+    cell = _check("k01", block=block)
+    return cell.model_copy(
+        update={"property": cell.property.model_copy(update={"author": "user", "accepted": True})}  # type: ignore[union-attr]
+    )
+
+
+def test_nala_swapping_the_block_under_a_readers_link_makes_the_check_nalas_proposal() -> None:
+    """Review of PR 1019, S1: Nala replaced a Grover block with Shor under the same id, and
+    the reader's accepted check stayed theirs and accepted, now evidence for Nala's
+    Shor block. Changing what a link points at is moving the link."""
+    parent = enforce_check_authorship(
+        _spec(_block(author="user", accepted=True), _users_linked_check()), None, "user"
+    )
+    swapped = parent.with_cells(
+        [
+            _block(**{**SHOR, "size_param": None}) if cell.id == "b01" else cell
+            for cell in parent.cells
+        ]
+    )
+    prop = enforce_check_authorship(swapped, parent, "nala").cell_by_id("k01").property
+    assert prop is not None and (prop.author, prop.accepted) == ("nala", False)
+
+
+def test_nala_swapping_two_blocks_ids_is_the_same_move() -> None:
+    grover = _block("b01", author="user", accepted=True)
+    shor = _block("b02", **{**SHOR, "size_param": None}, author="user", accepted=True)
+    parent = enforce_check_authorship(_spec(grover, shor, _users_linked_check("b01")), None, "user")
+    grover_as_b02 = grover.model_copy(update={"id": "b02"})
+    shor_as_b01 = shor.model_copy(update={"id": "b01"})
+    swapped = parent.with_cells([parent.cells[0], shor_as_b01, grover_as_b02, parent.cells[3]])
+    prop = enforce_check_authorship(swapped, parent, "nala").cell_by_id("k01").property
+    assert prop is not None and (prop.author, prop.accepted) == ("nala", False)
+    # Following the Grover block to its new id is not a move: the check stays the reader's.
+    followed = swapped.with_cells(
+        [
+            cell.model_copy(update={"property": cell.property.model_copy(update={"block": "b02"})})
+            if cell.property is not None
+            else cell
+            for cell in swapped.cells
+        ]
+    )
+    kept = enforce_check_authorship(followed, parent, "nala").cell_by_id("k01").property
+    assert kept is not None and (kept.author, kept.accepted) == ("user", True)
+
+
+def test_nala_replacing_a_linked_block_with_prose_drops_the_link_not_the_revision() -> None:
+    """Review of PR 1019, S3: the spec refused a link to a cell that is no longer a block,
+    so the whole revise failed. On Nala's path the link goes, as for a deleted block."""
+    from leona_notebooks.revision import RevisionOp, RevisionPlan, apply_revision
+
+    parent = enforce_check_authorship(_spec(_block(), _users_linked_check()), None, "user")
+    plan = RevisionPlan(
+        reply="",
+        ops=[
+            RevisionOp(
+                op="replace", cell_id="b01", cells_source="# %% [markdown] role=explain\nProse.\n"
+            )
+        ],
+    )
+    revised = apply_revision(parent, plan)
+    assert revised.cell_by_id("b01").role.value == "explain"  # type: ignore[union-attr]
+    assert revised.cell_by_id("k01").property.block is None  # type: ignore[union-attr]
+
+
+def test_a_repair_that_deletes_a_block_reports_only_the_block_as_put_back() -> None:
+    """Nit from review of PR 1019: the check whose link the spec dropped with the block was
+    reported as restored too, although the repair never touched it."""
+    before = enforce_check_authorship(_spec(_block(), _users_linked_check()), None, "user")
+    after = NotebookSpec.model_validate(
+        {**before.model_dump(), "cells": [c.model_dump() for c in before.cells if c.id != "b01"]}
+    )
+    assert after.cell_by_id("k01").property.block is None  # type: ignore[union-attr]
+    restored, ids = restore_checks(before, after)
+    assert ids == ["b01"]
+    assert restored.cell_by_id("k01").property.block == "b01"  # type: ignore[union-attr]
