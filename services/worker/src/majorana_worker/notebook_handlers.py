@@ -32,7 +32,6 @@ rather than sync-plus-buffer.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 import uuid
@@ -61,7 +60,8 @@ from majorana_sandbox.spec import DEFAULT_MEMORY_MB
 from leona_notebooks.atlas import seed_from_record
 from leona_notebooks.checks import (
     CheckCapture,
-    apply_check_verdicts,
+    JudgedCheck,
+    apply_check_verdicts_isolated,
     captures_from_sandbox_result,
 )
 from leona_notebooks.circuits import validate_circuit_seed
@@ -444,12 +444,12 @@ class ProductionNotebookPorts(NotebookPorts):
         #: in `_execute_and_repair` exactly, because both increment once per call to
         #: this port's `repair()`, in the same order, starting from the same zero.
         self._repair_attempt = 0
-        #: Mutation-test results by (check, subject fingerprint), for this run only. The
-        #: pipeline dispatches the same notebook several times (the first run, each
-        #: repair's rerun, the grader audit's two), and a subject that did not change
-        #: between them has the same teeth; re-measuring would spend the one worker's
-        #: CPU on an answer it already has (DESIGN §2.1).
-        self._teeth_cache: dict[str, Any] = {}
+        #: Finished check results by (the check's expectation, the capture), for this run
+        #: only. The pipeline dispatches the same notebook several times (the first run,
+        #: each repair's rerun, the grader audit's two), and a check whose subject did not
+        #: change between them has the same verdict and teeth; judging it again would
+        #: spend the one worker's CPU on an answer it already has (DESIGN §2.1).
+        self._check_cache: dict[str, JudgedCheck] = {}
 
     async def _complete(
         self,
@@ -751,15 +751,18 @@ class ProductionNotebookPorts(NotebookPorts):
         captures: dict[str, CheckCapture],
     ) -> ExecutionReport:
         """Set `CellResult.check` on every `role=check` cell: the one place a verdict is
-        written, by trusted code, after the sandbox has gone (DESIGN §1.2). CPU-bound, so
-        off the event loop. Never fails the run: a failing check is a result, and if the
-        judging itself breaks, the report goes out without verdicts rather than not at
-        all."""
+        written, by trusted code, after the sandbox has gone (DESIGN §1.2).
+
+        In ONE child process per dispatch, killed at `CHECK_BUDGET_S` and capped in
+        memory (`leona_notebooks.checks.judge_checks`), awaited without a thread: nothing
+        a check does can hang this worker or take the executor QPU polling uses (review of
+        PR 1011). Never fails the run: a failing check is a result, and if the judging
+        itself breaks, the report goes out without verdicts rather than not at all."""
         if not any(cell.property is not None for cell in spec.cells):
             return report
         try:
-            return await asyncio.to_thread(
-                apply_check_verdicts, spec, report, captures, teeth_cache=self._teeth_cache
+            return await apply_check_verdicts_isolated(
+                spec, report, captures, cache=self._check_cache
             )
         except Exception:
             log.exception("check evaluation failed; the report is kept without verdicts")

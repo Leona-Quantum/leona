@@ -1988,7 +1988,7 @@ async def test_a_check_evaluation_crash_never_takes_the_report_down(monkeypatch)
     def broken(*_args, **_kwargs):
         raise RuntimeError("judge exploded")
 
-    monkeypatch.setattr(nh, "apply_check_verdicts", broken)
+    monkeypatch.setattr(nh, "apply_check_verdicts_isolated", broken)
     ports = nh.ProductionNotebookPorts(
         llm=QueueLLM([]),
         sandbox=LocalSubprocessSandbox(),
@@ -2000,3 +2000,29 @@ async def test_a_check_evaluation_crash_never_takes_the_report_down(monkeypatch)
     report = await ports.run_notebook(spec)
     assert report.ok is True
     assert all(cell.check is None for cell in report.cells)
+
+
+async def test_an_unchanged_check_is_not_judged_again_in_the_same_run(monkeypatch):
+    """The pipeline dispatches one notebook several times per run. A check whose property
+    and capture did not change is taken from the run's cache: no second child process."""
+    from leona_notebooks import checks as checks_module
+
+    started: list[int] = []
+    real = checks_module.judge_checks
+
+    async def counting(jobs, **kwargs):
+        started.append(len(jobs))
+        return await real(jobs, **kwargs)
+
+    monkeypatch.setattr(checks_module, "judge_checks", counting)
+    ports = nh.ProductionNotebookPorts(
+        llm=QueueLLM([]),
+        sandbox=LocalSubprocessSandbox(),
+        sink=FakeEventSink(None, None, None),
+        response_locale="en",
+    )
+    spec = parse_source(CHECKED_AUTHORED, slug="cached")
+    first = await ports.run_notebook(spec)
+    second = await ports.run_notebook(spec)
+    assert started == [2]
+    assert [c.check for c in first.cells] == [c.check for c in second.cells]
