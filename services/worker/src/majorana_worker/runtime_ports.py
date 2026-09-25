@@ -61,7 +61,11 @@ class SandboxCandidateExecutor:
         circuit_expected = (
             plan.artifact_contract is None
             or plan.artifact_contract.artifact_type is not ArtifactType.OTHER
-        ) and not artifact_promises_no_executed_result(plan.artifact_contract)
+        )
+        no_result_promised = (
+            artifact_promises_no_executed_result(plan.artifact_contract)
+            and program.role is ProgramRole.UNKNOWN
+        )
         # Artifact-only delivery relaxes only the module-scope execution contract.
         # Syntax and selected-framework boundaries remain mandatory even when the
         # connected lane cannot execute the authored scale.
@@ -179,7 +183,9 @@ class SandboxCandidateExecutor:
                 },
             )
 
-        diagnostics = program.contract_diagnostics(circuit_expected=circuit_expected)
+        diagnostics = program.contract_diagnostics(
+            circuit_expected=circuit_expected and not no_result_promised
+        )
         if diagnostics:
             return self._failure(
                 candidate,
@@ -223,37 +229,6 @@ class SandboxCandidateExecutor:
                 },
             )
 
-        if not circuit_expected and artifact_promises_no_executed_result(plan.artifact_contract):
-            # ai-ops 372: with circuit_expected False, `trusted_observer` (and
-            # `trusted_setup`) are BOTH the empty string ("inert without an
-            # observer to append to" — FrameworkProgram.trusted_observer's own
-            # docstring), so `compose_execution` returns the candidate's bare
-            # source with no instrumentation at all: no epilogue ever writes
-            # `source_fingerprint` or `result` to the protected-result sidecar.
-            # The two checks below (`source_fingerprint` match, then `RESULT` is
-            # a dict) exist to catch a REAL problem when instrumentation is
-            # supposed to have run — for a Plan that already says this
-            # deliverable was never required to execute, neither can ever be
-            # satisfied, by construction, regardless of the candidate. The
-            # subprocess exiting cleanly (`result.ok`, checked above) is already
-            # the whole verdict this shape has to offer.
-            #
-            # Confirmed against the real 2026-09-25 diagnostic run:
-            # qiskitHumanEval/0's real candidates (a correct, byte-for-byte
-            # verified answer) failed here with
-            # `evidence_error="source_fingerprint_mismatch"` on every one of
-            # their 5 executed attempts, which is what actually kept the repair
-            # loop cycling until `candidate_not_converging` gave up on it —
-            # `RESULT_missing` (checked next) was never reached.
-            return ExecutionOutput(
-                environment_fingerprint=self._environment_fingerprint(candidate, plan),
-                sandbox_provider=result.provider,
-                exit_code=result.exit_code,
-                duration_ms=result.duration_ms,
-                result={},
-                observation=observation | {"sandbox_runs": 1},
-            )
-
         if observation.get("source_fingerprint") != candidate.source_fingerprint:
             return self._failure(
                 candidate,
@@ -266,6 +241,22 @@ class SandboxCandidateExecutor:
             )
 
         structured_result = observation.get("result")
+        if (
+            structured_result is None
+            and no_result_promised
+            and observation.get("result_error") is None
+        ):
+            # ai-ops 372, review round 2: a Plan whose artifact_contract already says
+            # no executed result was required, AND whose candidate source is genuinely
+            # ProgramRole.UNKNOWN (binds neither RESULT nor FINAL_CIRCUIT — confirmed
+            # by role, not guessed from circuit_expected), never had anything to write
+            # RESULT from. circuit_expected is NOT relaxed above this point for that
+            # reason alone: instrumentation still runs, so a candidate that DOES bind
+            # RESULT or FINAL_CIRCUIT (even under a `forbidden` plan) still gets a real
+            # fingerprint, real derived evidence, and a real RESULT check — only a
+            # candidate with nothing to report gets the empty dict a "circuit reports
+            # nothing" already gets elsewhere in this file.
+            structured_result = {}
         if not isinstance(structured_result, dict):
             serialization_error = observation.get("result_error")
             return self._failure(
