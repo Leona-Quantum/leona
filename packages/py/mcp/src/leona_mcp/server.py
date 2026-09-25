@@ -679,6 +679,10 @@ def _teeth_words(verdict: CheckVerdict) -> str:
             f" {teeth.equivalent} more broken {same} behaved exactly like the original and "
             "were left out, since no check could catch them."
         )
+    unrun = getattr(teeth, "could_not_run", 0)
+    if unrun:
+        which = "copy" if unrun == 1 else "copies"
+        words += f" {unrun} more broken {which} could not be simulated and are not counted."
     if teeth.reason:
         words += f" ({teeth.reason})"
     return words

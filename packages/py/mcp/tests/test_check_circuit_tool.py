@@ -110,6 +110,16 @@ async def test_a_pass_that_missed_some_broken_copies_names_them(monkeypatch):
     assert "negating the rz angle on q1, gate 4" in body["summary"]
 
 
+async def test_broken_copies_the_simulator_could_not_run_are_said_not_dropped(monkeypatch):
+    teeth = {**_teeth(5, 5), "could_not_run": 2}
+    _patch(monkeypatch, [(200, _verdict(teeth=teeth))])
+    body = json.loads(
+        (await _call({"qasm": _BELL, "kind": "state", "reference": "bell"})).content[0].text
+    )
+    assert "the check caught all 5" in body["summary"]
+    assert "2 more broken copies could not be simulated and are not counted" in body["summary"]
+
+
 async def test_a_pass_that_caught_nothing_says_the_check_cannot_fail(monkeypatch):
     _patch(monkeypatch, [(200, _verdict(teeth=_teeth(4, 0)))])
     body = json.loads(
