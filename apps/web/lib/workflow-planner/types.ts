@@ -111,6 +111,17 @@ export interface CostLine {
   note?: Bilingual;
   /** The parameters this line needs and does not have. */
   missing?: ParamKey[];
+  /**
+   * What this line counts, in the vocabulary of the Studio gate set
+   * (`BuilderGate` in `../studio-builder.ts`: `"H"`, `"CP"`, `"RZZ"`, ...), or
+   * `"all"` for every two-qubit gate. Set ONLY when the source this line cites
+   * states, in its own words, what it is counting — never inferred from the
+   * formula's shape. Its absence is not an oversight: it is how
+   * `block-audit.ts` tells "this line's gate names are unstated" apart from
+   * "the audit checked and they disagree," and it never fills the gap with a
+   * guess (see that file's module comment).
+   */
+  counts?: { ops: string[] | "all"; note?: string };
 }
 
 /** The logical-level cost the estimator takes as input. Every field is a line, so it carries its kind and source. */
