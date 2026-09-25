@@ -54,6 +54,12 @@ from leona_client.atlas import (
 )
 from leona_client.catalog import CatalogClient
 from majorana_contracts import MAX_CIRCUIT_CHECK_QASM_CHARS, CheckVerdict
+from majorana_contracts.notebooks import (
+    CHECK_DISTRIBUTION_MAX_QUBITS,
+    CHECK_STATE_MAX_QUBITS,
+    CHECK_UNITARY_MAX_QUBITS,
+    MAX_CHECK_HAMILTONIAN_QUBITS,
+)
 
 from . import __version__
 
@@ -182,11 +188,14 @@ CHECK_CIRCUIT_DESCRIPTION = _NEEDS_TOKEN + (
     "could not tell a broken circuit from yours. Nothing is run on hardware and nothing is "
     "stored. Needs the token's run scope. "
     "THE CIRCUIT: OpenQASM 3 as qiskit.qasm3.dumps writes it, with "
-    'include "stdgates.inc"; up to 64,000 characters; up to 12 qubits (8 for a unitary '
-    "check). Final measurements are ignored for state, unitary and energy checks; a "
-    "measurement or reset before the end, or if/for/while, makes the check inconclusive. "
-    "Wider or longer circuits are inconclusive here and can be checked in a Leona "
-    "notebook. "
+    f'include "stdgates.inc"; up to {MAX_CIRCUIT_CHECK_QASM_CHARS:,} characters; at most '
+    f"{CHECK_STATE_MAX_QUBITS} qubits for a state check, {CHECK_DISTRIBUTION_MAX_QUBITS} for "
+    f"a distribution check, {CHECK_UNITARY_MAX_QUBITS} for a unitary check and "
+    f"{MAX_CHECK_HAMILTONIAN_QUBITS} for an energy check. A wider circuit, or one whose "
+    "gate definitions unroll into more than a few thousand gates, is inconclusive. Final "
+    "measurements are ignored for state, unitary and energy checks; a measurement or reset "
+    "before the end, or if/for/while, makes the check inconclusive. Leona may answer 503 "
+    "while it is checking another circuit: wait a few seconds and call again. "
     "BIT ORDER: Qiskit's. q0 is the RIGHTMOST character, so '01' means q0 = 1 and q1 = 0, "
     "and the Pauli string 'ZI' is Z on q1. "
     "KINDS, each with its own expectation arguments and no others: "
@@ -195,7 +204,8 @@ CHECK_CIRCUIT_DESCRIPTION = _NEEDS_TOKEN + (
     "kind='unitary' compares the circuit's unitary with reference or reference_qasm, up to "
     "global phase; kind='distribution' compares the ideal measured distribution (exact, no "
     "sampling) with probabilities; kind='energy' compares <psi|H|psi> for hamiltonian "
-    "(Pauli string to coefficient, up to 10 qubits and 256 terms) with target, 'ground' "
+    f"(Pauli string to coefficient, up to {MAX_CHECK_HAMILTONIAN_QUBITS} qubits and 256 "
+    "terms) with target, 'ground' "
     "for the exact ground energy or a number. "
     "LIBRARY REFERENCES, built by Leona from qiskit.circuit.library: for state checks "
     "'bell' ((|00>+|11>)/sqrt 2, the same as 'bell:phi+'), 'bell:phi-', 'bell:psi+', "

@@ -209,7 +209,22 @@ def test_the_description_teaches_the_conventions_a_caller_needs():
         "state 1e-6",
         "energy 1e-3",
         "never 'verified'",
-        "up to 12 qubits (8 for a unitary",
+        "503",
     ):
         assert phrase in text, phrase
+    # The widths come from the contract's own ceilings, not from numbers typed here.
+    from majorana_contracts.notebooks import (
+        CHECK_DISTRIBUTION_MAX_QUBITS,
+        CHECK_STATE_MAX_QUBITS,
+        CHECK_UNITARY_MAX_QUBITS,
+        MAX_CHECK_HAMILTONIAN_QUBITS,
+    )
+
+    assert (
+        f"at most {CHECK_STATE_MAX_QUBITS} qubits for a state check, "
+        f"{CHECK_DISTRIBUTION_MAX_QUBITS} for a distribution check, "
+        f"{CHECK_UNITARY_MAX_QUBITS} for a unitary check and "
+        f"{MAX_CHECK_HAMILTONIAN_QUBITS} for an energy check"
+    ) in text
+    assert "notebook" not in text  # notebooks judge no wider; nothing to point at
     assert "check_circuit" in INSTRUCTIONS

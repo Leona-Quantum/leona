@@ -26,7 +26,7 @@ unaffected. The server runs on your machine and talks to your MCP client over st
 | `list_my_runs` | Yes | Lists your own runs, most recent first. |
 | `estimate_resources` | Yes | Turns a logical cost you state into physical qubits and runtime under a named assumption set. |
 | `run_qapp` | Yes (`run` scope) | Calls a published Qapp with input values, through the same route and the same sandboxed execution as the Qapp's own page, and polls for its result. |
-| `check_circuit` | Yes (`run` scope) | Checks an OpenQASM 3 circuit (up to 12 qubits, 8 for a unitary check) against one property: an output state, a unitary, an ideal measured distribution, or an energy. Returns pass, fail or inconclusive with a diagnosis, a plain `passed` boolean, a one-paragraph `summary`, and its teeth: how many deliberately broken copies of the circuit the check caught. Judged by Leona's own code; nothing is stored. |
+| `check_circuit` | Yes (`run` scope) | Checks a small OpenQASM 3 circuit (the tool description gives the widest per kind, from the contract's own limits) against one property: an output state, a unitary, an ideal measured distribution, or an energy. Returns pass, fail or inconclusive with a diagnosis, a plain `passed` boolean, a one-paragraph `summary`, and its teeth: how many deliberately broken copies of the circuit the check caught. Judged by Leona's own code, one circuit at a time (a busy server answers 503; call again in a few seconds); nothing is stored. |
 
 Everything the first three tools return comes from the published Atlas record, with
 a link back to its page on leonaqt.com. When a record does not carry a field, the
