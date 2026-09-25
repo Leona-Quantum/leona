@@ -47,6 +47,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from majorana_contracts.notebooks import (
     CHECK_EXPRESSION_CONSTANTS,
     CHECK_EXPRESSION_FUNCTIONS,
+    CHECK_DISTRIBUTION_MAX_QUBITS,
     CHECK_STATE_MAX_QUBITS,
     CHECK_STATE_REFERENCE_RE,
     CHECK_UNITARY_MAX_QUBITS,
@@ -139,9 +140,8 @@ MUTATION_MAX_QUBITS_UNITARY = 8
 MAX_CAPTURE_QASM_CHARS = 64_000
 #: All of one notebook's captured circuits together.
 MAX_CAPTURE_TOTAL_CHARS = 128_000
-#: Widest circuit the sandbox bothers exporting: `STATEVECTOR_MAX_QUBITS`, restated so the
-#: sandbox half of this feature needs no import from the verification package.
-MAX_CAPTURE_QUBITS = 24
+#: Widest circuit the sandbox bothers exporting: the widest any check judges.
+MAX_CAPTURE_QUBITS = CHECK_STATE_MAX_QUBITS
 #: How many times the capture decomposes a circuit OpenQASM 3 cannot write (a sub-circuit
 #: appended as an instruction) before giving up and calling it not exportable.
 MAX_CAPTURE_DECOMPOSE_PASSES = 3
@@ -171,14 +171,35 @@ MAX_MODIFIED_GATE_QUBITS = MUTATION_MAX_QUBITS_UNITARY
 #: gates. The child process's wall clock (`CHECK_BUDGET_S`) bounds whatever these miss.
 MAX_STATE_WORK = 1 << 29
 MAX_UNITARY_WORK = 1 << 29
-#: Address space the judging process may add on top of its own footprint after its imports
-#: (RLIMIT_AS; Linux enforces it, macOS does not). The footprint itself (Python, Qiskit,
-#: numpy, scipy and the verification package) was 120 MiB resident here; a 24-qubit
-#: statevector is 256 MiB, and a judgement holds two or three at once. The worker's own
-#: memory size is not in this repository (`deploy.yml` passes no `--memory` for
-#: majorana-worker); the verification package's 2026-07-23 stress run simulated 26 qubits,
-#: a 1 GiB statevector, on it, which is the evidence that 1 GiB of headroom fits.
-CHECK_MEMORY_HEADROOM_BYTES = 1 << 30
+#: Memory the judging process may use on top of its own footprint after its imports. 192
+#: MiB, because the worker and the API both run in 512 MiB containers (`gcloud run services
+#: describe majorana-worker`: cpu=1000m, memory=512Mi, read by the coordinator; the API's
+#: `API_MEMORY_MI=512`), and the judge SHARES that container with the process that started
+#: it: over the container's limit, Cloud Run kills the whole instance and every job in it,
+#: not only the check. The footprint was 120 MiB resident here (M1 Pro) and the worker's
+#: own notebook module imports to 137 MiB, so 120 + 192 leaves the parent about 200 MiB.
+#: Enforced twice: RLIMIT_AS inside the child (Linux only) and the parent polling the
+#: child's resident size and killing it (`_watch_memory`, every platform). The ceilings
+#: (`CHECK_*_MAX_QUBITS`) are sized so every allowed check fits in about 150 MiB of it.
+#: `LEONA_CHECK_JUDGE_HEADROOM_MB` overrides it for one process.
+CHECK_MEMORY_HEADROOM_BYTES = 192 << 20
+#: How often the parent reads the child's resident size.
+_MEMORY_POLL_S = 0.05
+
+
+def check_judge_headroom_bytes() -> int:
+    """`CHECK_MEMORY_HEADROOM_BYTES`, or `LEONA_CHECK_JUDGE_HEADROOM_MB` when it is set."""
+    raw = os.environ.get("LEONA_CHECK_JUDGE_HEADROOM_MB", "").strip()
+    if raw:
+        try:
+            megabytes = int(raw)
+        except ValueError:
+            _log.warning("LEONA_CHECK_JUDGE_HEADROOM_MB=%r is not a whole number; ignored", raw)
+        else:
+            if megabytes > 0:
+                return megabytes << 20
+    return CHECK_MEMORY_HEADROOM_BYTES
+
 
 _EQUIVALENT_TOLERANCE = 1e-9
 
@@ -673,7 +694,12 @@ class QasmUnreadable(Exception):
 
 
 class _Inconclusive(Exception):
-    """The check cannot judge this subject. Its message is shown to the reader."""
+    """The check cannot judge this subject. Its message is shown to the reader; `qubits`
+    is the subject's width when that is known and is the reason (too wide)."""
+
+    def __init__(self, message: str, *, qubits: int | None = None) -> None:
+        super().__init__(message)
+        self.qubits = qubits
 
 
 def _parser_words(exc: BaseException) -> str:
@@ -845,7 +871,8 @@ def _bound_program(
             declared += size
     if declared > max_qubits:
         raise _Inconclusive(
-            f"{what} has {declared} qubits; this check judges at most {max_qubits}."
+            f"{what} has {declared} qubits; this check judges at most {max_qubits}.",
+            qubits=declared if side == "subject" else None,
         )
 
     for statement in program.statements:
@@ -909,7 +936,10 @@ def _bound_program(
         )
     width = declared + (physical + 1)
     if width > max_qubits:
-        raise _Inconclusive(f"{what} has {width} qubits; this check judges at most {max_qubits}.")
+        raise _Inconclusive(
+            f"{what} has {width} qubits; this check judges at most {max_qubits}.",
+            qubits=width if side == "subject" else None,
+        )
     return _Bounded(program=program, qubits=width, operations=operations)
 
 
@@ -964,7 +994,8 @@ def _load(
     circuit = _convert(bounded, side=side)
     if circuit.num_qubits > max_qubits:  # the tree's count is an estimate; this is exact
         raise _Inconclusive(
-            f"{what} has {circuit.num_qubits} qubits; this check judges at most {max_qubits}."
+            f"{what} has {circuit.num_qubits} qubits; this check judges at most {max_qubits}.",
+            qubits=circuit.num_qubits if side == "subject" else None,
         )
     circuit = _without_leading_resets(circuit)
     if circuit.parameters:
@@ -1192,13 +1223,9 @@ def _kind_ceiling(prop: CheckProperty, width_caps: Mapping[str, int] | None) -> 
     """The widest subject this check judges: the kind's own ceiling, lowered (never
     raised) by a caller's cap. The connector route passes lower caps, because its instance
     has 512 MiB in all."""
-    from majorana_verification.statevector import IDEAL_DISTRIBUTION_MAX_QUBITS
-
     ceiling = {
         "state": CHECK_STATE_MAX_QUBITS,
-        # 20, not 24: a distribution is a dict with one entry per outcome, and the
-        # verification package measured 24 qubits at 62 s to build it.
-        "distribution": IDEAL_DISTRIBUTION_MAX_QUBITS,
+        "distribution": CHECK_DISTRIBUTION_MAX_QUBITS,
         "energy": MAX_CHECK_HAMILTONIAN_QUBITS,
         "unitary": CHECK_UNITARY_MAX_QUBITS,
     }[prop.kind]
@@ -1293,49 +1320,54 @@ def _state_judge(prop: CheckProperty, subject: _Subject, bounded: _Bounded | Non
 
 
 def _phase_diagnosis(expected: np.ndarray, actual: np.ndarray, n: int) -> str:
-    """Name the one basis state whose phase is wrong, when the sizes all match."""
+    """Name the one basis state whose phase is wrong, when the sizes all match.
+
+    Vectorised: the first version built a Python dict entry per amplitude and compared
+    every anchor with every other (239 bytes and O(m**2) work per amplitude; a wide
+    state check would have used gigabytes and hours). The phase most basis states share
+    is found by rounding the phases to a grid and taking the most common value.
+    """
     import numpy as np
 
     sizes_match = bool(np.max(np.abs(np.abs(expected) - np.abs(actual))) <= 1e-6)
-    support = [int(k) for k in np.nonzero(np.abs(expected) > 1e-9)[0]]
-    if sizes_match and support:
-        ratios = {k: actual[k] / expected[k] for k in support}
-        ratios = {k: r / abs(r) for k, r in ratios.items() if abs(r) > 1e-12}
-        best_anchor, best_wrong = None, None
-        for anchor in support:
-            if anchor not in ratios:
-                continue
-            wrong = [k for k, r in ratios.items() if abs(r - ratios[anchor]) > 1e-6]
-            if best_wrong is None or len(wrong) < len(best_wrong):
-                best_anchor, best_wrong = anchor, wrong
-        if best_anchor is not None and best_wrong:
-            phase = ratios[best_anchor]
-            if len(best_wrong) == 1:
-                k = best_wrong[0]
+    support = np.flatnonzero(np.abs(expected) > 1e-9)
+    if sizes_match and support.size:
+        ratios = actual[support] / expected[support]
+        magnitudes = np.abs(ratios)
+        usable = magnitudes > 1e-12
+        support, ratios = support[usable], ratios[usable] / magnitudes[usable]
+        if support.size:
+            grid = np.round(np.angle(ratios) / 1e-6).astype(np.int64)
+            values, counts = np.unique(grid, return_counts=True)
+            # On a tie, the phase of the lowest basis state wins, so |0...0> is the anchor
+            # and the state that differs from it is the one named.
+            shared = values[counts == counts.max()]
+            common = ratios[np.flatnonzero(np.isin(grid, shared))[0]]
+            wrong = support[np.abs(ratios - common) > 1e-6]
+            if wrong.size == 1:
+                k = int(wrong[0])
                 bits = format(k, f"0{n}b")
-                relative = cmath.phase(ratios[k] / phase)
+                relative = cmath.phase(complex(actual[k] / expected[k]) / complex(common))
                 return (
                     f"Every amplitude has the right size, but {_ket(bits)} has the wrong "
-                    f"phase: expected {_complex_words(expected[k] * phase)}, got "
-                    f"{_complex_words(actual[k])} (a relative phase of "
+                    f"phase: expected {_complex_words(complex(expected[k] * common))}, got "
+                    f"{_complex_words(complex(actual[k]))} (a relative phase of "
                     f"{_phase_words(relative)} on that basis state). Check the sign of a Z, "
                     "S, T or phase gate on the way to it."
                 )
-            shown = ", ".join(_ket(format(k, f"0{n}b")) for k in best_wrong[:4])
-            return (
-                "Every amplitude has the right size, but the relative phases differ on "
-                f"{len(best_wrong)} basis states ({shown}"
-                + (", …" if len(best_wrong) > 4 else "")
-                + ")."
-            )
+            if wrong.size:
+                shown = ", ".join(_ket(format(int(k), f"0{n}b")) for k in wrong[:4])
+                return (
+                    "Every amplitude has the right size, but the relative phases differ on "
+                    f"{wrong.size} basis states ({shown}" + (", …" if wrong.size > 4 else "") + ")."
+                )
     inner = np.vdot(actual, expected)
     phase = inner / abs(inner) if abs(inner) > 1e-12 else 1
-    difference = np.abs(expected - phase * actual)
-    k = int(np.argmax(difference))
+    k = int(np.argmax(np.abs(expected - phase * actual)))
     bits = format(k, f"0{n}b")
     return (
         f"The largest difference is on {_ket(bits)}: expected "
-        f"{_complex_words(expected[k])}, got {_complex_words(phase * actual[k])} "
+        f"{_complex_words(complex(expected[k]))}, got {_complex_words(complex(phase * actual[k]))} "
         "(after removing global phase)."
     )
 
@@ -1693,13 +1725,13 @@ def _judge(
     qasm_shown = capture.qasm if len(capture.qasm) <= MAX_CHECK_VERDICT_QASM_CHARS else None
     subject: _Subject | None = None
 
-    def inconclusive(detail: str) -> CheckVerdict:
+    def inconclusive(detail: str, qubits: int | None = None) -> CheckVerdict:
         return CheckVerdict(
             status="inconclusive",
             basis="circuit",
             checked_against=describe_expectation(prop),
             detail=detail,
-            qubits=subject.stripped.num_qubits if subject else None,
+            qubits=subject.stripped.num_qubits if subject else qubits,
             subject_fingerprint=subject.fingerprint if subject else None,
             subject_qasm=qasm_shown,
         )
@@ -1744,7 +1776,7 @@ def _judge(
     except QasmUnreadable as exc:
         return _Judged(inconclusive(exc.message), unreadable=Unreadable(exc.side, exc.message))
     except _Inconclusive as exc:
-        return _Judged(inconclusive(str(exc)))
+        return _Judged(inconclusive(str(exc), exc.qubits))
     except MemoryError:
         return _Judged(inconclusive(_OUT_OF_MEMORY_WORDS))
 
@@ -2400,6 +2432,36 @@ def _child_env() -> dict[str, str]:
     return env
 
 
+async def _resident_bytes(pid: int) -> int | None:
+    """A process's resident size: `/proc` on Linux, `ps` elsewhere (a macOS dev machine,
+    where the kernel ignores RLIMIT_AS). `None` when it cannot be read."""
+    status = f"/proc/{pid}/status"
+    if os.path.exists(status):
+        try:
+            with open(status, encoding="ascii") as handle:
+                for line in handle:
+                    if line.startswith("VmRSS:"):
+                        return int(line.split()[1]) * 1024
+        except (OSError, ValueError):
+            return None
+        return None
+    try:
+        probe = await asyncio.create_subprocess_exec(
+            "ps",
+            "-o",
+            "rss=",
+            "-p",
+            str(pid),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        out, _ = await asyncio.wait_for(probe.communicate(), 2)
+        text = out.decode("ascii", "replace").strip()
+        return int(text) * 1024 if text else None
+    except (OSError, ValueError, TimeoutError):
+        return None
+
+
 def _stopped_words(outcome: str, seconds: float) -> tuple[str, str]:
     """(verdict detail, teeth reason) for a check the child never finished."""
     if outcome == "timeout":
@@ -2427,7 +2489,7 @@ async def judge_checks(
     *,
     budget_s: float = CHECK_BUDGET_S,
     kill_after_s: float | None = None,
-    memory_headroom_bytes: int = CHECK_MEMORY_HEADROOM_BYTES,
+    memory_headroom_bytes: int | None = None,
     width_caps: Mapping[str, int] | None = None,
     teeth: bool = True,
     _argv: list[str] | None = None,
@@ -2438,8 +2500,11 @@ async def judge_checks(
 
     `budget_s` is the child's own deadline: it stops starting new work after it, giving
     every check a verdict before any check its broken copies. `kill_after_s` is the hard
-    wall clock. `memory_headroom_bytes` is the address space the child may add after its
-    imports (RLIMIT_AS; enforced on Linux, ignored by macOS). `width_caps` lowers the
+    wall clock. `memory_headroom_bytes` (default `check_judge_headroom_bytes()`, 192 MiB)
+    is the memory the child may use above its footprint after its imports, enforced
+    twice: RLIMIT_AS inside the child (Linux only), and this function reading the child's
+    resident size every 50 ms and killing it above footprint + headroom (every platform;
+    an allocation faster than one poll can overshoot until the next). `width_caps` lowers the
     widest subject judged per kind, never raises it. A check the child never finished is
     `inconclusive` with the reason ("took too long to check", "ran out of memory"), and a
     passing check whose broken copies were cut short says so in its teeth.
@@ -2450,11 +2515,16 @@ async def judge_checks(
         return {}
     loop = asyncio.get_running_loop()
     kill_after = float(kill_after_s if kill_after_s is not None else budget_s)
+    headroom = (
+        int(memory_headroom_bytes)
+        if memory_headroom_bytes is not None
+        else check_judge_headroom_bytes()
+    )
     payload = json.dumps(
         {
             "jobs": [_job_payload(job) for job in jobs],
             "budget_s": float(budget_s),
-            "memory_headroom_bytes": int(memory_headroom_bytes),
+            "memory_headroom_bytes": headroom,
             "width_caps": dict(width_caps or {}),
             "teeth": bool(teeth),
         }
@@ -2481,6 +2551,22 @@ async def judge_checks(
             del stderr_tail[:-4096]
 
     stderr_task = asyncio.create_task(drain_stderr())
+    #: Set when the child reports its footprint ("ready"): footprint + headroom.
+    memory_limit: list[int] = []
+    killed_for_memory: list[bool] = []
+
+    async def watch_memory() -> None:
+        while process.returncode is None:
+            if memory_limit:
+                resident = await _resident_bytes(process.pid)
+                if resident is not None and resident > memory_limit[0]:
+                    killed_for_memory.append(True)
+                    with contextlib.suppress(ProcessLookupError):
+                        process.kill()
+                    return
+            await asyncio.sleep(_MEMORY_POLL_S)
+
+    memory_task = asyncio.create_task(watch_memory())
     try:
         assert process.stdin is not None and process.stdout is not None
         try:
@@ -2510,6 +2596,11 @@ async def judge_checks(
             if _on_event is not None:
                 _on_event(event)
             kind = event.get("event")
+            if kind == "ready" and not memory_limit:
+                footprint = event.get("rss_bytes")
+                if isinstance(footprint, int) and footprint > 0:
+                    memory_limit.append(footprint + headroom)
+                continue
             if kind == "done":
                 outcome = "done"
                 break
@@ -2548,9 +2639,10 @@ async def judge_checks(
             with contextlib.suppress(ProcessLookupError):
                 process.kill()
         await process.wait()
-        stderr_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await stderr_task
+        for task in (stderr_task, memory_task):
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
     if outcome != "done" and stderr_tail:
         _log.warning(
             "check judge stopped (%s, exit %s): %s",
@@ -2558,7 +2650,9 @@ async def judge_checks(
             process.returncode,
             bytes(stderr_tail[-1000:]).decode("utf-8", "replace"),
         )
-    if outcome == "died" and (process.returncode == -9 or b"MemoryError" in bytes(stderr_tail)):
+    if outcome == "died" and (
+        killed_for_memory or process.returncode == -9 or b"MemoryError" in bytes(stderr_tail)
+    ):
         outcome = "memory"  # SIGKILL is what the kernel's OOM killer sends
     detail, teeth_reason = _stopped_words(outcome, kill_after)
     for job in jobs:
@@ -2600,7 +2694,7 @@ async def apply_check_verdicts_isolated(
     *,
     cache: dict[str, JudgedCheck] | None = None,
     budget_s: float = CHECK_BUDGET_S,
-    memory_headroom_bytes: int = CHECK_MEMORY_HEADROOM_BYTES,
+    memory_headroom_bytes: int | None = None,
 ) -> ExecutionReport:
     """What the worker calls after every dispatch: `report` with a verdict on every check
     cell, judged in one killable child process (`judge_checks`).

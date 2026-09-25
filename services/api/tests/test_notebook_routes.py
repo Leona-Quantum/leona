@@ -1194,6 +1194,53 @@ async def test_author_with_run_until_passes_the_cell_id_to_the_job(client, autho
     assert author_state["jobs"][0]["payload"]["run_until"] == "c02"
 
 
+async def test_author_job_carries_the_current_ready_version_as_parent(client, author_state):
+    """The replay lane's parent (`leona_notebooks.dependencies.plan_run`) is resolved
+    HERE, at queue time — not by the worker asking for "the current version" when the
+    job runs, which could by then be a LATER version than this request was based on."""
+    v1 = author_state["versions"][0]
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{author_state['notebook'].id}/versions",
+            json={"spec": SPEC_FIXTURE},
+        )
+
+    assert response.status_code == 201, response.text
+    job = author_state["jobs"][0]
+    assert job["payload"]["parent_version_id"] == str(v1.id)
+    # Defaults true server-side: an existing client that has never heard of this field
+    # gets the faster behaviour rather than silently falling back to a full run.
+    assert job["payload"]["reuse_results"] is True
+
+
+async def test_author_reuse_results_false_travels_to_the_job(client, author_state):
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{author_state['notebook'].id}/versions",
+            json={"spec": SPEC_FIXTURE, "reuse_results": False},
+        )
+
+    assert response.status_code == 201, response.text
+    assert author_state["jobs"][0]["payload"]["reuse_results"] is False
+
+
+async def test_author_job_has_no_parent_when_the_notebook_has_no_ready_version(
+    client, author_state
+):
+    # A build that failed before the reader ever saved anything: `current_version_id`
+    # is unset, so there is nothing to reuse from — the worker must see `None`, not a
+    # stale or wrong version id.
+    author_state["notebook"].current_version_id = None
+    async with client as c:
+        response = await c.post(
+            f"/v1/notebooks/{author_state['notebook'].id}/versions",
+            json={"spec": SPEC_FIXTURE},
+        )
+
+    assert response.status_code == 201, response.text
+    assert author_state["jobs"][0]["payload"]["parent_version_id"] is None
+
+
 async def test_author_with_an_unknown_run_until_is_400_and_queues_nothing(client, author_state):
     async with client as c:
         response = await c.post(

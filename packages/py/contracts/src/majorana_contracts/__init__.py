@@ -548,6 +548,22 @@ from .lifecycle import (
 # now. Additive: one new enum value, no existing model changes; `auth/token_access.py`
 # gates the one route it unlocks (migration 0075 widens the matching DB check
 # constraint in the same PR).
+# 2.37.1: plan platform-vision-20260924/phase-a §3, "Replay with a dependency graph"
+# (ai-ops 382). New, both additive with a default so every existing stored report and
+# request still parses: `CellResult.cache_key` (str | None, default None) and
+# `CellResult.cached_from_seq` (int | None, default None) — a cell's Merkle cache key
+# and, when its result was reused rather than re-run, the parent version it came from;
+# `AuthorNotebookVersionRequest.reuse_results` (bool, default True) — false forces a
+# full fresh run. No route changes: the worker reads `reuse_results` off the same
+# `POST /v1/notebooks/{id}/versions` body. Expect a version-number conflict with the
+# sibling "check cells" branch landing the same week; that is fine, whichever merges
+# second re-numbers.
+# 2.37.2: adversarial review of the replay lane (ai-ops 382) added one more field:
+# `NotebookLiveCellResult.cached_from_seq` (int | None, default None), mirroring
+# `CellResult.cached_from_seq` on the LIVE `notebook.cells` event — without it, a
+# live listener watching a replay dispatch sees a reused cell only as the
+# pre-merge `status="not_run"` a fresh dispatch's own emission gives it, no
+# different from a cell that has not run yet. Additive, no existing field changed.
 # 2.38.0: Phase A, "check cells" (ai-ops 382 option 1; design in
 # ai-ops/desk/leona/plans/platform-vision-20260924/phase-a/DESIGN.md §1-§2). New:
 # `CellRole.CHECK`, `CheckProperty` on the new `Cell.property` (only on role=check cells,
@@ -561,13 +577,19 @@ from .lifecycle import (
 # than its kind judges; `CheckTeeth.could_not_run` (default 0); and `NotebookSpec` gains
 # `carries_secrets()` and `learner_report()`, with `for_learner()` dropping check cells and
 # `leaks_answer_key()` naming them in a notebook with anything secret (ai-ops 260).
-# 2.39.0: the agent connector's first headless tool, `check_circuit` (ai-ops 382 option 1,
+# 2.39.0: the 2.38.0 entry above (check cells, and its review round 1), which never shipped
+# as 2.38.0: it merged into dev after 2.37.2 (dependency-graph replay), so it lands as
+# 2.39.0, above both. Nothing beyond the union of the two: `CellResult` carries `check`
+# AND `cache_key`/`cached_from_seq`; `NotebookLiveCellResult` carries `check` AND
+# `cached_from_seq`. The replay planner hashes a check cell's property, minus `author` and
+# `accepted`, into its cache key, so accepting a check does not force a re-run.
+# 2.40.0: the agent connector's first headless tool, `check_circuit` (ai-ops 382 option 1,
 # "move the connector up to ship with it"; VISION §5.8). New: `CircuitCheckRequest`
 # (an OpenQASM 3 circuit plus a `CheckProperty`), `CircuitCheckResponse` (a `CheckVerdict`
 # with `teeth` always set) and `MAX_CIRCUIT_CHECK_QASM_CHARS`, behind the stateless
 # POST /v1/checks/circuit. Additive: new names only, no existing model changes, no
 # migration (nothing is stored).
-CONTRACTS_VERSION = "2.39.0"
+CONTRACTS_VERSION = "2.40.0"
 
 __all__ = [
     "PresenceHeartbeatRequest",

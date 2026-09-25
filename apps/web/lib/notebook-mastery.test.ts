@@ -24,6 +24,8 @@ function result(id: string, status: "ok" | "error" | "skipped" | "not_run") {
     execution_count: 1,
     note: "",
     check: null,
+    cache_key: null,
+    cached_from_seq: null,
   };
 }
 

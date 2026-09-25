@@ -65,6 +65,7 @@ from leona_notebooks.checks import (
     captures_from_sandbox_result,
 )
 from leona_notebooks.circuits import validate_circuit_seed
+from leona_notebooks.dependencies import RunPlan, plan_run
 from leona_notebooks.execution import CellResult, ExecutionReport
 from leona_notebooks.grading import GradedAttempt, grades_from_report, spec_with_graders
 from leona_notebooks.authoring import advisory_structure, spec_from_author_request
@@ -99,9 +100,11 @@ from leona_notebooks.prompts import (
 )
 from leona_notebooks.revision import RevisionPlan
 from leona_notebooks.sandbox_program import (
+    RUN_UNTIL_NOTE,
     NotebookGuardError,
     build_execution_spec,
     compose_notebook_program,
+    prepare_cell_source,
     report_from_sandbox_result,
 )
 from leona_notebooks.source import SourceParseError, parse_source, render_source
@@ -451,6 +454,20 @@ class ProductionNotebookPorts(NotebookPorts):
         #: spend the one worker's CPU on an answer it already has (DESIGN §2.1).
         self._check_cache: dict[str, JudgedCheck] = {}
 
+    @property
+    def sandbox_environment_id(self) -> str:
+        """S4 (adversarial review): what `leona_notebooks.dependencies.plan_run`
+        folds into every cell's cache key as `environment_signature`, so a cell
+        cached against one sandbox image is never matched against a different one
+        — a redeploy can pin different framework versions, and a cell result
+        computed under the old ones is not equivalent evidence for the new ones,
+        even with byte-identical source. Both real providers
+        (`VercelSandbox`/`LocalSubprocessSandbox`) already expose
+        `environment_id` for exactly this kind of reproducibility bookkeeping;
+        `getattr` with an empty-string fallback so a test double that has never
+        heard of it (most of this test suite's `FakeSandbox`) does not need one."""
+        return str(getattr(self._sandbox, "environment_id", "") or "")
+
     async def _complete(
         self,
         *,
@@ -705,15 +722,53 @@ class ProductionNotebookPorts(NotebookPorts):
     # -- execute ----------------------------------------------------------
 
     async def run_notebook(
-        self, spec: NotebookSpec, *, run_until: str | None = None
+        self,
+        spec: NotebookSpec,
+        *,
+        run_until: str | None = None,
+        only: set[str] | None = None,
+        reused_hardware_request_count: int = 0,
+        reused_hardware_qasm_chars: int = 0,
+        reused_for_live: dict[str, CellResult] | None = None,
     ) -> ExecutionReport:
         """`run_until` is the editor's "Run to here": cells after that id are left out
-        of the program and come back `not_run`. Optional with a default so this still
-        satisfies `NotebookPorts.run_notebook(spec)`, which every other caller uses."""
+        of the program and come back `not_run`. `only` further restricts the dispatch
+        to exactly that set of cell ids (dependency-graph replay's `RunPlan.execute` —
+        `leona_notebooks.dependencies.plan_run`); a cell it excludes comes back
+        `not_run` too, never counted against the report's `ok`. The `reused_hardware_*`
+        pair (S2) is what REUSED cells already committed this notebook to, so the
+        hardware-request cap is enforced notebook-wide rather than resetting every
+        replay dispatch — see `compose_notebook_program`'s own docstring.
+
+        `reused_for_live` (round 2 of the adversarial review): cells `plan` already
+        knows will be REUSED, pre-stamped with `cached_from_seq`
+        (`_reused_for_display`) — known BEFORE this dispatch even starts, since a
+        replay plan is computed from static structure alone. Used ONLY to build
+        what THIS call emits on the live `notebook.cells` stream, overlaid onto the
+        fresh (excluded-cells-are-`not_run`) report right before emitting it — the
+        RETURNED report is unaffected, still fresh-only, exactly as every caller
+        already expects; `_merge_replay_report` still does the full, correct merge
+        (cache-key stamping, the raise correction, the environment-drift
+        correction) on the value this function returns. Without this, a live
+        listener's FIRST word on a replay dispatch showed every reused cell as
+        `not_run` — indistinguishable from "has not run yet" — until the SEPARATE,
+        later `emit_final_cells` call corrected it; now the first (and typically
+        only, since nothing else about a reused cell needs correcting) word is
+        already right.
+
+        All optional with defaults so this still satisfies
+        `NotebookPorts.run_notebook(spec)`, which every other (non-replay) caller
+        uses, unchanged."""
         self._execution_attempt += 1
         attempt = self._execution_attempt
         try:
-            program = compose_notebook_program(spec, run_until=run_until)
+            program = compose_notebook_program(
+                spec,
+                run_until=run_until,
+                only=only,
+                reused_hardware_request_count=reused_hardware_request_count,
+                reused_hardware_qasm_chars=reused_hardware_qasm_chars,
+            )
         except NotebookGuardError as exc:
             report = ExecutionReport(
                 notebook_slug=spec.slug,
@@ -727,7 +782,7 @@ class ProductionNotebookPorts(NotebookPorts):
                 note=str(exc),
             )
             report = await self._judge_checks(spec, report, {})
-            await self._emit_cells(report, attempt)
+            await self._emit_cells(_with_reused_overlay(report, reused_for_live), attempt)
             return report
         exec_spec = build_execution_spec(
             program,
@@ -741,7 +796,7 @@ class ProductionNotebookPorts(NotebookPorts):
         )
         report = report_from_sandbox_result(result, spec, program)
         report = await self._judge_checks(spec, report, captures_from_sandbox_result(result, spec))
-        await self._emit_cells(report, attempt)
+        await self._emit_cells(_with_reused_overlay(report, reused_for_live), attempt)
         return report
 
     async def _judge_checks(
@@ -796,6 +851,7 @@ class ProductionNotebookPorts(NotebookPorts):
                             "evalue": cell.error.evalue if cell.error is not None else None,
                             "duration_ms": cell.duration_ms,
                             "check": cell.check.status if cell.check is not None else None,
+                            "cached_from_seq": cell.cached_from_seq,
                         }
                         for cell in report.cells
                     ],
@@ -803,6 +859,20 @@ class ProductionNotebookPorts(NotebookPorts):
             )
         except Exception:
             log.exception("notebook.cells emit failed (attempt=%s)", attempt)
+
+    async def emit_final_cells(self, report: ExecutionReport) -> None:
+        """Dependency-graph replay NIT: `_emit_cells` above fires from INSIDE
+        `run_notebook`, on the FRESH, pre-merge report — a reused cell reads there
+        as `status="not_run"` (excluded via `only=`), indistinguishable from a
+        cell that has not run yet, and the all-cached shortcut (`plan.execute`
+        empty) never calls `run_notebook` at all, so it never emits anything.
+        `_handle_author` calls this once, after merging in reused results (or
+        building the all-cached report), so a live listener's LAST word on this
+        run shows every cell's real, final state — reused ones included, via
+        `cached_from_seq` on each. Reuses the last dispatch's own attempt number
+        (or 1 when nothing was dispatched at all): this is a correction to what
+        that attempt showed, not a new attempt."""
+        await self._emit_cells(report, max(self._execution_attempt, 1))
 
     # -- observe: live, on the handler's session -----------------------------
 
@@ -1160,35 +1230,308 @@ def _kept_with_errors_note(outcome: PipelineOutcome, locale: str) -> str:
 #: What the chat rail says after a reader's own edit ran. Not model output — there is
 #: no LLM call on this path at all — so the two locales are written here rather than
 #: left to a prompt. Keyed the way `normalize_response_locale` returns.
+#:
+#: The `_reused` variants are new (dependency-graph replay, DESIGN §3): they fire
+#: whenever ANY cell in the merged report carries `cached_from_seq` — i.e. was reused
+#: rather than re-run this dispatch — and otherwise the ORIGINAL, unreplayed wording
+#: is unchanged, so a run that never touches the cache (a brand-new notebook, or
+#: `reuse_results=false`) reads exactly as it always has.
 _AUTHORED_TURN: dict[str, dict[str, str]] = {
     "en": {
         "ok": "Ran your edit: {ran} of {total} code cells ran cleanly.",
         "partial": "Ran your edit: {ran} of {total} code cells ran, and {failed} raised.",
         "stopped": "Ran your edit up to {run_until}: {ran} code cells ran, {not_run} left for later.",
         "nothing": "I could not run your edit: {note}",
+        "ok_reused": "Ran {ran} cell{ran_s} that changed or {ran_depend} on your edit; {reused} unchanged cell{reused_s} kept their results.",
+        "partial_reused": "Ran {ran} cell{ran_s} that changed or {ran_depend} on your edit, and {failed} raised; {reused} unchanged cell{reused_s} kept their results.",
+        "stopped_reused": "Ran {ran} cell{ran_s} up to {run_until} that changed or {ran_depend} on your edit; {reused} unchanged cell{reused_s} kept their results, {not_run} left for later.",
+        "all_reused": "Nothing needed to change: all {reused} cell{reused_s} kept their results from before.",
+        "environment_drifted_suffix": " The sandbox environment changed since your last save, so the results that would have been reused are marked for a re-run instead.",
     },
     "ja": {
         "ok": "編集を実行しました: コードセル {total} 個のうち {ran} 個が正常に実行されました。",
         "partial": "編集を実行しました: コードセル {total} 個のうち {ran} 個が実行され、{failed} 個で例外が発生しました。",
         "stopped": "{run_until} まで編集を実行しました: コードセル {ran} 個を実行し、{not_run} 個は未実行です。",
         "nothing": "編集を実行できませんでした: {note}",
+        "ok_reused": "編集の影響を受けたセル {ran} 個を実行しました。変更のないセル {reused} 個は前回の結果を保持しています。",
+        "partial_reused": "編集の影響を受けたセル {ran} 個を実行し、{failed} 個で例外が発生しました。変更のないセル {reused} 個は前回の結果を保持しています。",
+        "stopped_reused": "{run_until} まで、編集の影響を受けたセル {ran} 個を実行しました。変更のないセル {reused} 個は前回の結果を保持し、{not_run} 個は未実行です。",
+        "all_reused": "変更はありませんでした。セル {reused} 個はすべて前回の結果を保持しています。",
+        "environment_drifted_suffix": " サンドボックスの実行環境が前回の保存から変わったため、再利用されるはずだった結果は再実行が必要としてマークされています。",
     },
 }
+
+
+def _plural_s(n: int) -> str:
+    """English plural suffix for a count noun — `""` at exactly 1, `"s"` otherwise
+    (0 included: "0 cells", the ordinary English plural). Japanese counter words
+    (個) never change with count, so the `_reused` templates' `ja` half simply
+    never references `{ran_s}`/`{reused_s}` — `str.format` ignores an unused kwarg,
+    so passing these unconditionally for both locales is harmless."""
+    return "" if n == 1 else "s"
 
 
 def _authored_turn(report: ExecutionReport, *, run_until: str | None, locale: str) -> str:
     strings = _AUTHORED_TURN.get(locale, _AUTHORED_TURN["en"])
     total = len(report.cells)
-    ran = report.executed_count()
+    executed = report.executed_count()  # fresh + reused "ok"/"error" cells
     failed = len(report.failing_cells())
     not_run = sum(1 for cell in report.cells if cell.status == "not_run")
-    if ran == 0 and not report.ok:
+    # A reused cell always carries status="ok" (`plan_run` never reuses an error), so
+    # it is never itself a member of `failed`, and subtracting it out of `executed`
+    # leaves exactly the cells THIS dispatch actually ran.
+    reused = sum(1 for cell in report.cells if cell.cached_from_seq is not None)
+    ran = executed - reused
+    if executed == 0 and not report.ok:
         return strings["nothing"].format(note=report.note or "the sandbox produced no evidence")
+    if reused > 0:
+        ran_s, reused_s = _plural_s(ran), _plural_s(reused)
+        # Subject-verb agreement, not just the noun: "1 cell that changed or
+        # DEPENDS", "2 cells that changed or DEPEND" — `_plural_s` alone fixed
+        # the noun in round 1 and missed that "depend" is a present-tense verb
+        # agreeing with the SAME subject, caught in round 2.
+        ran_depend = "depends" if ran == 1 else "depend"
+        if run_until:
+            return strings["stopped_reused"].format(
+                ran=ran,
+                ran_s=ran_s,
+                ran_depend=ran_depend,
+                reused=reused,
+                reused_s=reused_s,
+                not_run=not_run,
+                run_until=run_until,
+            )
+        if failed:
+            return strings["partial_reused"].format(
+                ran=ran,
+                ran_s=ran_s,
+                ran_depend=ran_depend,
+                reused=reused,
+                reused_s=reused_s,
+                failed=failed,
+            )
+        if ran == 0:
+            return strings["all_reused"].format(reused=reused, reused_s=reused_s)
+        return strings["ok_reused"].format(
+            ran=ran, ran_s=ran_s, ran_depend=ran_depend, reused=reused, reused_s=reused_s
+        )
     if run_until:
         return strings["stopped"].format(ran=ran, not_run=not_run, run_until=run_until)
     if failed:
         return strings["partial"].format(ran=ran, total=total, failed=failed)
     return strings["ok"].format(ran=ran, total=total)
+
+
+async def _load_parent_for_replay(
+    notebook_store: NotebookStore,
+    scope: Scope,
+    session: AsyncSession,
+    parent_version_id: str,
+) -> tuple[NotebookSpec | None, ExecutionReport | None, int | None]:
+    """The parent version's spec, report and seq for `plan_run` — `(None, None,
+    None)` when there is nothing usable to reuse from (a bad id, a version with no
+    spec). That is not an error here: `plan_run` already treats a `None` parent
+    report as "every cell is stale", which is the honest answer when nothing was
+    ever cached, not a special case this function needs to guard against."""
+    try:
+        parent = await notebook_store.get_version(scope, session, uuid.UUID(parent_version_id))
+    except (KeyError, ValueError):
+        return None, None, None
+    if parent is None:
+        return None, None, None
+    parent_spec = (
+        NotebookSpec.model_validate(parent.spec)
+        if getattr(parent, "spec", None) is not None
+        else None
+    )
+    parent_report = (
+        ExecutionReport.model_validate(parent.report)
+        if getattr(parent, "report", None) is not None
+        else None
+    )
+    return parent_spec, parent_report, getattr(parent, "seq", None)
+
+
+#: Note stamped on a reused cell the environment-drift check invalidates —
+#: `_authored_turn` matches on this exact string to say so in the turn too.
+ENVIRONMENT_DRIFT_NOTE = (
+    "the sandbox environment changed since this cell last ran; re-run to refresh"
+)
+
+
+def _reused_for_display(plan: RunPlan, parent_seq: int | None) -> dict[str, CellResult]:
+    """Every cell `plan` says to reuse, stamped with `cached_from_seq` set to the
+    EARLIEST version it actually dates from (`prior.cached_from_seq or
+    parent_seq` — see `_merge_replay_report`'s own docstring for why not always
+    the immediate parent). Computed from `plan` alone, before anything is
+    dispatched, so it doubles as what `run_notebook`'s live emission overlays in
+    from the very first event (`_with_reused_overlay`) and what the final merge
+    uses (`_merge_replay_report`) — one computation, two call sites, so they
+    cannot silently disagree with each other."""
+    return {
+        cell_id: prior.model_copy(update={"cached_from_seq": prior.cached_from_seq or parent_seq})
+        for cell_id, prior in plan.reused.items()
+    }
+
+
+def _with_reused_overlay(
+    report: ExecutionReport, reused_for_live: dict[str, CellResult] | None
+) -> ExecutionReport:
+    """What `ProductionNotebookPorts._emit_cells` should show for THIS dispatch,
+    if different from what the dispatch itself produced — see `run_notebook`'s
+    own `reused_for_live` docstring. A no-op (returns `report` unchanged, same
+    object) when there is nothing to overlay, so a non-replay caller's emission
+    is byte-identical to before this existed."""
+    if not reused_for_live:
+        return report
+    overlaid = [
+        reused_for_live[cell.id] if cell.id in reused_for_live else cell for cell in report.cells
+    ]
+    return report.model_copy(update={"cells": overlaid})
+
+
+def _merge_replay_report(
+    report: ExecutionReport,
+    plan: RunPlan,
+    parent_seq: int | None,
+    spec: NotebookSpec,
+    *,
+    environment_drifted: bool = False,
+) -> ExecutionReport:
+    """Stamp each cell this dispatch actually EXECUTED with its own fresh
+    `cache_key`, and replace every cell `plan` says to REUSE with the PARENT's own
+    `CellResult` — its original `cache_key` kept intact, `cached_from_seq` set to
+    the EARLIEST version the reused result actually dates from
+    (`prior.cached_from_seq or parent_seq`) rather than always this run's
+    immediate parent: a cell unchanged across versions 1 -> 2 -> 3 is still
+    "unchanged since version 1", not freshly relabelled "since version 2" on every
+    hop, which would make the label count how many times a reader has saved
+    without touching the cell rather than saying anything about the cell itself.
+    The composer (`compose_notebook_program`) only knows `skipped` and `not_run`;
+    it has never heard of a cached value, so the merge happens here, one level up,
+    where both the fresh report and the plan are in scope.
+
+    **`environment_drifted` (round 2 of the adversarial review): invalidates
+    EVERY reused cell, unconditionally.** `environment_signature` (S4, folded
+    into the cache key) is a constant in production today —
+    `VercelSandbox.environment_id` never changes on an in-place image rebuild, no
+    digest pinning yet (that property's own docstring) — so it cannot by itself
+    catch a rebuild that silently changed installed package versions between the
+    parent's run and this one. The only reliable signal is the ACTUAL environment
+    THIS dispatch reports, which is only known after it runs — so the caller
+    compares `report.environment` against the parent's and passes the verdict in
+    here, rather than this function reaching for I/O it has no way to do. When
+    it fired, no reused cell is a safe "ok" to show: the cache key matched, but
+    what it matched was computed under conditions this run cannot confirm still
+    hold, for every reused cell alike — stronger than, and takes priority over,
+    the raise-correction below, which only ever invalidates cells AFTER a raise.
+
+    **A reused cell after a cell that just raised is corrected to `not_run`.** A
+    reused result's own cache-key match says nothing about whether a FULL run of
+    this version would even have reached it — `plan.execute` and `plan.reused` are
+    computed from static structure, before anything runs, and the sandbox only
+    discovers at execution time that an earlier cell raised and stopped the whole
+    dispatch. So once a freshly-executed cell in THIS report comes back
+    `status="error"` without `raises-exception` in its own tags (the same rule
+    `report_from_observation`'s own `ok` computation uses, via `Cell.may_raise`),
+    every cell after it in document order that `plan` said to reuse is replaced
+    with `not_run` — matching what a real full run would show, instead of a stale
+    "ok" sitting past a traceback a reader would read as "and then it kept going".
+    """
+    reused_display = _reused_for_display(plan, parent_seq)
+    merged: list[CellResult] = []
+    stopped = False
+    for cell in report.cells:
+        if environment_drifted and cell.id in plan.reused:
+            merged.append(CellResult(id=cell.id, status="not_run", note=ENVIRONMENT_DRIFT_NOTE))
+            continue
+        if stopped and cell.id in plan.reused:
+            merged.append(CellResult(id=cell.id, status="not_run", note="an earlier cell raised"))
+            continue
+        if cell.id in plan.execute:
+            fresh = cell.model_copy(update={"cache_key": plan.cache_keys.get(cell.id)})
+            merged.append(fresh)
+            if fresh.status == "error" and not spec.cell_by_id(fresh.id).may_raise:
+                stopped = True
+        elif cell.id in plan.reused:
+            merged.append(reused_display[cell.id])
+        else:
+            merged.append(cell)  # a genuine not_run: past `run_until`, or never cacheable at all
+    return report.model_copy(update={"cells": merged})
+
+
+def _renumber_execution_counts(report: ExecutionReport) -> ExecutionReport:
+    """NIT: a MERGED report's `execution_count` is otherwise a mix of two
+    unrelated counters — THIS dispatch's own (`_ln_state["count"]`, restarted at 1
+    for whatever subset it ran) on freshly-executed cells, and each reused cell's
+    OWN count from whichever earlier dispatch actually produced it, which can be
+    any number and can repeat one a fresh cell also has. Reader-facing, this is
+    the `[N]` Jupyter shows beside a cell — duplicates and an out-of-order
+    sequence read as a notebook that ran cells out of order, or twice, neither of
+    which happened. Renumbered 1, 2, 3... in DOCUMENT order, skipping only cells
+    with no count at all (`skipped`, a genuine `not_run`) — a no-op on an ordinary
+    non-replay report, which already comes back monotonic from one dispatch.
+    """
+    renumbered: list[CellResult] = []
+    next_count = 1
+    for cell in report.cells:
+        if cell.execution_count is None:
+            renumbered.append(cell)
+            continue
+        renumbered.append(cell.model_copy(update={"execution_count": next_count}))
+        next_count += 1
+    return report.model_copy(update={"cells": renumbered})
+
+
+def _all_cached_report(
+    spec: NotebookSpec, plan: RunPlan, parent_seq: int | None, run_until: str | None
+) -> ExecutionReport:
+    """`plan.execute` is empty: nothing needs a sandbox dispatch at all (plan brief
+    item 5 — "if the plan executes nothing, do not dispatch a sandbox"). Built
+    directly from `plan.reused` and each remaining cell's OWN skip classification via
+    `prepare_cell_source` — the SAME check `compose_notebook_program` runs internally
+    — so this can never drift from what a real, empty-`only` dispatch would have
+    reported for the cells it left out.
+
+    That "same check" has to include `compose_notebook_program`'s own PRECEDENCE, not
+    just its two classifications: a cell past the `run_until` cut is `not_run`
+    (`RUN_UNTIL_NOTE`) there EVEN WHEN it would also be skip-eligible
+    (`execute=False`, a `%%` cell magic) — the composer tests `index > cut` before it
+    ever calls `prepare_cell_source`. Checking skip-eligibility first, as an earlier
+    version of this function did, relabelled such a cell `skipped` instead: still
+    correct about the cell never running, but the WRONG reason, and it silently
+    undercounts `_authored_turn`'s "left for later" figure. So the cut is computed
+    and tested here first, exactly mirroring `compose_notebook_program`'s own
+    `index > cut` gate before its `prepare_cell_source` call.
+    """
+    cut = len(spec.cells) - 1
+    if run_until is not None:
+        cut = spec.index_of(run_until)  # already validated by `plan_run`'s own lookup
+    index_of_id = {cell.id: index for index, cell in enumerate(spec.cells)}
+    reused_display = _reused_for_display(plan, parent_seq)
+    cells: list[CellResult] = []
+    for cell in spec.code_cells():
+        if cell.id in plan.reused:
+            cells.append(reused_display[cell.id])
+            continue
+        if index_of_id[cell.id] > cut:
+            cells.append(CellResult(id=cell.id, status="not_run", note=RUN_UNTIL_NOTE))
+            continue
+        _source, skip_reason = prepare_cell_source(cell)
+        if skip_reason is not None:
+            cells.append(CellResult(id=cell.id, status="skipped", note=skip_reason))
+        else:
+            cells.append(CellResult(id=cell.id, status="not_run", note=RUN_UNTIL_NOTE))
+    return ExecutionReport(
+        notebook_slug=spec.slug,
+        ok=True,
+        runner="sandbox",
+        cells=cells,
+        duration_ms=0,
+        environment={},
+        dropped_bytes=0,
+        note="",
+    )
 
 
 async def _handle_author(
@@ -1220,6 +1563,29 @@ async def _handle_author(
     The one thing that IS a failure: nothing ran at all — the guard refused every cell,
     or the sandbox came back with no evidence. Then there is no result to show and the
     version is `failed` with the report's own note as the error.
+
+    **Dependency-graph replay (DESIGN §3).** `plan_run` always runs — even on a
+    notebook's very first save, with no parent at all — because it is also what
+    stamps `CellResult.cache_key` on every cell this dispatch executes, and a report
+    with no cache keys would give the NEXT author run nothing to match against,
+    silently disabling replay for every notebook forever (its first version never has
+    a parent). What varies is only what `plan_run` is handed as the parent:
+    `payload["reuse_results"]` false, or no `parent_version_id` (nothing to reuse
+    from yet), passes `parent_report=None` — `plan_run` then treats every cell as
+    stale, so `execute` is every graph cell, identical to an unreplayed full run, and
+    `reused` is empty. Otherwise the resolved parent's report decides staleness for
+    real, and only what changed (plus its downstream and their own deps — the
+    dependency graph's mutation rule) is actually dispatched.
+
+    `report.ok` keeps meaning exactly what it means today — "every cell THIS dispatch
+    ran, ran cleanly" — because a reused cell is never counted against it either way:
+    it always carries `status="ok"` (`plan_run` never reuses an error, see its own
+    docstring), so folding it in can only ever leave `ok` as true as it already was.
+    `report.executed_count()` (ok+error) DOES include reused cells, by design — that
+    count means "how many cells does this report have a real verdict for", which a
+    reused "ok" answers just as much as a freshly-run one — and `_authored_turn` is
+    the one place that cares about the distinction, so it is the one place that
+    subtracts reused cells back out to report "ran" and "reused" separately.
     """
     raw_request = payload.get("request") or {}
     spec_payload = raw_request.get("spec")
@@ -1232,13 +1598,90 @@ async def _handle_author(
     # front matter of the source it came from.
     authored = spec_from_author_request(spec=spec_payload, slug=payload.get("slug") or None)
     run_until = payload.get("run_until") or None
+    reuse_results = bool(payload.get("reuse_results", True))
+    parent_version_id = payload.get("parent_version_id")
 
-    report = await ports.run_notebook(authored, run_until=run_until)
+    parent_spec: NotebookSpec | None = None
+    parent_report: ExecutionReport | None = None
+    parent_seq: int | None = None
+    if reuse_results and parent_version_id:
+        parent_spec, parent_report, parent_seq = await _load_parent_for_replay(
+            notebook_store, scope, session, parent_version_id
+        )
+    plan = plan_run(
+        authored,
+        parent_spec,
+        parent_report,
+        run_until,
+        environment_signature=ports.sandbox_environment_id,
+    )
+
+    if not plan.execute:
+        report = _all_cached_report(authored, plan, parent_seq, run_until)
+        environment_drifted = False
+    else:
+        # S2: what REUSED cells already committed this notebook to, so the
+        # sandbox's own hardware-request cap (and the worker-side ledger that
+        # re-validates it) sees the notebook-WIDE total, not just this dispatch's
+        # own — see `compose_notebook_program`'s docstring.
+        reused_hw_count = sum(len(cell.hardware_requests) for cell in plan.reused.values())
+        reused_hw_chars = sum(
+            len(request.qasm) for cell in plan.reused.values() for request in cell.hardware_requests
+        )
+        report = await ports.run_notebook(
+            authored,
+            run_until=run_until,
+            only=set(plan.execute),
+            reused_hardware_request_count=reused_hw_count,
+            reused_hardware_qasm_chars=reused_hw_chars,
+            # NIT (round 2): known from `plan` alone, before this dispatch even
+            # starts — so the live `notebook.cells` event this call emits shows a
+            # reused cell as itself from the very first word, never `not_run`.
+            reused_for_live=_reused_for_display(plan, parent_seq),
+        )
+        # Round 2 of the adversarial review: `environment_signature` (S4) is a
+        # constant in production today (`ports.sandbox_environment_id`'s own
+        # docstring), so it cannot catch an in-place image rebuild on its own.
+        # The FRESH dispatch's own reported environment — only known now, after
+        # it ran — is the next-best signal: compare it against what the PARENT
+        # report recorded. Both sides empty (a sandbox crash here, or a report
+        # saved before environment tracking existed there) is "cannot tell", not
+        # "drifted" — never invalidate on missing data.
+        environment_drifted = bool(
+            plan.reused
+            and parent_report is not None
+            and report.environment
+            and parent_report.environment
+            and report.environment != parent_report.environment
+        )
+        report = _merge_replay_report(
+            report, plan, parent_seq, authored, environment_drifted=environment_drifted
+        )
+    report = _renumber_execution_counts(report)
+    # NIT: the FINAL word on this run's cells, reused ones included (see
+    # `emit_final_cells`'s own docstring) — fired for both branches, since the
+    # all-cached shortcut above never dispatches to the sandbox at all and so
+    # never emits anything on its own.
+    await ports.emit_final_cells(report)
     await _record_sandbox_usage(session, scope, run_id, ports)
 
     warnings = advisory_structure(authored)
     review = NotebookReview(verdict="needs-attention", warnings=warnings) if warnings else None
-    ran_nothing = report.executed_count() == 0 and not report.ok
+    # S1: judged by what `plan.execute` itself produced, not by the MERGED
+    # report's overall `executed_count()` — that count includes every REUSED
+    # cell too, so a notebook with healthy results carried forward from the
+    # parent would otherwise look like a successful run even when the guard
+    # refused every cell in `plan.execute`, or the sandbox crashed before
+    # returning any evidence for them (a `NotebookGuardError` marks every code
+    # cell `status="skipped"`, which `_merge_replay_report` leaves untouched for
+    # anything in `plan.execute` — it only ever rewrites `plan.execute`/`plan.reused`
+    # cells, and a guard-skipped cell is neither). An EMPTY `plan.execute` (the
+    # all-cached shortcut) is never "ran nothing": there was genuinely nothing to
+    # run, which is the success case `_all_cached_report` itself always reports
+    # `ok=True` for.
+    ran_nothing = bool(plan.execute) and not any(
+        cell.status in {"ok", "error"} for cell in report.cells if cell.id in plan.execute
+    )
     outcome = PipelineOutcome(
         status="failed" if ran_nothing else "ready",
         spec=authored,
@@ -1247,6 +1690,18 @@ async def _handle_author(
         summary=raw_request.get("message") or "",
         error=(report.note or "the notebook did not run") if ran_nothing else "",
     )
+    # When ran_nothing, `_authored_turn` must NOT run at all: it reasons about the
+    # report's cell counts alone, with no notion of "the guard refused everything
+    # I actually asked it to run" — fed a report with reused cells present, it
+    # would cheerfully say "Nothing needed to change", exactly the wrong message
+    # for a genuine failure (S1). `turn_content=None` lets `_save_outcome`'s own
+    # fallback chain use `outcome.error` instead, the real reason.
+    turn_content = (
+        None if ran_nothing else _authored_turn(report, run_until=run_until, locale=response_locale)
+    )
+    if turn_content is not None and environment_drifted:
+        strings = _AUTHORED_TURN.get(response_locale, _AUTHORED_TURN["en"])
+        turn_content += strings["environment_drifted_suffix"]
     await _save_outcome(
         notebook_store=notebook_store,
         scope=scope,
@@ -1257,7 +1712,7 @@ async def _handle_author(
         outcome=outcome,
         sink=sink,
         run_store=run_store,
-        turn_content=_authored_turn(report, run_until=run_until, locale=response_locale),
+        turn_content=turn_content,
         success_reason_code="notebook_authored",
         failure_reason_code="notebook_author_failed",
     )

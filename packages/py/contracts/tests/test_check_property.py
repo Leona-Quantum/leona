@@ -60,7 +60,7 @@ def test_each_kind_accepts_its_own_expectation_and_fills_the_default_tolerance()
         # the library grammar, per kind
         ({"kind": "state", "subject": "qc", "reference": "qft(3)"}, "not a library reference"),
         ({"kind": "unitary", "subject": "qc", "reference": "bell"}, "not a library reference"),
-        ({"kind": "state", "subject": "qc", "reference": "ghz(25)"}, "not a library reference"),
+        ({"kind": "state", "subject": "qc", "reference": "ghz(20)"}, "not a library reference"),
         ({"kind": "unitary", "subject": "qc", "reference": "qft(13)"}, "not a library reference"),
         ({"kind": "state", "subject": "qc", "reference": "ghz(0)"}, "not a library reference"),
         # subject

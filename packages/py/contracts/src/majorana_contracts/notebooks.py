@@ -233,20 +233,23 @@ CheckStatus = Literal["pass", "fail", "inconclusive"]
 
 #: Library references a `state` check may name. Built by trusted worker code
 #: (`leona_notebooks.checks`), never written by the model or the reader. The widths stop
-#: at 24 because that is `majorana_verification.statevector.STATEVECTOR_MAX_QUBITS`, the
-#: widest statevector the worker simulates (restated: this package imports nothing
-#: internal).
+#: at `CHECK_STATE_MAX_QUBITS`.
 CHECK_STATE_REFERENCE_RE = re.compile(
-    r"^(?:bell(?::(?:phi|psi)[+-])?|(?:ghz|w|uniform)\((?:[1-9]|1\d|2[0-4])\))$"
+    r"^(?:bell(?::(?:phi|psi)[+-])?|(?:ghz|w|uniform)\((?:[1-9]|1\d)\))$"
 )
 #: Library references a `unitary` check may name, up to `CHECK_UNITARY_MAX_QUBITS`.
 CHECK_UNITARY_REFERENCE_RE = re.compile(r"^i?qft\((?:[1-9]|10)\)$")
-#: The widest circuit a check of each kind judges. `state`, `distribution` and `energy` stop
-#: at `STATEVECTOR_MAX_QUBITS` (24; `energy` is also held to 10 by its Hamiltonian); `unitary`
-#: stops at 10, below the verification package's 12, because the worker is one instance
-#: running every user's jobs and a 12-qubit unitary is 256 MiB (review of PR 1011). Restated
-#: here because this package imports nothing internal; `leona_notebooks.checks` reads these.
-CHECK_STATE_MAX_QUBITS = 24
+#: The widest circuit a check of each kind judges, sized so one check fits in about 150 MiB
+#: above the judging process's own footprint: the worker and the API are 512 MiB
+#: containers, shared with the process that started the judge (review of PR 1011). Measured
+#: and fitted in `leona_notebooks.checks` (see the numbers there): a failing state check
+#: costs about 156 bytes per amplitude, so 19 qubits is about 78 MiB and 20 about 156 MiB;
+#: a failing distribution check about 2.6 KB per outcome (it keeps one dict entry per
+#: outcome), so 15 qubits is about 82 MiB; a 10-qubit unitary check peaked 56 MiB above the
+#: footprint, measured. `energy` is also held to 10 by its Hamiltonian. Restated here
+#: because this package imports nothing internal; `leona_notebooks.checks` reads these.
+CHECK_STATE_MAX_QUBITS = 19
+CHECK_DISTRIBUTION_MAX_QUBITS = 15
 CHECK_UNITARY_MAX_QUBITS = 10
 #: The names an amplitude or probability expression may use. The evaluator
 #: (`leona_notebooks.checks.evaluate_expression`) walks an `ast` against this allowlist and
@@ -386,7 +389,7 @@ def _a(kind: str) -> str:
     return ("an " if kind[:1] in "aeio" else "a ") + kind  # "a unitary": a "you" sound
 
 
-def _validate_bitstring_keys(name: str, keys: list[str], *, max_width: int = 24) -> int:
+def _validate_bitstring_keys(name: str, keys: list[str], *, max_width: int) -> int:
     if not keys:
         raise ValueError(f"{name} must name at least one basis state")
     widths = {len(key) for key in keys}
@@ -510,7 +513,13 @@ class CheckProperty(_Model):
             mapping = getattr(self, name)
             if mapping is None:
                 continue
-            _validate_bitstring_keys(name, list(mapping))
+            _validate_bitstring_keys(
+                name,
+                list(mapping),
+                max_width=CHECK_STATE_MAX_QUBITS
+                if name == "amplitudes"
+                else CHECK_DISTRIBUTION_MAX_QUBITS,
+            )
             for key, entry in mapping.items():
                 if isinstance(entry, str):
                     _validate_check_expression(entry)
@@ -1061,6 +1070,20 @@ class CellResult(_Model):
     #: The worker's verdict on a `role=check` cell; `None` for every other cell and in
     #: every report stored before check cells existed, so those still parse unchanged.
     check: CheckVerdict | None = None
+    #: This cell's Merkle cache key (`leona_notebooks.dependencies.cache_keys`) at the
+    #: moment it actually ran. `None` for every report stored before dependency-graph
+    #: replay shipped, and for any cell the sandbox never dispatched (`skipped`,
+    #: `not_run`) — a cell replay never executed has no key to be reused BY, and a
+    #: `None` here is exactly what makes such a report "uncached" rather than a false
+    #: match on an absent key (`leona_notebooks.dependencies.plan_run`).
+    cache_key: str | None = None
+    #: Set when this cell's result was NOT re-run: it is the PARENT version's own
+    #: `CellResult`, copied forward because its cache key still matched. The value is
+    #: the parent version's `seq`, so the page can say "unchanged since version N, not
+    #: re-run". `None` for a cell that actually executed this run (whether or not it
+    #: also happens to carry a `cache_key` — the two fields are independent: an
+    #: executed cell's `cache_key` is ITS OWN fresh key, not a claim about reuse).
+    cached_from_seq: int | None = None
 
 
 class ExecutionReport(_Model):
@@ -1449,6 +1472,15 @@ class AuthorNotebookVersionRequest(_ResourceBase):
     #: A cell id: execute cells up to and including it ("Run to here"), reporting the
     #: rest as `not_run`. `None` runs the whole notebook.
     run_until: str | None = None
+    #: Whether the worker may reuse a cell's result from the parent version instead of
+    #: re-running it, when the dependency graph says nothing that cell reads has
+    #: changed (`leona_notebooks.dependencies.plan_run`). Defaults `True` — replay is
+    #: the normal path, so an existing client that has never heard of this field keeps
+    #: getting the FASTER behaviour rather than silently falling back to a full run.
+    #: `False` forces a full fresh run of every cell up to `run_until`, ignoring any
+    #: cached result — the escape hatch for "I don't trust the cache" or a deliberate
+    #: full re-run through this same route.
+    reuse_results: bool = True
 
     # The exactly-one rule and the `run_until` shape are deliberately NOT enforced by
     # validators here, though both are properties of the request: `services/api` maps a

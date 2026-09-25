@@ -1052,6 +1052,7 @@ async def author_notebook_version(
         "message": body.message,
         "execute": body.execute,
         "run_until": body.run_until,
+        "reuse_results": body.reuse_results,
         "input": "spec"
         if body.spec is not None
         else ("source" if body.source is not None else "ipynb"),
@@ -1123,6 +1124,17 @@ async def author_notebook_version(
             # only thing it can produce is a failed run.
             "request": {"spec": spec.model_dump(mode="json"), "message": body.message},
             "run_until": body.run_until,
+            "reuse_results": body.reuse_results,
+            # The notebook's CURRENT (ready) version at the moment this job was
+            # queued — the replay lane's "parent" (`leona_notebooks.dependencies.
+            # plan_run`). Resolved HERE, not by the worker asking for "the current
+            # version" when the job runs: two authored versions can be in flight
+            # back to back, and by the time a job executes, "current" may already be
+            # a LATER version than the one this request was actually based on. `None`
+            # when there is no ready version yet (the notebook's first save, or its
+            # only build so far failed) — the worker then has nothing to reuse from
+            # and every cell is stale, which is correct, not a special case.
+            "parent_version_id": str(current.id) if current is not None else None,
             "response_locale": notebook.language,
         },
         run_id=run.id,
