@@ -35,26 +35,28 @@ form of install resolves from the workspace.
 In a notebook cell:
 
 ```python
-%pip install -q "leona-notebooks @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/notebooks" "leona-client @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/client" "majorana-contracts @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/contracts" "majorana-sandbox @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/sandbox"
+%pip install -q "leona-notebooks @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/notebooks" "leona-client @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/client" "majorana-contracts @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/contracts" "majorana-sandbox @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/sandbox" "majorana-verification @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/verification" "majorana-openqasm @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/openqasm"
 ```
 
-From a terminal, the same four requirements without the leading `%`:
+From a terminal, the same six requirements without the leading `%`:
 
 ```bash
-pip install -q "leona-notebooks @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/notebooks" "leona-client @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/client" "majorana-contracts @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/contracts" "majorana-sandbox @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/sandbox"
+pip install -q "leona-notebooks @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/notebooks" "leona-client @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/client" "majorana-contracts @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/contracts" "majorana-sandbox @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/sandbox" "majorana-verification @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/verification" "majorana-openqasm @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/openqasm"
 ```
 
 This is what the bootstrap cell at the top of a notebook downloaded from Leona runs
 for you (see [The download you get](#the-download-you-get) below). You only need to
 type it yourself for a notebook you start outside the product.
 
-**Why four packages, not one.** None of them is on PyPI. `leona-notebooks` names
-`leona-client`, `majorana-contracts` and `majorana-sandbox` as dependencies, so
-installing `leona-notebooks` on its own fails at dependency resolution ("No matching
-distribution found for leona-client") and installs nothing. Naming all four as git
-requirements in one command lets pip take each dependency from its URL. They are small:
-their other dependencies are pydantic, httpx, nbformat, pyyaml and qiskit, all from
-PyPI. A test (`test_the_bootstrap_installs_every_workspace_dependency`) derives this
+**Why six packages, not one.** None of them is on PyPI. `leona-notebooks` names
+`leona-client`, `majorana-contracts`, `majorana-sandbox` and `majorana-verification` as
+dependencies, and `majorana-verification` names `majorana-openqasm`, so installing
+`leona-notebooks` on its own fails at dependency resolution ("No matching distribution
+found for leona-client") and installs nothing. Naming all six as git requirements in one
+command lets pip take each dependency from its URL. They are small: their other
+dependencies are pydantic, httpx, nbformat, pyyaml, qiskit, numpy and scipy, all from
+PyPI. (`majorana-verification` and `majorana-openqasm` joined the list on 2026-09-25 for
+check cells, which `leona_notebooks.checks` judges with the verification package.) A test (`test_the_bootstrap_installs_every_workspace_dependency`) derives this
 list from the packages' own `pyproject.toml` files, so it cannot silently fall behind.
 
 **Verified 2026-09-24:** in a fresh virtualenv (Python 3.13, nothing else installed), the
@@ -68,6 +70,13 @@ imported, and `leona-notebooks validate` checked a curriculum folder. The same l
 reached `dev`, into another fresh venv: it installed, and `%nala link`, `%nala open`, a
 local `leona_submit` on a Bell circuit, and the refusal of a circuit with an unbound
 parameter all behaved as above. **Not verified:** inside VS Code or Colab themselves.
+
+**Verified 2026-09-25, for the six-package line:** in a fresh Python 3.13 virtualenv,
+`uv pip install` of the six requirements from a local `git+file://` of branch
+`feature/notebook-check-cells` (commit 316b1237) resolved and installed, and
+`leona_notebooks.checks.evaluate_check` judged a Bell circuit against the `bell` reference
+(pass, 3 of 3 broken copies caught). **Not re-verified** for the six-package line: plain
+`pip`, the network install from `github.com`, and the `%nala` steps above.
 
 ## Mint a personal access token
 
@@ -508,10 +517,10 @@ not fixed here (out of this page's scope).
 ## Colab
 
 A Colab notebook is a hosted Jupyter kernel with `pip` and `%pip` already available, so
-the same install line (all four packages) and `%load_ext` work:
+the same install line (all six packages) and `%load_ext` work:
 
 ```python
-%pip install -q "leona-notebooks @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/notebooks" "leona-client @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/client" "majorana-contracts @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/contracts" "majorana-sandbox @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/sandbox"
+%pip install -q "leona-notebooks @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/notebooks" "leona-client @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/client" "majorana-contracts @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/contracts" "majorana-sandbox @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/sandbox" "majorana-verification @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/verification" "majorana-openqasm @ git+https://github.com/Leona-Quantum/leona#subdirectory=packages/py/openqasm"
 %load_ext leona_notebooks.jupyter
 ```
 
