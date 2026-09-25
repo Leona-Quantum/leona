@@ -1912,7 +1912,7 @@ def _qiskit_human_eval_task(task_id: str) -> dict:
     ["qiskitHumanEval/0", "qiskitHumanEval/1"],
     ids=["create_quantum_circuit", "run_bell_state_simulator"],
 )
-async def test_basic_contract_rejects_a_function_that_never_needed_to_run(task_id):
+async def test_basic_contract_accepts_a_function_that_never_needed_to_run(task_id):
     """ai-ops 372: reproduce, offline, why the review step turned down correct code.
 
     `qiskitHumanEval/0` and `/1` both ask for a plain Python FUNCTION — one
@@ -2039,11 +2039,14 @@ async def test_a_delivered_function_candidate_is_never_labelled_verified_pass():
             )
         ]
     )
+    from majorana_sandbox.local import LocalSubprocessSandbox
+    from majorana_worker.runtime_ports import SandboxCandidateExecutor
+
     ports = ProductionSimplePipelinePorts(
         store=MemoryAgentStore(),
         observer=Observer(),
         llm=generation_llm,
-        executor=Executor(),
+        executor=SandboxCandidateExecutor(LocalSubprocessSandbox()),
         reviewer=SimpleIntentReviewer(llm=review_llm, task_prompt=nala_prompt),
         converter=Converter(),
         saver=Saver(),
@@ -2058,9 +2061,11 @@ async def test_a_delivered_function_candidate_is_never_labelled_verified_pass():
     assert planned.value is not None
     generated = await ports.generate(run_id, planned.value, None, None)
     assert generated.value is not None
-    executed = await ports.run_execution(run_id, planned.value, generated.value)
-    assert executed.value is not None
-    real_execution = executed.value.model_copy(update={"result": {}})
+    # The REAL sandbox, not the fake Executor test double.
+    real_execution = await ports.run_execution(run_id, planned.value, generated.value)
+    assert real_execution.value is not None
+    assert real_execution.value.result == {}
+    real_execution = real_execution.value
 
     checked = await ports.check_contract(run_id, planned.value, generated.value, real_execution)
     assert checked.value is not None
@@ -2078,6 +2083,7 @@ async def test_a_delivered_function_candidate_is_never_labelled_verified_pass():
 
     summary = simple_pipeline_verification_summary(
         semantic_review_decision=reviewed.value.decision,
+        result_never_executed=True,
         recorded_checks=checks,
         review_severity=reviewed.value.severity,
     )
@@ -2086,6 +2092,10 @@ async def test_a_delivered_function_candidate_is_never_labelled_verified_pass():
     )
     assert summary["evidence_strength"] == "structural"
     assert summary["candidate_defect_observed"] is False
+    # Review round 2, blocker 2: this must never read as "Executed" downstream
+    # (apps/web/lib/run-outcome.ts keys off reason_code == "ai_review_aligned").
+    assert summary["reason_code"] == "function_written_not_called"
+    assert "function written, never called" in summary["unverified_claims"]
 
 
 #: ai-ops 372, from the owner-approved $3 diagnostic re-run (2026-09-25, deepseek-v4-pro,
@@ -2233,20 +2243,37 @@ def run_bell_state_simulator():
 async def test_diag_task0_real_candidate_executes_cleanly_with_no_result_bound():
     """ai-ops 372 §8, part 1 of 2: the EARLIEST gate, confirmed with the real sandbox.
 
-    Before check_contract or review ever run, `SandboxCandidateExecutor.run_candidate`
-    (runtime_ports.py) itself used to fail this candidate. `circuit_expected=False` (this
-    Plan's own artifact_contract: function, top_level_execution=forbidden) makes
-    `FrameworkProgram.trusted_observer`/`trusted_setup` BOTH the empty string, so
-    `compose_execution` runs the candidate's bare source with NO instrumentation at all —
-    no epilogue ever writes `source_fingerprint` (or `result`) to the sidecar. The very
-    next check after "did the subprocess crash" was `observation["source_fingerprint"] ==
-    candidate.source_fingerprint`, which can never hold when nothing wrote it. Confirmed
-    directly against the real diagnostic evidence (`candidate_executions.observation` for
-    qiskitHumanEval/0's run, not the trimmed `run_events` "sandbox.result" projection,
-    which drops this field): every one of its 5 executed attempts recorded
-    `exit_code=3, evidence_error="source_fingerprint_mismatch"` — the actual, confirmed
-    reason the repair loop kept regenerating byte-identical, already-correct source until
-    `candidate_not_converging` gave up on it.
+    Two rounds of fix here, and this docstring names both because the mechanism
+    changed between them:
+
+    Round 1 (wrong): I made `circuit_expected` False for every FUNCTION/CLASS Plan
+    not marked required. That turned OFF `FrameworkProgram.trusted_observer`/
+    `trusted_setup` entirely (both go to the empty string — "inert without an
+    observer to append to"), so `compose_execution` ran the candidate's bare
+    source with NO instrumentation at all: no epilogue ever wrote
+    `source_fingerprint`, so the very next check
+    (`observation["source_fingerprint"] == candidate.source_fingerprint`) failed
+    unconditionally. Confirmed directly against the real diagnostic evidence
+    (`candidate_executions.observation` for qiskitHumanEval/0's run, not the
+    trimmed `run_events` "sandbox.result" projection, which drops this field):
+    every one of its 5 executed attempts recorded `exit_code=3,
+    evidence_error="source_fingerprint_mismatch"` — the actual, confirmed reason
+    the repair loop kept regenerating byte-identical, already-correct source
+    until `candidate_not_converging` gave up on it. This ALSO threw away real
+    evidence for candidates that DID bind FINAL_CIRCUIT/RESULT under a
+    FUNCTION/CLASS Plan (an adversarial review's S1/S3 findings) — a real
+    regression from origin/dev, not just an incomplete fix.
+
+    Round 2 (current code): `circuit_expected` is restored to its original,
+    unconditional computation — instrumentation runs exactly as on dev, so
+    `source_fingerprint` is written and this check passes normally. Only a
+    narrower `no_result_promised` (= `artifact_promises_no_executed_result(...)
+    and program.role is ProgramRole.UNKNOWN`) treats a still-missing `RESULT` as
+    `{}` instead of `RESULT_missing`, later in the same function — the fingerprint
+    check itself is never touched. This test now exercises THAT fallback, not the
+    fingerprint one; `evidence_error="source_fingerprint_mismatch"` is asserted
+    absent as a regression guard against round 1's defect recurring, not as the
+    thing currently making this candidate succeed.
 
     Uses the REAL LocalSubprocessSandbox (not a test double) so this is an actual
     subprocess execution of the actual recorded source, not a simulation of one.
@@ -2278,6 +2305,9 @@ async def test_diag_task0_real_candidate_executes_cleanly_with_no_result_bound()
     assert output.exit_code == 0, output.observation
     assert output.failure_kind is None, output.observation
     assert output.result == {}
+    # Round 2: instrumentation runs normally now — the fingerprint IS written
+    # (positive confirmation, not just the absence of the round-1 error).
+    assert output.observation.get("source_fingerprint") == candidate.source_fingerprint
     assert output.observation.get("evidence_error") != "source_fingerprint_mismatch"
 
 
@@ -2310,11 +2340,14 @@ async def test_diag_task0_real_candidate_is_delivered_ready_not_code_repair():
             )
         ]
     )
+    from majorana_sandbox.local import LocalSubprocessSandbox
+    from majorana_worker.runtime_ports import SandboxCandidateExecutor
+
     ports = ProductionSimplePipelinePorts(
         store=MemoryAgentStore(),
         observer=Observer(),
         llm=generation_llm,
-        executor=Executor(),
+        executor=SandboxCandidateExecutor(LocalSubprocessSandbox()),
         reviewer=SimpleIntentReviewer(
             llm=review_llm,
             task_prompt="Using Qiskit, complete create_quantum_circuit(n_qubits).",
@@ -2332,11 +2365,14 @@ async def test_diag_task0_real_candidate_is_delivered_ready_not_code_repair():
     assert planned.value is not None
     generated = await ports.generate(run_id, planned.value, None, None)
     assert generated.value is not None
-    executed = await ports.run_execution(run_id, planned.value, generated.value)
-    assert executed.value is not None
-    # What the previous test independently confirmed a real sandbox run produces for
-    # this exact source+plan, post-fix: a clean, successful, empty result.
-    real_execution = executed.value.model_copy(update={"result": {}})
+    # The REAL sandbox, not the fake Executor test double: this is what actually
+    # produces the clean, empty result for this shape (confirmed independently in
+    # test_diag_task0_real_candidate_executes_cleanly_with_no_result_bound), not an
+    # assumption forged onto a canned fake result.
+    real_execution = await ports.run_execution(run_id, planned.value, generated.value)
+    assert real_execution.value is not None
+    assert real_execution.value.result == {}
+    real_execution = real_execution.value
 
     checked = await ports.check_contract(run_id, planned.value, generated.value, real_execution)
     assert checked.value is not None
@@ -2352,6 +2388,7 @@ async def test_diag_task0_real_candidate_is_delivered_ready_not_code_repair():
 
     summary = simple_pipeline_verification_summary(
         semantic_review_decision=reviewed.value.decision,
+        result_never_executed=True,
         recorded_checks=checks,
         review_severity=reviewed.value.severity,
     )
@@ -2360,6 +2397,10 @@ async def test_diag_task0_real_candidate_is_delivered_ready_not_code_repair():
     assert summary["evidence_strength"] == "structural"
     assert summary["candidate_defect_observed"] is False
     assert "quantum correctness" in summary["unverified_claims"]
+    # Review round 2, blocker 2: qiskitHumanEval/0's real, correct candidate must
+    # never be presented to a user as "Executed" — it never executed anything.
+    assert summary["reason_code"] == "function_written_not_called"
+    assert "function written, never called" in summary["unverified_claims"]
 
 
 async def test_diag_task1_real_candidate_with_required_execution_still_repairs():
@@ -2398,6 +2439,215 @@ async def test_diag_task1_real_candidate_with_required_execution_still_repairs()
     assert checked.value is not None
     assert checked.value.passed is False, "top_level_execution=required must still enforce RESULT"
     assert any("RESULT missing key" in item for item in checked.value.diagnostics)
+
+
+async def test_function_demo_only_with_exact_diag_reference_still_grades_physical():
+    """ai-ops 372 §8 should-fix (e): the S3 regression from the adversarial review.
+
+    A FUNCTION/demo_only Plan (measurement_policy=none, so the model is instructed
+    the request wants a demo circuit and a physics reference, not a bare no-result
+    function) with a declared `exact_diag` reference and a candidate that correctly
+    computes the ground-state energy must still grade `evidence_strength=physical`
+    and pass its `exact_diag` check — exactly as it would on origin/dev. This
+    regressed in an earlier iteration of this PR's fix (blocker 1): making
+    `circuit_expected` unconditionally False for every FUNCTION/CLASS plan silently
+    threw away real, correctly-computed evidence for a plan whose candidate DID
+    bind FINAL_CIRCUIT and RESULT. This PR's `no_result_promised` guard (also
+    keying on `ProgramRole.UNKNOWN`) does not apply here, since this candidate's
+    role is PROGRAM (RESULT is bound), so full instrumentation and reference
+    checking still run.
+    """
+    from majorana_sandbox.local import LocalSubprocessSandbox
+    from majorana_worker.runtime_ports import SandboxCandidateExecutor
+
+    prompt = (
+        "Write a Qiskit function prepare_ground() for H = Z0 + Z1 and demo it: "
+        "compute the ground-state energy of the prepared state."
+    )
+    plan_payload = {
+        "domain": "quantum simulation",
+        "framework": "qiskit",
+        "algorithm": "VQE",
+        "problem_summary": (
+            "Prepare the ground state of H = Z0 + Z1 and report its ground-state energy"
+        ),
+        "algorithm_rationale": "X on both qubits gives |11>, the ground state",
+        "parameters": {
+            "shots": None,
+            "seed": None,
+            "custom": None,
+            "optimizer": None,
+            "max_iterations": None,
+        },
+        "qubits_estimate": 2,
+        "expected_runtime_sec": 10,
+        "success_criteria": {
+            "primary_metric": "energy",
+            "expected_range": None,
+            "additional_notes": None,
+        },
+        "expected_output_keys": ["energy"],
+        "artifact_contract": {
+            "artifact_type": "function",
+            "entry_point": "prepare_ground",
+            "measurement_policy": "none",
+            "top_level_execution": "demo_only",
+        },
+        "verification_plan": {
+            "methods": ["exact_diag"],
+            "reference_result_key": "energy",
+            "reference_hamiltonian": [
+                {"coefficient": 1.0, "pauli": "ZI"},
+                {"coefficient": 1.0, "pauli": "IZ"},
+            ],
+        },
+    }
+    source = """from qiskit import QuantumCircuit
+from qiskit.quantum_info import Statevector, SparsePauliOp
+
+def prepare_ground():
+    qc = QuantumCircuit(2)
+    qc.x(0)
+    qc.x(1)
+    return qc
+
+FINAL_CIRCUIT = prepare_ground()
+_h = SparsePauliOp.from_list([("ZI", 1.0), ("IZ", 1.0)])
+RESULT = {"energy": float(Statevector(FINAL_CIRCUIT).expectation_value(_h).real)}
+"""
+    generation_llm = QueueLLM([json.dumps(plan_payload), json.dumps({"source": source})])
+    review_llm = QueueLLM(
+        [
+            json.dumps(
+                {
+                    "decision": "ready",
+                    "confidence": "high",
+                    "severity": "none",
+                    "summary": "the demo circuit and reported energy match the reference",
+                    "passed_checks": ["request_to_plan", "plan_to_source"],
+                    "residual_risks": ["AI review is advisory"],
+                }
+            )
+        ]
+    )
+    ports = ProductionSimplePipelinePorts(
+        store=MemoryAgentStore(),
+        observer=Observer(),
+        llm=generation_llm,
+        executor=SandboxCandidateExecutor(LocalSubprocessSandbox()),
+        reviewer=SimpleIntentReviewer(llm=review_llm, task_prompt=prompt),
+        converter=Converter(),
+        saver=Saver(),
+        task_prompt=prompt,
+        framework=Framework.QISKIT,
+        requested_shots=None,
+        requested_seed=None,
+    )
+    run_id = uuid4()
+
+    planned = await ports.plan(run_id, None, None)
+    assert planned.value is not None
+    generated = await ports.generate(run_id, planned.value, None, None)
+    assert generated.value is not None
+    executed = await ports.run_execution(run_id, planned.value, generated.value)
+    assert executed.value is not None
+    assert executed.value.result == {"energy": -2.0}, executed.value.observation
+    assert "source_fingerprint" in executed.value.observation
+
+    checked = await ports.check_contract(run_id, planned.value, generated.value, executed.value)
+    assert checked.value is not None
+    assert checked.value.passed is True, checked.value.diagnostics
+
+    reviewed = await ports.review(run_id, planned.value, generated.value, executed.value, 1)
+    assert reviewed.value is not None
+    assert reviewed.value.decision is SemanticReviewDecision.READY, reviewed.value.feedback
+
+    checks = reviewed.value.feedback["basic_checks"]
+    exact_diag = next(c for c in checks if c["method"] == "exact_diag")
+    assert exact_diag["result"] == "pass", checks
+
+    summary = simple_pipeline_verification_summary(
+        semantic_review_decision=reviewed.value.decision,
+        recorded_checks=checks,
+        review_severity=reviewed.value.severity,
+    )
+    assert summary["evidence_strength"] == "physical", summary
+
+
+async def test_artifact_type_other_kills_a_widened_circuit_expected_mutation():
+    """ai-ops 372 §8 should-fix (e): kills the specific surviving mutation the
+    adversarial reviewer named — widening `no_result_promised`'s
+    `artifact_promises_no_executed_result(...) and program.role is ProgramRole.UNKNOWN`
+    guard down to just `if not circuit_expected:` in runtime_ports.py.
+
+    `ArtifactType.OTHER` ALSO gets `circuit_expected=False` (the original, pre-this-PR
+    behavior: `artifact_type is not ArtifactType.OTHER` is the one existing exemption
+    dev already had) — but `artifact_promises_no_executed_result` returns False for
+    `OTHER` (it only recognizes `FUNCTION`/`CLASS`). A bare candidate under an
+    `other`-typed Plan must therefore still hit the real
+    `source_fingerprint_mismatch` gate exactly as it would on dev, NOT the clean
+    `result={}` pass this PR's narrow exemption grants only to
+    `FUNCTION`/`CLASS` + `ProgramRole.UNKNOWN`. A mutant that keys off
+    `circuit_expected` alone cannot tell `OTHER` and `FUNCTION`/`forbidden` apart —
+    this test can.
+    """
+    from majorana_agent.models import CandidateRevision
+    from majorana_contracts.plan import Plan
+    from majorana_frameworks import FrameworkProgram
+    from majorana_sandbox.local import LocalSubprocessSandbox
+    from majorana_worker.runtime_ports import SandboxCandidateExecutor
+
+    source = "def other_thing(n):\n    return n * 2\n"
+    plan = Plan.model_validate(
+        {
+            "domain": "quantum information",
+            "algorithm": "other",
+            "framework": "qiskit",
+            "parameters": {
+                "shots": None,
+                "seed": None,
+                "custom": None,
+                "optimizer": None,
+                "max_iterations": None,
+            },
+            "problem_summary": "Return double the input; not a quantum computation",
+            "algorithm_rationale": "No quantum algorithm applies to this request",
+            "qubits_estimate": 1,
+            "success_criteria": {
+                "primary_metric": "value",
+                "expected_range": None,
+                "additional_notes": None,
+            },
+            "artifact_contract": {
+                "entry_point": "other_thing",
+                "artifact_type": "other",
+                "measurement_policy": "not_applicable",
+                "top_level_execution": "forbidden",
+            },
+            "verification_plan": None,
+            "expected_output_keys": ["value"],
+            "expected_runtime_sec": 5,
+        }
+    )
+    program = FrameworkProgram(Framework.QISKIT, source)
+    candidate = CandidateRevision(
+        candidate_id=uuid4(),
+        run_id=uuid4(),
+        tool_call_id="other-type-control",
+        revision=1,
+        plan_id=uuid4(),
+        framework=Framework.QISKIT,
+        source=program.normalized_source,
+        source_fingerprint=program.fingerprint,
+    )
+
+    output = await SandboxCandidateExecutor(LocalSubprocessSandbox()).run_candidate(candidate, plan)
+
+    assert output.exit_code != 0, (
+        "an ArtifactType.OTHER plan must NOT get the FUNCTION/CLASS no-result exemption"
+    )
+    assert output.observation.get("evidence_error") == "source_fingerprint_mismatch"
+    assert output.result == {}
 
 
 async def test_basic_contract_rejects_observed_qubits_above_plan_and_lane():

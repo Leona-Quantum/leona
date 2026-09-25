@@ -492,7 +492,13 @@ async def test_simple_terminal_success_records_typed_advisory_outcome():
     # `ExecutionEvidence.observation` is a required field with a default factory,
     # so it is never absent on the real type. A double thinner than the thing it
     # stands in for fails on the first caller that reads a real field.
-    execution = SimpleNamespace(observation={})
+    # `result` is non-empty here to match `basic_checks` below (return_contract
+    # and success_criteria both recorded "pass", which only happens when the
+    # candidate genuinely returned something) — ai-ops 372 review round 2:
+    # `result_never_executed` reads `execution.result` directly, so a double
+    # claiming a real "pass" while carrying an empty result would silently mislabel
+    # this advisory-but-executed outcome as "function written, never called".
+    execution = SimpleNamespace(observation={}, result={"counts": {"00": 512, "11": 512}})
     review = SimpleNamespace(
         decision=SemanticReviewDecision.READY,
         severity="none",
