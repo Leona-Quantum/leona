@@ -245,10 +245,14 @@ export function NotebookAddCheckForm({
           disabled={busy}
           onChange={(event) => update({ tolerance: event.target.value })}
         />
-        <span className="mj-notebook-add-check-hint mj-mono-muted">
-          {copy.toleranceDefaultHint(String(CHECK_DEFAULT_TOLERANCE[draft.kind]))}
-        </span>
       </label>
+      {/* Outside the `<label>`, deliberately: a `<label>` wrapping an input takes its
+          WHOLE text content as the accessible name, so a hint sentence inside it would
+          fold into "Tolerance Default for this kind: 0.000001" instead of "Tolerance" —
+          the exact mistake `getByLabelText("Tolerance")` caught in this form's own test. */}
+      <p className="mj-notebook-add-check-hint mj-mono-muted">
+        {copy.toleranceDefaultHint(String(CHECK_DEFAULT_TOLERANCE[draft.kind]))}
+      </p>
 
       <label className="mj-notebook-add-check-field">
         <span>{copy.statementLabel}</span>
