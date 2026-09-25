@@ -16,6 +16,7 @@ import test from "node:test";
 import { canonicalMetadata, OG_IMAGE } from "./public-metadata.ts";
 import {
   aboutMetadataCopy,
+  benchmarksMetadataCopy,
   contactMetadataCopy,
   homeMetadataCopy,
   pricingMetadataCopy,
@@ -25,6 +26,7 @@ import {
 } from "./public-page-metadata.ts";
 import { ABOUT_COPY } from "./about-copy.ts";
 import { CONTACT_COPY, HOME_COPY, PRICING_COPY, PRIVACY_COPY, TERMS_COPY, WORKSPACE_LANDING_COPY } from "./public-copy.ts";
+import { BENCHMARKS_COPY } from "./benchmarks-copy.ts";
 import { PUBLIC_SHELL_COPY } from "./public-locale.ts";
 
 /** Any character from a Japanese script — hiragana, katakana, or a CJK ideograph. */
@@ -171,6 +173,20 @@ test("workspace: locale actually selects WORKSPACE_LANDING_COPY.ja / the japanes
   assertTitleDoesNotDoubleTheBrand(ja.title, "workspace (ja)");
   assertShareCardSurvives(en, "/workspace");
   assertShareCardSurvives(ja, "/workspace");
+});
+
+test("benchmarks: locale actually selects BENCHMARKS_COPY.ja", () => {
+  const en = benchmarksMetadataCopy("en");
+  const ja = benchmarksMetadataCopy("ja");
+  assert.equal(en.title, BENCHMARKS_COPY.en.hero.title);
+  assert.equal(en.description, BENCHMARKS_COPY.en.hero.body);
+  assert.equal(ja.title, BENCHMARKS_COPY.ja.hero.title);
+  assert.equal(ja.description, BENCHMARKS_COPY.ja.hero.body);
+  assert.ok(JAPANESE_CHARACTER.test(ja.description ?? ""));
+  assert.notEqual(ja.description, en.description);
+  assertTitleDoesNotDoubleTheBrand(ja.title, "benchmarks (ja)");
+  assertShareCardSurvives(en, "/benchmarks");
+  assertShareCardSurvives(ja, "/benchmarks");
 });
 
 test("an unrecognised locale value falls back to english, same as the page body does", () => {
