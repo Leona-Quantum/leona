@@ -170,3 +170,10 @@ class PublicBenchmarkReport(BaseModel):
     by_stage: dict[str, ModelCallUsage] = Field(default_factory=dict)
     results: list[PublicTaskResult]
     note: str | None = None
+    #: ai-ops 372 review round 2: set (to the exact task_ids named) whenever this run used
+    #: `--task-ids` to restrict the benchmark to a subset. `total`/`passed`/`pass_rate` above
+    #: are computed over that subset, NOT the full benchmark — a reader (or a careless
+    #: quote in a write-up) must not mistake a subset score for a full-benchmark one. See
+    #: `_write_markdown_summary`, which refuses to print a bare "X/Y passed" headline when
+    #: this is set.
+    task_id_subset: list[str] | None = None

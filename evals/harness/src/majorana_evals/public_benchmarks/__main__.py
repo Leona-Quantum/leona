@@ -54,8 +54,14 @@ from majorana_evals.public_benchmarks.stub_llm import StubPipelineLLM
 
 
 def _write_markdown_summary(report: PublicBenchmarkReport, path: Path) -> None:
+    # ai-ops 372 review round 2: a subset score (--task-ids or --limit) must never read
+    # like a full-benchmark one. The headline says so explicitly rather than leaving a
+    # reader to notice `tasks: 36` is smaller than the benchmark they know is 151.
+    subset_suffix = (
+        f" (subset of {len(report.task_id_subset)} tasks)" if report.task_id_subset else ""
+    )
     lines = [
-        f"# {report.benchmark} — {report.run_mode}",
+        f"# {report.benchmark} — {report.run_mode}{subset_suffix}",
         "",
         f"- tasks: {report.total}",
         f"- passed: {report.passed} ({report.pass_rate:.1%})",
@@ -68,6 +74,12 @@ def _write_markdown_summary(report: PublicBenchmarkReport, path: Path) -> None:
         f"- recorded LLM calls: {report.total_recorded_llm_calls} "
         f"({report.total_recorded_input_tokens} in / {report.total_recorded_output_tokens} out tokens)",
     ]
+    if report.task_id_subset:
+        lines += [
+            "",
+            f"**SUBSET RUN — {len(report.task_id_subset)} task(s), not the full benchmark.**",
+            f"task_id_subset: {', '.join(f'`{task_id}`' for task_id in report.task_id_subset)}",
+        ]
     if report.note:
         lines += ["", f"note: {report.note}"]
     failed = [result for result in report.results if not result.passed]
@@ -95,15 +107,21 @@ async def _run(args: argparse.Namespace) -> int:
         dataset_sha256 = dict(QCE_SHA256)
         prompt_version = QCE_PROMPT_VERSION
 
+    task_id_subset: list[str] | None = None
     if args.task_ids is not None:
         wanted = {task_id.strip() for task_id in args.task_ids.split(",") if task_id.strip()}
         tasks = [task for task in tasks if task.task_id in wanted]
         missing = wanted - {task.task_id for task in tasks}
         if missing:
             raise SystemExit(f"--task-ids named task_ids not in this benchmark: {sorted(missing)}")
+        task_id_subset = sorted(wanted)
 
     if args.limit is not None:
         tasks = tasks[: args.limit]
+        # A --limit slice is ALSO a subset — the report must say so the same way
+        # --task-ids does, or a --limit run's score reads as a full-benchmark one.
+        if task_id_subset is None:
+            task_id_subset = sorted(task.task_id for task in tasks)
 
     tracker: BudgetTracker | None = None
     if args.live:
@@ -149,6 +167,7 @@ async def _run(args: argparse.Namespace) -> int:
             prompt_version=prompt_version,
             note=note,
             budget=tracker,
+            task_id_subset=task_id_subset,
         )
     finally:
         await engine.dispose()
@@ -157,8 +176,14 @@ async def _run(args: argparse.Namespace) -> int:
     out_path.write_text(report.model_dump_json(indent=2) + "\n")
     if args.markdown_out:
         _write_markdown_summary(report, Path(args.markdown_out))
+    subset_note = (
+        f" (SUBSET of {len(report.task_id_subset)} tasks, not the full benchmark)"
+        if report.task_id_subset
+        else ""
+    )
     print(
-        f"{report.passed}/{report.total} passed ({report.pass_rate:.0%}) [{run_mode}] -> {out_path}"
+        f"{report.passed}/{report.total} passed ({report.pass_rate:.0%}) "
+        f"[{run_mode}]{subset_note} -> {out_path}"
     )
     if tracker is not None:
         rate_note = (

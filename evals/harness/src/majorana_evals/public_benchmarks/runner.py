@@ -256,6 +256,7 @@ async def run_public_benchmark(
     prompt_version: str,
     note: str | None = None,
     budget: BudgetTracker | None = None,
+    task_id_subset: list[str] | None = None,
 ) -> PublicBenchmarkReport:
     """`budget`, when given, is checked BEFORE starting each task (not mid-task — a task
     already in flight is allowed to finish; `BudgetGuardedLLM` is the mid-task stop). Once
@@ -316,4 +317,5 @@ async def run_public_benchmark(
         by_stage=by_stage,
         results=results,
         note=note,
+        task_id_subset=task_id_subset,
     )
