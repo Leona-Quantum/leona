@@ -38,6 +38,7 @@ from majorana_contracts.enums import (
 )
 from majorana_contracts.plan import Plan, ProblemTerm, ReferenceProblem
 from majorana_frameworks import FrameworkProgram
+from majorana_frameworks.roles import ProgramRole
 from majorana_llm import ATLAS_WORKFLOW_PLAN_DIRECTIVE, LLMProviderError, LLMResponse
 
 from majorana_worker import simple_ports as simple_ports_module
@@ -1881,6 +1882,101 @@ async def test_basic_contract_reads_protected_result_not_sandbox_stdout():
     assert checked.value.passed is False
     assert "RESULT missing key 'counts'" in checked.value.diagnostics
     assert executed.value.observation["sandbox_stdout"]
+
+
+def _qiskit_human_eval_task(task_id: str) -> dict:
+    """Load one REAL vendored Qiskit HumanEval task (ai-ops 372).
+
+    Same file the live 2026-09-23 benchmark run scored against
+    (evals/public-benchmarks/qiskit-human-eval, pinned in its own PROVENANCE.md).
+    Used here to reproduce, with no model call, why Nala's own review step
+    turned down a candidate that is byte-for-byte the benchmark's own
+    canonical (i.e. definitionally correct) solution.
+    """
+    from pathlib import Path
+
+    dataset_path = (
+        Path(__file__).resolve().parents[3]
+        / "evals"
+        / "public-benchmarks"
+        / "qiskit-human-eval"
+        / "dataset_qiskit_test_human_eval.json"
+    )
+    records = json.loads(dataset_path.read_text())
+    (record,) = (r for r in records if r["task_id"] == task_id)
+    return record
+
+
+@pytest.mark.parametrize(
+    "task_id",
+    ["qiskitHumanEval/0", "qiskitHumanEval/1"],
+    ids=["create_quantum_circuit", "run_bell_state_simulator"],
+)
+async def test_basic_contract_rejects_a_function_that_never_needed_to_run(task_id):
+    """ai-ops 372: reproduce, offline, why the review step turned down correct code.
+
+    `qiskitHumanEval/0` and `/1` both ask for a plain Python FUNCTION — one
+    returns an unexecuted `QuantumCircuit` object, the other computes and
+    returns counts as its own return value. Neither canonical (i.e. correct
+    by the benchmark's own grading) solution binds `RESULT` or `FINAL_CIRCUIT`
+    at module scope, because nothing in the task asks the candidate to
+    demonstrate execution — `classify_source` (majorana_frameworks.roles)
+    reads that source as `ProgramRole.UNKNOWN`, confirmed below with no model
+    call. `check_contract`'s non-CIRCUIT branch then requires the model's own
+    `expected_output_keys` (schema-mandated, `min_length=1`, so it can never
+    be empty) to appear in `execution.result` — which stays `{}` forever, for
+    every one of `max_generation_attempts` (8) candidates, because nothing
+    about this task ever populates a module-scope RESULT. The plan's own
+    `artifact_contract.artifact_type=function` already says the deliverable
+    is a callable, not a result-reporting computation — the same distinction
+    `majorana_verification.methods.verify_return_contract`'s docstring
+    describes ("the plan means the *entry point's* return value there, and
+    nothing observes that today") but check_contract never consults it.
+    """
+    task = _qiskit_human_eval_task(task_id)
+    source = task["prompt"] + task["canonical_solution"]
+
+    # Independent confirmation, no model call: the benchmark's own correct
+    # answer binds neither RESULT nor FINAL_CIRCUIT at module scope.
+    assert FrameworkProgram(Framework.QISKIT, source).role is ProgramRole.UNKNOWN
+
+    ports, llm, *_ = _ports()
+    payload = _plan_payload()
+    payload["artifact_contract"] = {
+        "artifact_type": "function",
+        "entry_point": task["entry_point"],
+        "measurement_policy": "not_applicable",
+        "top_level_execution": "forbidden",
+    }
+    llm.texts[0] = json.dumps(payload)
+    llm.texts[1] = json.dumps({"source": source})
+    run_id = uuid4()
+
+    planned = await ports.plan(run_id, None, None)
+    assert planned.value is not None
+    assert planned.value.plan.artifact_contract is not None
+    assert planned.value.plan.artifact_contract.artifact_type.value == "function"
+    generated = await ports.generate(run_id, planned.value, None, None)
+    assert generated.value is not None
+    executed = await ports.run_execution(run_id, planned.value, generated.value)
+    assert executed.value is not None
+    # The fake Executor test double always returns a Bell-state result
+    # regardless of source; override it with what a REAL sandbox run of this
+    # exact, role=UNKNOWN source produces — nothing, because nothing in it
+    # ever assigns RESULT (confirmed above via classify_source, the same
+    # function run_candidate itself uses for the lowering decision).
+    real_execution = executed.value.model_copy(update={"result": {}})
+
+    checked = await ports.check_contract(
+        run_id,
+        planned.value,
+        generated.value,
+        real_execution,
+    )
+
+    assert checked.value is not None
+    assert checked.value.passed is True, checked.value.diagnostics
+    assert not any("RESULT missing key" in item for item in checked.value.diagnostics)
 
 
 async def test_basic_contract_rejects_observed_qubits_above_plan_and_lane():

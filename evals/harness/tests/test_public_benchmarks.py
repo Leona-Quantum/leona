@@ -64,6 +64,99 @@ def test_qiskit_human_eval_loader_rejects_a_corrupted_file(tmp_path):
         load_qiskit_human_eval_tasks(bad)
 
 
+#: ai-ops 372: the 36 qiskitHumanEval task_ids where the 2026-09-23 live run's
+#: `run_status != "succeeded"` (README.md,
+#: ai-ops/desk/leona/plans/strategy-20260921/benchmark-runs-20260923). 10 of these
+#: independently pass the benchmark's own `check()` against their last-attempted
+#: candidate — Nala's own review/verification stage rejected working code. The
+#: Postgres holding the run's actual candidates/events no longer exists (confirmed
+#: by an exhaustive local search of every docker container/volume touched around
+#: the run window), so the exact 10 cannot be re-derived from that evidence; this
+#: test instead confirms, with no model call, a single mechanical property shared
+#: by ALL 36 — see its body.
+_AI_OPS_372_UNDELIVERED_TASK_IDS = frozenset(
+    {
+        "qiskitHumanEval/0",
+        "qiskitHumanEval/1",
+        "qiskitHumanEval/3",
+        "qiskitHumanEval/14",
+        "qiskitHumanEval/15",
+        "qiskitHumanEval/20",
+        "qiskitHumanEval/21",
+        "qiskitHumanEval/22",
+        "qiskitHumanEval/28",
+        "qiskitHumanEval/29",
+        "qiskitHumanEval/33",
+        "qiskitHumanEval/34",
+        "qiskitHumanEval/35",
+        "qiskitHumanEval/37",
+        "qiskitHumanEval/39",
+        "qiskitHumanEval/41",
+        "qiskitHumanEval/42",
+        "qiskitHumanEval/46",
+        "qiskitHumanEval/47",
+        "qiskitHumanEval/48",
+        "qiskitHumanEval/55",
+        "qiskitHumanEval/56",
+        "qiskitHumanEval/63",
+        "qiskitHumanEval/68",
+        "qiskitHumanEval/82",
+        "qiskitHumanEval/95",
+        "qiskitHumanEval/96",
+        "qiskitHumanEval/100",
+        "qiskitHumanEval/102",
+        "qiskitHumanEval/103",
+        "qiskitHumanEval/105",
+        "qiskitHumanEval/106",
+        "qiskitHumanEval/122",
+        "qiskitHumanEval/123",
+        "qiskitHumanEval/132",
+        "qiskitHumanEval/133",
+    }
+)
+
+
+def test_every_undelivered_task_s_canonical_solution_binds_no_result_or_final_circuit():
+    """ai-ops 372, the structural root cause behind all 36 never-delivered tasks.
+
+    `build_nala_prompt` wraps every qiskitHumanEval task the same way: "Return
+    the complete function definition... do not include example usage". A
+    correct answer therefore only ever DEFINES the requested function — it
+    never binds `RESULT` or `FINAL_CIRCUIT` at module scope, because nothing
+    about the benchmark asks it to. `majorana_frameworks.roles.classify_source`
+    reads that shape as `ProgramRole.UNKNOWN`, and `check_contract`'s
+    non-CIRCUIT branch previously required the plan's `expected_output_keys`
+    (schema-mandated, min 1 entry, so never empty) to appear in a RESULT that
+    can never exist for this shape — rejecting the benchmark's own canonical,
+    i.e. definitionally correct, solution unconditionally.
+
+    This holds for the CANONICAL solution of every one of the 36 tasks the
+    live run never delivered a candidate for — not just the 10 confirmed
+    independently correct — which is consistent with all 36 sharing this one
+    mechanical rejection, independent of whether the model's own code was
+    also functionally right or wrong for the other 26.
+    """
+    from majorana_frameworks import FrameworkProgram
+    from majorana_frameworks.roles import ProgramRole
+    from majorana_contracts.enums import Framework
+
+    tasks = {task.task_id: task for task in load_qiskit_human_eval_tasks()}
+    assert _AI_OPS_372_UNDELIVERED_TASK_IDS <= tasks.keys()
+
+    non_unknown = {}
+    for task_id in sorted(_AI_OPS_372_UNDELIVERED_TASK_IDS):
+        task = tasks[task_id]
+        source = task.scaffold + task.canonical_solution
+        role = FrameworkProgram(Framework.QISKIT, source).role
+        if role is not ProgramRole.UNKNOWN:
+            non_unknown[task_id] = role
+
+    assert not non_unknown, (
+        "expected every undelivered task's canonical solution to bind neither "
+        f"RESULT nor FINAL_CIRCUIT (ProgramRole.UNKNOWN); these did not: {non_unknown}"
+    )
+
+
 def test_qcircuiteval_loads_70_tasks_across_core_and_qec():
     tasks = load_qcircuiteval_tasks()
     assert len(tasks) == 70
