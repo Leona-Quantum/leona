@@ -88,7 +88,8 @@ Leona answers:
     "mutants": 0,
     "equivalent": 0,
     "caught": 0,
-    "survivors": []
+    "survivors": [],
+    "could_not_run": 0
   },
   "passed": false,
   "summary": "Checked against Qiskit's QFT on 3 qubits, exact unitary up to global phase: fail (largest entry of the difference, after removing global phase, 7.07e-01 (needs ≤ 1.00e-06)). It matches up to a reversal of the qubit order on one side. A QFT written without its final swaps does exactly this. Whether this check can catch a broken circuit was not measured: Broken copies are tried only on a check that passes. This one failed, so there was nothing to test.",
@@ -127,7 +128,8 @@ Leona answers:
     "mutants": 11,
     "equivalent": 0,
     "caught": 11,
-    "survivors": []
+    "survivors": [],
+    "could_not_run": 0
   },
   "passed": true,
   "summary": "Checked against Qiskit's QFT on 3 qubits, exact unitary up to global phase: pass (largest entry of the difference, after removing global phase, 1.28e-15 (needs ≤ 1.00e-06)). Leona also made 11 deliberately broken copies of the circuit that change its output, and the check caught all 11."
