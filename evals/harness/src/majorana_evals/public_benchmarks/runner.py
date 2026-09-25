@@ -34,10 +34,12 @@ from majorana_evals.public_benchmarks.qcircuiteval import score_qcircuiteval_tas
 from majorana_evals.public_benchmarks.qiskit_human_eval import score_qiskit_human_eval_task
 from majorana_evals.public_benchmarks.schema import (
     BenchmarkName,
+    CandidateAttemptSummary,
     ModelCallUsage,
     PublicBenchmarkReport,
     PublicTask,
     PublicTaskResult,
+    _LAST_CANDIDATE_SOURCE_CAP,
 )
 from majorana_evals.public_benchmarks.schema import RunMode as ReportRunMode
 from majorana_evals.public_benchmarks.stub_llm import bind_task
@@ -96,6 +98,9 @@ async def run_public_task(
     candidate_source: str | None = None
     candidate_fingerprint: str | None = None
     candidates_considered = 0
+    candidate_attempts: list[CandidateAttemptSummary] = []
+    last_candidate_source: str | None = None
+    last_candidate_source_truncated = False
     usage_by_model: dict[str, ModelCallUsage] = {}
     usage_by_stage: dict[str, ModelCallUsage] = {}
     async with factory() as session:
@@ -110,7 +115,40 @@ async def run_public_task(
         finalized_source = finalized_event.payload.get("code") if finalized_event else None
         finalized_revision = finalized_event.payload.get("revision") if finalized_event else None
         store = RepoAgentStore(scope, session)
-        candidates_considered = len(await store.list_candidates(run_id))
+        candidates = sorted(await store.list_candidates(run_id), key=lambda item: item.revision)
+        candidates_considered = len(candidates)
+        # ai-ops 372: this is the evidence that used to live ONLY in the run's own
+        # Postgres — captured into the report itself now, because that database turned
+        # out not to be durable (a local docker volume, gone four weeks after the run
+        # that needed it). `check_contract`'s own diagnostics are not persisted anywhere
+        # by the pipeline (only ExecutionEvidence/SemanticReviewEvidence are durable
+        # records), so `review_decision=None` below is itself the signal that a
+        # candidate never reached review — see CandidateAttemptSummary's docstring.
+        for item in candidates:
+            execution = await store.execution_for(run_id, item.candidate_id)
+            review = await store.latest_semantic_review(run_id, item.candidate_id)
+            candidate_attempts.append(
+                CandidateAttemptSummary(
+                    revision=item.revision,
+                    source_fingerprint=item.source_fingerprint,
+                    execution_succeeded=execution.succeeded if execution else None,
+                    execution_failure_kind=(
+                        execution.failure_kind.value
+                        if execution and execution.failure_kind
+                        else None
+                    ),
+                    execution_result_keys=(
+                        sorted(str(key) for key in execution.result) if execution else []
+                    ),
+                    review_decision=review.decision.value if review else None,
+                    review_reason_code=review.reason_code if review else None,
+                    review_severity=review.severity if review else None,
+                )
+            )
+        if candidates:
+            last = candidates[-1]
+            last_candidate_source = last.source[:_LAST_CANDIDATE_SOURCE_CAP]
+            last_candidate_source_truncated = len(last.source) > _LAST_CANDIDATE_SOURCE_CAP
         try:
             candidate, _execution = await _latest_trusted_execution(
                 store,
@@ -181,6 +219,9 @@ async def run_public_task(
         recorded_output_tokens=recorded_output,
         wall_time_s=wall_time_s,
         candidate_source_fingerprint=candidate_fingerprint,
+        candidate_attempts=candidate_attempts,
+        last_candidate_source=last_candidate_source,
+        last_candidate_source_truncated=last_candidate_source_truncated,
     )
     return result, usage_by_model, usage_by_stage
 

@@ -57,6 +57,42 @@ class ModelCallUsage(BaseModel):
     output_tokens: int = Field(default=0, ge=0)
 
 
+#: Cap on `PublicTaskResult.last_candidate_source` — generous enough to hold any real
+#: qiskit-human-eval/qcircuiteval candidate (`CandidateRevision.source` itself is capped at
+#: 200,000 chars) while keeping a 151-task report bounded; a candidate longer than this is
+#: truncated, never dropped, and `last_candidate_source_truncated` says so.
+_LAST_CANDIDATE_SOURCE_CAP = 20_000
+
+
+class CandidateAttemptSummary(BaseModel):
+    """One candidate revision's stage outcome, captured at report time.
+
+    ai-ops 372: the run's own Postgres (`run_candidates`/`run_events`) is where this
+    evidence used to live exclusively — `candidate_source_fingerprint` alone was meant to
+    "correlate a result against the run in the database". That database turned out not to
+    be durable (a local docker volume, gone four weeks later), so a report is now the only
+    copy of enough evidence to diagnose a rejection without it. `check_contract`'s own
+    diagnostics are NOT captured here: the pipeline does not persist them as a durable
+    record at all (only `ExecutionEvidence` and `SemanticReviewEvidence` are stored), so a
+    candidate that never reached the review stage shows `review_decision=None` here — that
+    absence is itself the signal that check_contract (or an earlier stage) rejected it
+    before any review evidence could exist.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    revision: int = Field(ge=1)
+    source_fingerprint: str
+    execution_succeeded: bool | None = None
+    execution_failure_kind: str | None = None
+    #: Keys present in the execution's own result dict — cheap, structural evidence of
+    #: what (if anything) the candidate reported, without repeating the values.
+    execution_result_keys: list[str] = Field(default_factory=list)
+    review_decision: str | None = None
+    review_reason_code: str | None = None
+    review_severity: str | None = None
+
+
 class PublicTaskResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -75,10 +111,22 @@ class PublicTaskResult(BaseModel):
     recorded_input_tokens: int = Field(default=0, ge=0)
     recorded_output_tokens: int = Field(default=0, ge=0)
     wall_time_s: float = Field(ge=0)
-    #: sha256 of the finalized candidate source, or None when no candidate was delivered.
-    #: The full source is not stored in the report (bench-14-sized reports would balloon);
-    #: the fingerprint is enough to correlate a result against the run in the database.
+    #: sha256 of the finalized (i.e. DELIVERED) candidate source, or None when no candidate
+    #: was delivered. Kept even though `last_candidate_source` below now also carries real
+    #: source text, so a report reader can still tell "the delivered one" apart from "the
+    #: last one attempted" without re-deriving it from `candidate_attempts`.
     candidate_source_fingerprint: str | None = None
+    #: ai-ops 372: every candidate revision's stage outcome, oldest first — see
+    #: `CandidateAttemptSummary`. Empty when the run produced no candidates at all (a
+    #: planning-stage failure, for example).
+    candidate_attempts: list[CandidateAttemptSummary] = Field(default_factory=list)
+    #: The LAST attempted candidate's own source, independent of whether it was ever
+    #: delivered — capped at `_LAST_CANDIDATE_SOURCE_CAP` chars (truncated, never dropped
+    #: silently: see `last_candidate_source_truncated`). This is what ai-ops 372 needed and
+    #: could not get once the run's database was gone: a way to re-run the benchmark's own
+    #: `check()` against what the pipeline actually tried, independent of the DB surviving.
+    last_candidate_source: str | None = None
+    last_candidate_source_truncated: bool = False
 
 
 class PublicBenchmarkReport(BaseModel):

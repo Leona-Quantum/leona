@@ -95,6 +95,13 @@ async def _run(args: argparse.Namespace) -> int:
         dataset_sha256 = dict(QCE_SHA256)
         prompt_version = QCE_PROMPT_VERSION
 
+    if args.task_ids is not None:
+        wanted = {task_id.strip() for task_id in args.task_ids.split(",") if task_id.strip()}
+        tasks = [task for task in tasks if task.task_id in wanted]
+        missing = wanted - {task.task_id for task in tasks}
+        if missing:
+            raise SystemExit(f"--task-ids named task_ids not in this benchmark: {sorted(missing)}")
+
     if args.limit is not None:
         tasks = tasks[: args.limit]
 
@@ -179,6 +186,15 @@ def main() -> None:
     run_parser.add_argument("--out", required=True)
     run_parser.add_argument("--markdown-out", default=None)
     run_parser.add_argument("--limit", type=int, default=None)
+    run_parser.add_argument(
+        "--task-ids",
+        default=None,
+        help=(
+            "comma-separated task_ids to run instead of the whole benchmark "
+            "(ai-ops 372: restricting a --live diagnostic re-run to only the "
+            "tasks that need it). Applied before --limit."
+        ),
+    )
     run_parser.add_argument(
         "--no-qec", action="store_true", help="qcircuiteval: skip the 12 QEC tasks"
     )
