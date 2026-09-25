@@ -1313,6 +1313,17 @@
             "title": "Kind",
             "type": "string"
           },
+          "property": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckProperty"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "role": {
             "anyOf": [
               {
@@ -1517,6 +1528,17 @@
             "default": null,
             "title": "Cached From Seq"
           },
+          "check": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckVerdict"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "duration_ms": {
             "default": 0,
             "minimum": 0,
@@ -1617,7 +1639,8 @@
           "answer",
           "summary",
           "references",
-          "note"
+          "note",
+          "check"
         ],
         "title": "CellRole",
         "type": "string"
@@ -1807,6 +1830,351 @@
         "title": "ChatError",
         "type": "object"
       },
+      "CheckProperty": {
+        "additionalProperties": false,
+        "description": "What a `role=check` cell asserts about an object an earlier cell built.\n\n**Not `Cell.check`.** That field is the hidden grader of a reader's exercise: Python\nthat runs in the sandbox after the reader's own cell. This is data. The sandbox never\nexecutes it; it only records the subject (`__leona_capture_check__`), and trusted code\non the worker (`leona_notebooks.checks.evaluate_check`) judges the subject against the\nexpectation here. So nothing a notebook cell does can move the goalposts.\n\nFive kinds, each with its own expectation fields and no others:\n\n- `state`: the circuit's output state from |0\u20260\u27e9 equals `amplitudes` (bitstring to a\n  number or an expression), a library `reference`, or `reference_qasm`, up to global\n  phase. Bitstrings follow Qiskit's convention: q0 is the RIGHTMOST character.\n- `unitary`: the circuit's unitary equals `reference` or `reference_qasm` up to\n  global phase.\n- `distribution`: the circuit's ideal measured distribution matches `probabilities`.\n- `energy`: \u27e8\u03c8|H|\u03c8\u27e9 for `hamiltonian` (Pauli string to coefficient, q0 rightmost as\n  in Qiskit's `SparsePauliOp`) against the exact ground energy (`target=\"ground\"`)\n  or a number.\n- `value`: a number, or a list of numbers, the subject variable holds.",
+        "properties": {
+          "accepted": {
+            "default": false,
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "amplitudes": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                },
+                "maxProperties": 4096,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Amplitudes"
+          },
+          "author": {
+            "default": "nala",
+            "enum": [
+              "nala",
+              "user",
+              "source"
+            ],
+            "title": "Author",
+            "type": "string"
+          },
+          "citation": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Citation",
+            "type": "string"
+          },
+          "hamiltonian": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "maxProperties": 256,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Hamiltonian"
+          },
+          "kind": {
+            "enum": [
+              "state",
+              "unitary",
+              "distribution",
+              "energy",
+              "value"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "probabilities": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                },
+                "maxProperties": 4096,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Probabilities"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reference"
+          },
+          "reference_qasm": {
+            "anyOf": [
+              {
+                "maxLength": 20000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reference Qasm"
+          },
+          "statement": {
+            "default": "",
+            "maxLength": 300,
+            "title": "Statement",
+            "type": "string"
+          },
+          "subject": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Subject",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "const": "ground",
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Target"
+          },
+          "tolerance": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tolerance"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Value"
+          }
+        },
+        "required": [
+          "kind",
+          "subject"
+        ],
+        "title": "CheckProperty",
+        "type": "object"
+      },
+      "CheckTeeth": {
+        "additionalProperties": false,
+        "description": "Whether a passing check could have failed: the worker's mutation test of it.\n\nFor a check that passes on a circuit, the worker makes deliberately broken copies of\nthe subject (drop a gate, swap a two-qubit gate's control and target, negate an angle,\nswap a gate for its adjoint, reverse the qubit order) and judges each the same way.\nA copy that behaves exactly like the original is `equivalent` and is left out, because\nno check could catch it. `caught` of `mutants` is the score; `survivors` names the\nbroken copies the check passed, at most 8, in words.\n\n`not_measured` is never a pass: it means the test did not happen (too large, over the\ntime budget, a `value` check with no circuit to break), and `reason` says which.",
+        "properties": {
+          "caught": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Caught",
+            "type": "integer"
+          },
+          "could_not_run": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Could Not Run",
+            "type": "integer"
+          },
+          "equivalent": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Equivalent",
+            "type": "integer"
+          },
+          "mutants": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Mutants",
+            "type": "integer"
+          },
+          "reason": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Reason",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "measured",
+              "not_measured"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "survivors": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Survivors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "CheckTeeth",
+        "type": "object"
+      },
+      "CheckVerdict": {
+        "additionalProperties": false,
+        "description": "The worker's judgement of one `role=check` cell, on `CellResult.check`.\n\nWritten only by trusted code after the run (`leona_notebooks.checks`), never by the\nsandbox. `pass` / `fail` / `inconclusive` and nothing else \u2014 never \"verified\"\n(ADR-0023). `inconclusive` is the check's own incapacity (the subject is missing, is\nnot a circuit, measures mid-circuit, is too wide, did not parse) and is never counted\nas a fail. A failing check does not fail the notebook.",
+        "properties": {
+          "basis": {
+            "enum": [
+              "circuit",
+              "value"
+            ],
+            "title": "Basis",
+            "type": "string"
+          },
+          "checked_against": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Checked Against",
+            "type": "string"
+          },
+          "detail": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Detail",
+            "type": "string"
+          },
+          "measure": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Measure",
+            "type": "string"
+          },
+          "qubits": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Qubits"
+          },
+          "status": {
+            "enum": [
+              "pass",
+              "fail",
+              "inconclusive"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "subject_fingerprint": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Subject Fingerprint"
+          },
+          "subject_qasm": {
+            "anyOf": [
+              {
+                "maxLength": 8000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Subject Qasm"
+          },
+          "teeth": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckTeeth"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "status",
+          "basis"
+        ],
+        "title": "CheckVerdict",
+        "type": "object"
+      },
       "ChoiceAnswer": {
         "additionalProperties": false,
         "description": "One right option among several. `correct` indexes `options`.",
@@ -1842,6 +2210,42 @@
           "correct"
         ],
         "title": "ChoiceAnswer",
+        "type": "object"
+      },
+      "CircuitCheckRequest": {
+        "additionalProperties": false,
+        "description": "One circuit and one property to check it against.\n\n`property.kind` is `state`, `unitary`, `distribution` or `energy`. A `value` check is\nrefused (400): it judges a number a notebook computed, and a circuit is not one.\n\n`property.subject` is required by `CheckProperty` and **ignored here**: it names a\nvariable in a notebook, and this route has no notebook. Send `\"circuit\"` by\nconvention. The authorship fields (`author`, `citation`, `accepted`) are ignored too:\nthe verdict never depends on them and nothing is stored.\n\nBitstrings in `amplitudes`, `probabilities` and Pauli strings in `hamiltonian` follow\nQiskit's convention: q0 is the RIGHTMOST character.",
+        "properties": {
+          "property": {
+            "$ref": "#/components/schemas/CheckProperty"
+          },
+          "qasm": {
+            "description": "The circuit, as OpenQASM 3 (include \"stdgates.inc\" for standard gates).",
+            "maxLength": 64000,
+            "minLength": 1,
+            "title": "Qasm",
+            "type": "string"
+          }
+        },
+        "required": [
+          "qasm",
+          "property"
+        ],
+        "title": "CircuitCheckRequest",
+        "type": "object"
+      },
+      "CircuitCheckResponse": {
+        "additionalProperties": false,
+        "description": "The verdict, with `teeth` always set.\n\nIn a notebook, `teeth` is left empty on a check that did not pass. Here it is always\npresent, as `not_measured` with the reason when no broken copies were tried, so a\ncaller never has to guess whether an absent field means \"not tried\" or \"forgotten\".\nA `pass` means \"checked against `verdict.checked_against`\", never \"verified\".",
+        "properties": {
+          "verdict": {
+            "$ref": "#/components/schemas/CheckVerdict"
+          }
+        },
+        "required": [
+          "verdict"
+        ],
+        "title": "CircuitCheckResponse",
         "type": "object"
       },
       "CircuitCompiler": {
@@ -5756,6 +6160,23 @@
             ],
             "default": null,
             "title": "Cached From Seq"
+          },
+          "check": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pass",
+                  "fail",
+                  "inconclusive"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Check"
           },
           "duration_ms": {
             "default": 0,
@@ -12133,7 +12554,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.37.2"
+    "version": "2.40.0"
   },
   "openapi": "3.1.0",
   "paths": {}

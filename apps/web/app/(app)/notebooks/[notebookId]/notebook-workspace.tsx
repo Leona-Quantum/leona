@@ -42,6 +42,12 @@ import { gradeSummary, hasGradesToShow, passRate } from "../../../../lib/noteboo
 import { hasMasteryToShow, notebookMastery } from "../../../../lib/notebook-mastery";
 import { errorTracebackText, notebookCellViews, notebookStatusPill } from "../../../../lib/notebook-view";
 import {
+  applyCheckAccept,
+  insertCheckCellAfter,
+  subjectHintFor,
+  type CheckProperty,
+} from "../../../../lib/notebook-checks";
+import {
   notebookProgressFromEvents,
   type NotebookProgressEvent,
   type NotebookProgressStage,
@@ -165,6 +171,13 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   // that direction is automatic; the page-level Edit button's own `disabled` is what
   // keeps the other direction true.
   const [cellEdit, setCellEdit] = useState<NotebookCellEditState | null>(null);
+  // "Add a check" (ai-ops 382): which code cell it is open below, and the subject
+  // name it was pre-filled with when it opened. Its own state, not folded into
+  // `cellEdit` above — a check's expected value has too many shapes (a reference
+  // picker, two kinds of table, a Hamiltonian, a plain number) to fit the single
+  // `source` string that state carries, so it owns its whole draft locally
+  // (`NotebookAddCheckForm`) and only reports the finished `CheckProperty` here.
+  const [checkForm, setCheckForm] = useState<{ afterId: string; subjectHint: string } | null>(null);
   // Whether a per-cell save (edit, add, delete, move, duplicate) is in flight — kept
   // apart from `saving`, which is specifically the page-level editor's own save, so the
   // two surfaces' busy states cannot be confused for one another.
@@ -899,6 +912,12 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   function openCellEditor(next: () => void) {
     if (cellEditIsDirty(cellEdit) && !window.confirm(copy.ide.switchCellConfirm)) return;
     setActionError(null);
+    // The inline source editor and the "Add a check" form (below) are mutually
+    // exclusive inline panels — opening one closes the other outright, the same way
+    // `startAddCheck` closes `cellEdit`. The check form has no unsaved-changes gate
+    // of its own to consult here (its draft lives entirely inside
+    // `NotebookAddCheckForm`), so this direction is a plain close, not a confirm.
+    setCheckForm(null);
     next();
   }
 
@@ -1008,6 +1027,39 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
   function duplicateCellFromView(cellId: string) {
     const { cells: next } = duplicateCell(originalCells, cellId);
     void saveCellsAsVersion(next, { execute: false });
+  }
+
+  // ------------------------------------------------------------------- check cells
+  //
+  // ai-ops 382 (DESIGN.md §1): Accept and "Add a check" are both, underneath, one more
+  // per-cell edit through `saveCellsAsVersion` above — the same "every change is a new
+  // version" rule the rest of this section already follows. Neither sends an author
+  // change; the server's `enforce_check_authorship` decides that on its own (DESIGN.md
+  // §1.4), and sending one here would only invent a claim this UI cannot back up.
+
+  /** Accept: `property.accepted = true` on one cell, nothing else. */
+  function acceptCheck(cellId: string) {
+    void saveCellsAsVersion(applyCheckAccept(originalCells, cellId), { execute: false });
+  }
+
+  function startAddCheck(afterId: string) {
+    setCellEdit(null);
+    setCheckForm({ afterId, subjectHint: subjectHintFor(originalCells, afterId) });
+  }
+
+  function cancelAddCheck() {
+    setCheckForm(null);
+  }
+
+  /** Builds the new check cell from the form's finished property and saves it. Stays
+   * open with whatever the reader typed on a failed save — the same rule the per-cell
+   * source editor follows (`saveCellEdit`) — since `saveCellsAsVersion` already shows
+   * the server's own refusal sentence in the page's failure banner. */
+  async function submitAddCheck(property: CheckProperty) {
+    if (!checkForm) return;
+    const { cells: nextCells } = insertCheckCellAfter(originalCells, checkForm.afterId, property);
+    const ok = await saveCellsAsVersion(nextCells, { execute: false });
+    if (ok) setCheckForm(null);
   }
 
   /** "Ask Nala to change this cell" (rule 3, "as well as by Nala"): starts a chat
@@ -1571,6 +1623,11 @@ export function NotebookWorkspace({ notebookId, locale = "en" }: { notebookId: s
               onDeleteCell={canEdit ? deleteCellFromView : undefined}
               onDuplicateCell={canEdit ? duplicateCellFromView : undefined}
               onAskNalaToChangeCell={askNalaToChangeCell}
+              onAcceptCheck={canEdit ? acceptCheck : undefined}
+              checkForm={canEdit ? checkForm : null}
+              onStartAddCheck={canEdit ? startAddCheck : undefined}
+              onCancelAddCheck={canEdit ? cancelAddCheck : undefined}
+              onSubmitAddCheck={canEdit ? (property) => void submitAddCheck(property) : undefined}
             />
             </>
           ) : !isGenerating && !versionError ? (

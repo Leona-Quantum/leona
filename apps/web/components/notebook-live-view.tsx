@@ -4,7 +4,7 @@ import { SyntaxHighlightedCode } from "@majorana/ui";
 import { ChatMarkdown } from "./chat-markdown";
 import type { LiveCellView, LiveNotebookState } from "../lib/notebook-live";
 import type { PublicLocale } from "../lib/public-locale";
-import { WORKSPACE_COPY } from "../lib/workspace-locale";
+import { NOTEBOOK_CHECK_COPY, WORKSPACE_COPY } from "../lib/workspace-locale";
 
 type LiveCopy = (typeof WORKSPACE_COPY)[PublicLocale]["notebooks"]["live"];
 
@@ -72,6 +72,7 @@ function LiveCell({
   copy: LiveCopy;
 }) {
   const cellErrorLabel = WORKSPACE_COPY[locale].notebooks.cellErrorLabel;
+  const checkCopy = NOTEBOOK_CHECK_COPY[locale];
   return (
     <article className="mj-notebook-cell mj-notebook-live-cell" data-kind={cell.kind} data-status={cell.status}>
       <div className="mj-notebook-cell-head">
@@ -79,6 +80,15 @@ function LiveCell({
         {cell.kind === "code" ? (
           <span className="mj-notebook-cell-pill" data-status={cell.status}>
             {copy.cellStatus[cell.status]}
+          </span>
+        ) : null}
+        {/* A `role=check` cell's live verdict (ai-ops 382): a compact dot rather than
+            the full card — the finished report's `NotebookCheckCard` is where the
+            statement, author and teeth live, and this stream carries none of that,
+            only the status (`NotebookLiveCellResult.check`). */}
+        {cell.role === "check" && cell.check ? (
+          <span className="mj-notebook-live-check-dot" data-status={cell.check} title={checkCopy.statusChip[cell.check]}>
+            <span className="sr-only">{checkCopy.statusChip[cell.check]}</span>
           </span>
         ) : null}
       </div>

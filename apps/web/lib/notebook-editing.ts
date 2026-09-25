@@ -106,6 +106,7 @@ export function insertCellAfter(
     answer: null,
     answer_prompt: null,
     timeout_s: null,
+    property: null,
   };
   const index = afterId === null ? -1 : cells.findIndex((cell) => cell.id === afterId);
   // An unknown `afterId` appends rather than dropping the cell on the floor.

@@ -25,6 +25,12 @@ dependencies = [
     # Pinned to match packages/py/openqasm/pyproject.toml exactly.
     "qiskit>=2.5.2,<3",
     "qiskit-qasm3-import>=0.6,<0.7",
+    # `leona_notebooks.checks` judges check cells with the verification package's
+    # simulators, width ceilings and incapacity rules instead of re-implementing them
+    # (ai-ops 382, DESIGN §1.2). The worker already depended on both; this makes the
+    # notebooks package say so itself. Imported lazily inside the judging functions, so
+    # `import leona_notebooks` and the `.nb.py`/`.ipynb` converters stay light.
+    "majorana-verification",
 ]
 
 [project.optional-dependencies]
@@ -47,3 +53,4 @@ packages = ["src/leona_notebooks"]
 majorana-contracts = { workspace = true }
 majorana-sandbox = { workspace = true }
 leona-client = { workspace = true }
+majorana-verification = { workspace = true }

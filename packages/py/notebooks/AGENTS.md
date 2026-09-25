@@ -20,6 +20,12 @@ Rules that are load-bearing:
   embeds cell sources as string literals, which the line-based import check cannot see —
   so a program composed without the per-cell guard is a guard bypass; `compose_notebook_program`
   refuses to build one).
+- **Check cells are judged outside the sandbox, in a child process.** The sandbox only
+  records a `role=check` cell's subject (`__leona_capture_check__`). The worker judges every
+  check of a dispatch in ONE `python -m leona_notebooks.check_judge` process, which is
+  killed at `CHECK_BUDGET_S` and caps its own address space (`checks.judge_checks`). Never
+  judge untrusted OpenQASM in the worker's own process: `_bound_program` refuses programs
+  that would expand before Qiskit builds them, and the child is what bounds everything else.
 - **A notebook run is one sandbox dispatch**: ≤120 s wall clock, ≤1 MiB of evidence. Figures are
   budgeted (`image_budget_bytes`), the largest dropped first and *named as dropped* rather than
   silently missing. matplotlib may be absent from the image — figures then degrade to text.

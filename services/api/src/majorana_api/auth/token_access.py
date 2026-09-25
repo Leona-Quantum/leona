@@ -114,10 +114,10 @@ READ_WRITES: frozenset[tuple[str, str]] = frozenset(
     }
 )
 
-#: What `run` adds: start a verified run, stop one you started, or start a published
-#: Qapp's own sandboxed execution. Cancelling a run is here rather than in a scope of
-#: its own because a credential that can start work it cannot stop is worse for the
-#: account holder, not better.
+#: What `run` adds: start a verified run, stop one you started, start a published
+#: Qapp's own sandboxed execution, or have a circuit checked. Cancelling a run is here
+#: rather than in a scope of its own because a credential that can start work it cannot
+#: stop is worse for the account holder, not better.
 #:
 #: ## Notebooks (ai-ops 362, the Bridge lane, 2026-09-23)
 #:
@@ -214,6 +214,14 @@ RUN_WRITES: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/notebooks/{notebook_id}/attempts"),
         # Courses: only the route that generates notebooks, not plan/revise.
         ("POST", "/courses/{course_id}/generate"),
+        # The agent connector's `check_circuit` (ai-ops 382 option 1). NOT in
+        # `READ_WRITES` beside `/estimates/logical`, although both are stateless POSTs
+        # that store nothing: an estimate is integer arithmetic over the numbers sent,
+        # while a check parses the caller's circuit and simulates it, and its broken
+        # copies, on Leona's CPU (`routes/checks.py` states the worst case per call).
+        # Spending compute on the caller's behalf is what `run` grants, so a `read`
+        # token is refused here with INSUFFICIENT_SCOPE, exactly as `/runs` refuses it.
+        ("POST", "/checks/circuit"),
     }
 )
 
