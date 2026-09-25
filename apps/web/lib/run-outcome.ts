@@ -461,9 +461,14 @@ export function runOutcomeFromEvents(
       return {
         tone: "warn",
         eyebrow: locale === "ja" ? "関数を作成" : "Function written",
+        // ai-ops 372, review round 3 (nit): "did not run it" is wrong for a
+        // demo_only candidate that DOES call its function at module scope but
+        // never binds RESULT from it — result_never_executed cannot tell that
+        // case apart from a function that was truly never invoked. This wording
+        // is true either way.
         title: locale === "ja"
-          ? "Nalaは関数を作成しましたが、実行していません"
-          : "Nala wrote the function, but did not run it",
+          ? "Nalaは関数を作成しましたが、動作は確認されていません"
+          : "Nala wrote the function, but nothing checked that it works",
         description,
         badges: badgesFor("warn", locale === "ja" ? "未実行" : "Not run", saved, locale),
         facts,

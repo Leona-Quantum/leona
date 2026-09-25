@@ -193,7 +193,7 @@ test("ai-ops 372: a function-typed candidate that never ran is never called Exec
   ]);
 
   assert.equal(outcome?.eyebrow, "Function written");
-  assert.equal(outcome?.title, "Nala wrote the function, but did not run it");
+  assert.equal(outcome?.title, "Nala wrote the function, but nothing checked that it works");
   assert.doesNotMatch(JSON.stringify(outcome), /circuit executed/i);
   assert.doesNotMatch(JSON.stringify(outcome), /"eyebrow":"Executed result"/);
   assert.equal(outcome?.tone, "warn");
@@ -235,7 +235,7 @@ test("ai-ops 372, Japanese: the same function-written-but-not-called copy transl
   );
 
   assert.equal(outcome?.eyebrow, "関数を作成");
-  assert.equal(outcome?.title, "Nalaは関数を作成しましたが、実行していません");
+  assert.equal(outcome?.title, "Nalaは関数を作成しましたが、動作は確認されていません");
   assert.equal(outcome?.callout?.title, "呼び出されていません");
   assert.match(outcome?.callout?.body ?? "", /Nalaにテストの追加を頼んでください/);
 });
