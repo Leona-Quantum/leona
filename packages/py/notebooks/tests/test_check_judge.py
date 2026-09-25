@@ -162,3 +162,13 @@ async def test_unreadable_qasm_is_reported_apart_from_inconclusive() -> None:
     assert judged["s"].unreadable is not None and judged["s"].unreadable.side == "subject"
     assert "L4" in judged["s"].unreadable.message or "unexpected" in judged["s"].unreadable.message
     assert judged["r"].unreadable is not None and judged["r"].unreadable.side == "reference"
+
+
+async def test_a_child_that_crashes_says_so_and_blames_nothing_else() -> None:
+    crashes = [sys.executable, "-c", "import sys; sys.stdin.read(); raise SystemExit(3)"]
+    judged = await judge_checks(_jobs(), budget_s=10, _argv=crashes)
+    for result in judged.values():
+        assert result.verdict.status == "inconclusive"
+        assert "stopped unexpectedly" in result.verdict.detail
+        assert "memory" not in result.verdict.detail
+        assert result.final is False

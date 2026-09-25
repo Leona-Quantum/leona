@@ -2409,11 +2409,16 @@ def _stopped_words(outcome: str, seconds: float) -> tuple[str, str]:
             f"Not tested with broken copies: this run's checks took too long, so Leona "
             f"stopped after {seconds:g} seconds.",
         )
+    if outcome == "memory":
+        return (
+            "The process checking this stopped before it finished. It most likely ran out "
+            "of memory. Nothing was decided.",
+            "Not tested with broken copies: the process checking it stopped before it "
+            "finished, most likely because it ran out of memory.",
+        )
     return (
-        "The process checking this stopped before it finished. It most likely ran out of "
-        "memory. Nothing was decided.",
-        "Not tested with broken copies: the process checking it stopped before it "
-        "finished, most likely because it ran out of memory.",
+        "The process checking this stopped unexpectedly before it finished. Nothing was decided.",
+        "Not tested with broken copies: the process checking it stopped unexpectedly.",
     )
 
 
@@ -2553,6 +2558,8 @@ async def judge_checks(
             process.returncode,
             bytes(stderr_tail[-1000:]).decode("utf-8", "replace"),
         )
+    if outcome == "died" and (process.returncode == -9 or b"MemoryError" in bytes(stderr_tail)):
+        outcome = "memory"  # SIGKILL is what the kernel's OOM killer sends
     detail, teeth_reason = _stopped_words(outcome, kill_after)
     for job in jobs:
         result = results.get(job.id)
