@@ -1133,8 +1133,17 @@ async def test_notebook_cells_attempt_counts_every_execution_dispatch(
         by_id = {c["id"]: c for c in event["cells"]}
         assert by_id["c05"]["status"] == "error"
         assert by_id["c05"]["ename"] == "NameError"
-        # No outputs/stdout/figures on this event — only status and error name/value.
-        assert set(by_id["c05"]) == {"id", "status", "ename", "evalue", "duration_ms"}
+        # No outputs/stdout/figures on this event — only status, error name/value,
+        # and (dependency-graph replay) which parent version a reused cell is from.
+        assert set(by_id["c05"]) == {
+            "id",
+            "status",
+            "ename",
+            "evalue",
+            "duration_ms",
+            "cached_from_seq",
+        }
+        assert by_id["c05"]["cached_from_seq"] is None  # this cell actually ran
 
 
 async def test_revise_does_not_stream_draft_deltas(_fake_run_plumbing, monkeypatch):
@@ -1821,6 +1830,212 @@ async def test_author_replay_all_cached_with_run_until_reports_a_later_skip_as_n
     by_id = {cell["id"]: cell for cell in child.report["cells"]}
     assert by_id["c03"]["status"] == "not_run"
     assert by_id["c03"]["note"] == "after the cell you ran to"
+
+
+async def test_reused_cells_appear_on_the_live_event_and_the_all_cached_path_emits_one(
+    monkeypatch,
+):
+    """NIT: a live listener's LAST `notebook.cells` event for a replay run must
+    show a reused cell as itself — `status="ok"`, `cached_from_seq` set — not the
+    pre-merge `not_run` `run_notebook`'s own (fresh-dispatch-only) emission gives
+    it. And the all-cached shortcut (nothing to dispatch at all) must still emit
+    ONE such event, even though it never calls `run_notebook`."""
+    sinks: list[FakeEventSink] = []
+
+    class Recording(FakeEventSink):
+        def __init__(self, scope, session, run_id):
+            super().__init__(scope, session, run_id)
+            sinks.append(self)
+
+    monkeypatch.setattr(handlers, "RepoEventSink", Recording)
+    store = MemoryNotebookStore()
+    notebook_id = uuid.uuid4()
+    run1, version1 = uuid.uuid4(), uuid.uuid4()
+    store.seed_version(notebook_id, version1, seq=1)
+    session = Session()
+
+    await nh.handle_notebook_revise(
+        session,
+        _author_payload(run_id=run1, notebook_id=notebook_id, version_id=version1),
+        llm=QueueLLM([]),
+        sandbox=FakeSandbox(),
+        store=store,
+    )
+
+    # Second save: c02 edited (c01 is c02's own dependency), c03 independent ->
+    # reused. A REAL dispatch happens (c01, c02), so `run_notebook` emits its own
+    # (pre-merge) event too; the LAST event must be the corrected, merged one.
+    edited_source = AUTHORED.replace('print("second", x * 2)', 'print("second!!", x * 2)')
+    run2, version2 = uuid.uuid4(), uuid.uuid4()
+    store.seed_version(notebook_id, version2, seq=2)
+    await nh.handle_notebook_revise(
+        session,
+        _author_payload(
+            run_id=run2,
+            notebook_id=notebook_id,
+            version_id=version2,
+            source=edited_source,
+            parent_version_id=version1,
+        ),
+        llm=QueueLLM([]),
+        sandbox=FakeSandbox(),
+        store=store,
+    )
+    replay_events = [p for kind, p in sinks[1].events if kind == "notebook.cells"]
+    assert len(replay_events) >= 1
+    final = replay_events[-1]
+    by_id = {c["id"]: c for c in final["cells"]}
+    assert by_id["c03"]["status"] == "ok"
+    assert by_id["c03"]["cached_from_seq"] == 1
+    assert by_id["c01"]["cached_from_seq"] is None  # actually ran, not reused
+
+    # Third save: identical source again -> plan.execute is empty, the all-cached
+    # shortcut fires, and `run_notebook` is never called at all.
+    run3, version3 = uuid.uuid4(), uuid.uuid4()
+    store.seed_version(notebook_id, version3, seq=3)
+    await nh.handle_notebook_revise(
+        session,
+        _author_payload(
+            run_id=run3,
+            notebook_id=notebook_id,
+            version_id=version3,
+            source=edited_source,
+            parent_version_id=version2,
+        ),
+        llm=QueueLLM([]),
+        sandbox=FakeSandbox(),
+        store=store,
+    )
+    all_cached_events = [p for kind, p in sinks[2].events if kind == "notebook.cells"]
+    assert len(all_cached_events) == 1  # nothing dispatched, still exactly one event
+    by_id = {c["id"]: c for c in all_cached_events[0]["cells"]}
+    # c01/c02 actually ran at version 2 (first reused here, at version 3): "since
+    # version 2". c03 has been unchanged since version 1 and was ALREADY reused at
+    # version 2 — the original-version NIT fix keeps it "since version 1", not
+    # relabelled "since version 2" just because it hopped through another save.
+    assert by_id["c01"]["cached_from_seq"] == 2
+    assert by_id["c02"]["cached_from_seq"] == 2
+    assert by_id["c03"]["cached_from_seq"] == 1
+
+
+def test_renumber_execution_counts_fixes_a_merge_produced_duplicate() -> None:
+    """NIT: a merged report otherwise mixes two unrelated counters — THIS
+    dispatch's own (restarted at 1 for whatever subset it ran) on fresh cells,
+    each reused cell's OWN count from whenever it actually ran. c01 and c03 are
+    fresh this dispatch (the sandbox's own per-dispatch counter gives them 1, 2 in
+    DISPATCH order); c02 is reused, keeping its ORIGINAL count of 2 from an
+    earlier run where it was itself the second cell to execute — so the merged,
+    UNRENUMBERED report has c02 and c03 both claiming execution_count 2, and c03
+    is document-order AFTER c02. Renumbering must give 1, 2, 3 in document order."""
+    from majorana_contracts.notebooks import CellResult, ExecutionReport
+
+    merged = ExecutionReport(
+        notebook_slug="s",
+        ok=True,
+        runner="sandbox",
+        cells=[
+            CellResult(id="c01", status="ok", execution_count=1, cache_key="k1"),
+            CellResult(id="c02", status="ok", execution_count=2, cache_key="k2", cached_from_seq=1),
+            CellResult(id="c03", status="ok", execution_count=2, cache_key="k3"),
+            CellResult(id="c04", status="skipped", execution_count=None, note="execute=false"),
+        ],
+    )
+    renumbered = nh._renumber_execution_counts(merged)
+    by_id = renumbered.by_id()
+    assert [by_id[cid].execution_count for cid in ("c01", "c02", "c03")] == [1, 2, 3]
+    assert by_id["c04"].execution_count is None  # never touched: it never ran at all
+
+
+def test_authored_turn_uses_singular_cell_at_exactly_one() -> None:
+    """NIT: "Ran 1 cell", never "Ran 1 cells" — and the same for the all-reused
+    and partial-reused templates, at both the `ran` and `reused` counts."""
+    from majorana_contracts.notebooks import CellResult, ExecutionReport
+
+    def report(cells):
+        return ExecutionReport(notebook_slug="s", ok=True, runner="sandbox", cells=cells)
+
+    one_ran_one_reused = report(
+        [
+            CellResult(id="c1", status="ok", cache_key="k1"),
+            CellResult(id="c2", status="ok", cache_key="k2", cached_from_seq=1),
+        ]
+    )
+    msg = nh._authored_turn(one_ran_one_reused, run_until=None, locale="en")
+    assert "1 cell that changed" in msg
+    assert "1 unchanged cell kept" in msg
+    assert "cells" not in msg
+
+    one_reused_only = report([CellResult(id="c1", status="ok", cache_key="k1", cached_from_seq=1)])
+    msg = nh._authored_turn(one_reused_only, run_until=None, locale="en")
+    assert msg == "Nothing needed to change: all 1 cell kept their results from before."
+
+    two_ran_two_reused = report(
+        [
+            CellResult(id="c1", status="ok", cache_key="k1"),
+            CellResult(id="c2", status="ok", cache_key="k2"),
+            CellResult(id="c3", status="ok", cache_key="k3", cached_from_seq=1),
+            CellResult(id="c4", status="ok", cache_key="k4", cached_from_seq=1),
+        ]
+    )
+    msg = nh._authored_turn(two_ran_two_reused, run_until=None, locale="en")
+    assert "2 cells that changed" in msg
+    assert "2 unchanged cells kept" in msg
+
+
+async def test_a_reused_cell_after_a_freshly_raising_cell_is_corrected_to_not_run(
+    _fake_run_plumbing,
+):
+    """A reused cell's own cache-key match says nothing about whether a FULL run
+    would even have reached it: if a freshly-executed cell in THIS dispatch raises
+    (and is not `raises-exception`-tagged), every cell after it in document order
+    that `plan` said to reuse must come back `not_run`, matching what a real full
+    run would show — never a stale `ok` sitting past a traceback a reader would
+    read as "and then it kept going".
+
+    AUTHORED: c01 defines x, c02 reads x, c03 is independent of both. Editing ONLY
+    c01 to raise makes c01 AND c02 stale (c02 depends on c01); c03's cache key is
+    untouched, so `plan` reuses it — but c03 sits AFTER c01 in document order, and
+    a real full run stops at c01, never reaching c03 either.
+    """
+    store = MemoryNotebookStore()
+    notebook_id = uuid.uuid4()
+    run1, version1 = uuid.uuid4(), uuid.uuid4()
+    store.seed_version(notebook_id, version1, seq=1)
+    session = Session()
+
+    await nh.handle_notebook_revise(
+        session,
+        _author_payload(run_id=run1, notebook_id=notebook_id, version_id=version1),
+        llm=QueueLLM([]),
+        sandbox=FakeSandbox(),
+        store=store,
+    )
+
+    edited_source = AUTHORED.replace("x = 21", "x = 1 / 0")
+    run2, version2 = uuid.uuid4(), uuid.uuid4()
+    store.seed_version(notebook_id, version2, seq=2)
+    await nh.handle_notebook_revise(
+        session,
+        _author_payload(
+            run_id=run2,
+            notebook_id=notebook_id,
+            version_id=version2,
+            source=edited_source,
+            parent_version_id=version1,
+        ),
+        llm=QueueLLM([]),
+        sandbox=FakeSandbox(fail_cell_id="c01"),
+        store=store,
+    )
+
+    child = store.versions[version2]
+    assert child.status == "ready", child.error
+    by_id = {cell["id"]: cell for cell in child.report["cells"]}
+    assert by_id["c01"]["status"] == "error"
+    assert by_id["c02"]["status"] == "not_run"  # the sandbox's own same-dispatch stop
+    assert by_id["c03"]["status"] == "not_run"  # corrected from a stale reused "ok"
+    assert by_id["c03"]["note"] == "an earlier cell raised"
+    assert by_id["c03"]["cached_from_seq"] is None
 
 
 # --------------------------------------------------------------------------- grade

@@ -550,7 +550,13 @@ from .lifecycle import (
 # `POST /v1/notebooks/{id}/versions` body. Expect a version-number conflict with the
 # sibling "check cells" branch landing the same week; that is fine, whichever merges
 # second re-numbers.
-CONTRACTS_VERSION = "2.37.1"
+# 2.37.2: adversarial review of the replay lane (ai-ops 382) added one more field:
+# `NotebookLiveCellResult.cached_from_seq` (int | None, default None), mirroring
+# `CellResult.cached_from_seq` on the LIVE `notebook.cells` event — without it, a
+# live listener watching a replay dispatch sees a reused cell only as the
+# pre-merge `status="not_run"` a fresh dispatch's own emission gives it, no
+# different from a cell that has not run yet. Additive, no existing field changed.
+CONTRACTS_VERSION = "2.37.2"
 
 __all__ = [
     "PresenceHeartbeatRequest",

@@ -3071,6 +3071,11 @@ export interface components {
          */
         NotebookLiveCellResult: {
             /**
+             * Cached From Seq
+             * @default null
+             */
+            cached_from_seq: number | null;
+            /**
              * Duration Ms
              * @default 0
              */
