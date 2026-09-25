@@ -662,6 +662,11 @@
             "title": "Message",
             "type": "string"
           },
+          "reuse_results": {
+            "default": true,
+            "title": "Reuse Results",
+            "type": "boolean"
+          },
           "run_until": {
             "anyOf": [
               {
@@ -1499,6 +1504,30 @@
       "CellResult": {
         "additionalProperties": false,
         "properties": {
+          "cache_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cache Key"
+          },
+          "cached_from_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cached From Seq"
+          },
           "check": {
             "anyOf": [
               {
@@ -2000,6 +2029,12 @@
             "default": 0,
             "minimum": 0,
             "title": "Caught",
+            "type": "integer"
+          },
+          "could_not_run": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Could Not Run",
             "type": "integer"
           },
           "equivalent": {
@@ -6078,6 +6113,18 @@
         "additionalProperties": false,
         "description": "One cell's execution outcome, status and error name/value only \u2014 no stdout, no\noutputs, no figures. What raised is often exactly what a graded cell's assertion\nwas checking, so even this is not risk-free for a non-author viewer; see the\n\"Live\" lane's report for the residual flag this carries forward rather than\nresolves.",
         "properties": {
+          "cached_from_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cached From Seq"
+          },
           "check": {
             "anyOf": [
               {
@@ -12471,7 +12518,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.38.0"
+    "version": "2.39.0"
   },
   "openapi": "3.1.0",
   "paths": {}

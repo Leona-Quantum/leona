@@ -386,16 +386,16 @@ def test_inconclusive_is_the_checks_own_incapacity_never_a_fail() -> None:
         (
             bell,
             CheckCapture(kind="circuit", qasm="OPENQASM 3.0;\nthis is not qasm"),
-            "could not read",
+            "does not parse",
         )
     )
-    wide = QuantumCircuit(13)
+    wide = QuantumCircuit(9)
     wide.h(0)
     cases.append(
         (
             _prop(kind="unitary", subject="qc", reference="qft(3)"),
             _circuit(wide),
-            "simulates at most 12",
+            "judges at most 8",
         )
     )
     cases.append(
@@ -439,7 +439,32 @@ def test_a_strong_check_catches_every_behaviour_changing_mutant_of_ghz() -> None
     assert teeth.equivalent >= 1
 
 
-def test_a_weak_check_lets_phase_mutants_survive_and_names_them() -> None:
+def test_a_weak_check_lets_a_broken_copy_survive_and_names_it() -> None:
+    """A distribution check with a loose tolerance passes a copy with the rotation
+    dropped (its distribution moves by 0.022 in total variation) and says so."""
+    qc = QuantumCircuit(1, 1)
+    qc.ry(0.3, 0)
+    qc.measure(0, 0)
+    probabilities = {"0": "cos(0.15)**2", "1": "sin(0.15)**2"}
+    loose = evaluate_check(
+        _prop(kind="distribution", subject="qc", probabilities=probabilities, tolerance=0.1),
+        _circuit(qc),
+    )
+    assert loose.status == "pass"
+    assert loose.teeth is not None and loose.teeth.status == "measured"
+    assert loose.teeth.caught == 0 and loose.teeth.mutants == 1
+    assert loose.teeth.survivors == ["dropping the ry on q0, gate 1"]
+    # negating the angle leaves every measured probability as it was: equivalent here
+    assert loose.teeth.equivalent == 1
+    strict = evaluate_check(
+        _prop(kind="distribution", subject="qc", probabilities=probabilities), _circuit(qc)
+    )
+    assert strict.teeth is not None and strict.teeth.caught == strict.teeth.mutants == 1
+
+
+def test_a_distribution_check_counts_phase_only_copies_as_equivalent() -> None:
+    """Review of PR 1011 (S3): a copy that changes only phases no measurement sees
+    cannot be caught by ANY distribution check, so it is excluded, not a survivor."""
     qc = _bell()
     qc.s(0)
     qc.t(1)
@@ -450,10 +475,9 @@ def test_a_weak_check_lets_phase_mutants_survive_and_names_them() -> None:
     assert verdict.status == "pass"
     teeth = verdict.teeth
     assert teeth is not None and teeth.status == "measured"
-    assert teeth.caught < teeth.mutants
-    assert "dropping the s on q0, gate 3" in teeth.survivors
-    assert "replacing the t on q1, gate 4 with tdg" in teeth.survivors
-    # the same circuit under a state check has teeth for those phase mutants
+    assert teeth.survivors == [] and teeth.caught == teeth.mutants
+    assert teeth.equivalent >= 4  # drop s, drop t, s -> sdg, t -> tdg
+    # the same circuit under a state check has teeth for those phase copies
     strong = evaluate_check(
         _prop(
             kind="state",
@@ -512,30 +536,34 @@ def test_symmetric_two_qubit_gates_are_not_swapped() -> None:
     ]
 
 
-def test_mutation_limits_say_not_measured_with_the_reason() -> None:
-    wide = _ghz(13)
+def test_mutation_limits_say_not_measured_with_the_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The caps are lowered for the test, so nothing here simulates more than 4 qubits
+    # (owner's resource rule); the comparison is the same one the real caps go through.
+    monkeypatch.setattr(checks, "MUTATION_MAX_QUBITS_STATE", 3)
+    monkeypatch.setattr(checks, "MUTATION_MAX_QUBITS_UNITARY", 2)
     verdict = evaluate_check(
-        _prop(kind="state", subject="ghz", reference="ghz(13)"), _circuit(wide)
+        _prop(kind="state", subject="ghz", reference="ghz(4)"), _circuit(_ghz(4))
     )
     assert verdict.status == "pass"
     assert verdict.teeth is not None and verdict.teeth.status == "not_measured"
-    assert "Too large to mutation-test" in verdict.teeth.reason
+    assert "Too large to test with broken copies" in verdict.teeth.reason
+    assert "up to 3" in verdict.teeth.reason
 
     unitary = evaluate_check(
-        _prop(kind="unitary", subject="qft", reference="qft(9)"), _circuit(_qft(9))
+        _prop(kind="unitary", subject="qft", reference="qft(3)"), _circuit(_qft(3))
     )
     assert unitary.status == "pass"
     assert unitary.teeth is not None and unitary.teeth.status == "not_measured"
-    assert "up to 8" in unitary.teeth.reason
+    assert "up to 2" in unitary.teeth.reason
 
     expired = evaluate_check(
-        _prop(kind="state", subject="ghz", reference="ghz(4)"),
-        _circuit(_ghz(4)),
+        _prop(kind="state", subject="ghz", reference="ghz(3)"),
+        _circuit(_ghz(3)),
         deadline=time.monotonic() - 1,
     )
     assert expired.status == "pass"
     assert expired.teeth is not None and expired.teeth.status == "not_measured"
-    assert "time budget" in expired.teeth.reason
+    assert "time for checks in this run ran out" in expired.teeth.reason
 
 
 def test_teeth_are_cached_by_check_and_subject(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -737,14 +765,24 @@ def test_a_reader_accepts_a_nala_check_but_cannot_relabel_it_source() -> None:
 
 
 def test_a_readers_new_or_changed_check_is_theirs_and_accepted() -> None:
-    new = _check_cell("k01", kind="value", subject="x", value=1, author="nala", accepted=False)
-    mine = enforce_check_authorship(_spec_with(new), None, "user").cell_by_id("k01").property
+    """With a parent version (the author route): a check the reader adds is theirs, or
+    `source` when they mark it so with a citation."""
+    empty_parent = _spec_with()
+    new = _check_cell("k01", kind="value", subject="x", value=1, author="user", accepted=False)
+    mine = (
+        enforce_check_authorship(_spec_with(new), empty_parent, "user").cell_by_id("k01").property
+    )
     assert mine is not None and (mine.author, mine.accepted) == ("user", True)
     sourced = _check_cell(
         "k02", kind="value", subject="x", value=1, author="source", citation="PRL 103, 150502"
     )
-    cited = enforce_check_authorship(_spec_with(sourced), None, "user").cell_by_id("k02").property
+    cited = (
+        enforce_check_authorship(_spec_with(sourced), empty_parent, "user")
+        .cell_by_id("k02")
+        .property
+    )
     assert cited is not None and (cited.author, cited.accepted) == ("source", True)
+    new = _check_cell("k01", kind="value", subject="x", value=1, author="nala", accepted=False)
     parent = _spec_with(new)
     changed = _check_cell("k01", kind="value", subject="x", value=3, author="nala", accepted=False)
     now = enforce_check_authorship(_spec_with(changed), parent, "user").cell_by_id("k01").property
@@ -849,3 +887,49 @@ def test_an_imported_check_cell_without_a_usable_property_becomes_plain_code() -
             cell["metadata"]["leona"]["property"] = {"kind": "state", "subject": "bell"}  # invalid
     back = from_ipynb(notebook)
     assert all(cell.role is None or cell.role.value != "check" for cell in back.cells)
+
+
+def test_an_upload_honours_only_the_claims_that_lower_trust() -> None:
+    """Review of PR 1011 (S2): an imported file (no parent) keeps a check it says is
+    Nala's as Nala's and unaccepted, and never takes `source` or `accepted` from it."""
+    nala_accepted = _check_cell(
+        "k01", kind="value", subject="x", value=1, author="nala", accepted=True
+    )
+    sourced = _check_cell(
+        "k02", kind="value", subject="x", value=2, author="source", citation="arXiv:1234"
+    )
+    plain = _check_cell("k03", kind="value", subject="x", value=3, author="user", accepted=False)
+    stamped = enforce_check_authorship(_spec_with(nala_accepted, sourced, plain), None, "user")
+    props = {cell.id: cell.property for cell in stamped.cells if cell.property is not None}
+    assert (props["k01"].author, props["k01"].accepted) == ("nala", False)
+    assert (props["k02"].author, props["k02"].accepted) == ("user", True)
+    assert props["k02"].citation == "arXiv:1234"
+    assert (props["k03"].author, props["k03"].accepted) == ("user", True)
+
+
+def test_renaming_a_cell_does_not_launder_nalas_check() -> None:
+    """Review of PR 1011 (S2): the same property under another id is the same check."""
+    nala = _check_cell("k01", kind="value", subject="x", value=1, author="nala", accepted=False)
+    parent = _spec_with(nala)
+    renamed = _check_cell("k99", kind="value", subject="x", value=1, author="user", accepted=True)
+    by_reader = (
+        enforce_check_authorship(_spec_with(renamed), parent, "user").cell_by_id("k99").property
+    )
+    assert by_reader is not None and by_reader.author == "nala"
+    by_nala = (
+        enforce_check_authorship(_spec_with(renamed), parent, "nala").cell_by_id("k99").property
+    )
+    assert by_nala is not None and (by_nala.author, by_nala.accepted) == ("nala", False)
+
+
+def test_the_energy_matrix_is_the_verification_packages_matrix() -> None:
+    """The judge builds H with `SparsePauliOp` (fast); it must be exactly the matrix the
+    verification package's `hamiltonian_matrix` builds from the same strings."""
+    import numpy as np
+    from majorana_verification.hamiltonian import hamiltonian_matrix
+    from qiskit.quantum_info import SparsePauliOp
+
+    terms = {"ZIX": 0.7, "IYY": -0.3, "XZI": 0.25, "ZZZ": 1.1}
+    fast = SparsePauliOp.from_list(list(terms.items())).to_matrix()
+    slow = hamiltonian_matrix([(coefficient, term) for term, coefficient in terms.items()])
+    assert np.allclose(fast, slow)

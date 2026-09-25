@@ -58,6 +58,15 @@ export interface NotebookCellView {
   truncated: boolean;
   durationMs: number | null;
   /**
+   * Set when this cell's result was NOT re-run this version: it is the PARENT
+   * version's own result, carried forward because the dependency graph found
+   * nothing it reads had changed (`leona_notebooks.dependencies.plan_run`). The
+   * value is that parent version's `seq`, so the label can say which version the
+   * result is actually from — `null` for a cell that ran this version (whether or
+   * not the run itself used the cache for something UPSTREAM of it).
+   */
+  cachedFromSeq: number | null;
+  /**
    * Whether this cell produces a real verdict — a hidden assertion or an answer key
    * on the server. It decides which of two entirely different things "check my
    * attempt" does: post the attempt for a deterministic grade, or ask Nala's opinion.
@@ -157,6 +166,7 @@ export function notebookCellViews(
         : null,
       truncated: outputs.some((output) => output.truncated),
       durationMs: result ? result.duration_ms : null,
+      cachedFromSeq: result?.cached_from_seq ?? null,
       graded: cell.check != null || cell.answer != null || cell.answer_prompt != null,
       answerPrompt: answerPromptOf(cell),
       hardwareRequests: result?.hardware_requests ?? [],

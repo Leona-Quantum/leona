@@ -154,6 +154,10 @@ def _redact_report_for_public(
     """
     if report is None:
         return None
+    # A hidden check's verdict repeats the solution's circuit and the expected values
+    # (review of PR 1011); `learner_report` drops those first, then this drops the rest.
+    report = spec.learner_report(report)
+    assert report is not None
     redacted_ids = {cell.id for cell in spec.cells if cell.role in SOLUTION_ONLY_ROLES}
     if not redacted_ids:
         return report

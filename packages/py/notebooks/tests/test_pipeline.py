@@ -1301,7 +1301,9 @@ async def test_a_revise_turn_owns_the_checks_it_changes_and_keeps_the_rest() -> 
     base = parse_source(CHECKED_LESSON.replace("undefined_name\n", ""))
     from leona_notebooks.checks import enforce_check_authorship
 
-    base = enforce_check_authorship(base, None, "user")  # the reader wrote this one
+    # the reader wrote this one, into a version that did not have it
+    without_it = base.with_cells([cell for cell in base.cells if cell.property is None])
+    base = enforce_check_authorship(base, without_it, "user")
     assert base.cell_by_id("k01").property.author == "source"
     untouched = RevisionPlan(
         reply="ok",

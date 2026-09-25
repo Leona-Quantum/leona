@@ -49,6 +49,8 @@ function reportWith(status: "ok" | "error" = "ok") {
         execution_count: 1,
         note: "",
         check: null,
+        cache_key: null,
+        cached_from_seq: null,
         hardware_requests: [{ qasm: QASM, shots: 256, num_qubits: 2, label: "bell pair" }],
       },
     ],

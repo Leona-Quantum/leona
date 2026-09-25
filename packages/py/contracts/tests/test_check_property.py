@@ -26,7 +26,7 @@ def test_each_kind_accepts_its_own_expectation_and_fills_the_default_tolerance()
         },
         {"kind": "state", "subject": "qc", "reference_qasm": "OPENQASM 3.0;\nqubit[1] q;\nh q[0];"},
         {"kind": "unitary", "subject": "qft", "reference": "qft(3)"},
-        {"kind": "unitary", "subject": "qc", "reference": "iqft(12)"},
+        {"kind": "unitary", "subject": "qc", "reference": "iqft(8)"},
         {"kind": "distribution", "subject": "qc", "probabilities": {"0": 0.5, "1": "1/2"}},
         {
             "kind": "energy",
@@ -60,7 +60,7 @@ def test_each_kind_accepts_its_own_expectation_and_fills_the_default_tolerance()
         # the library grammar, per kind
         ({"kind": "state", "subject": "qc", "reference": "qft(3)"}, "not a library reference"),
         ({"kind": "unitary", "subject": "qc", "reference": "bell"}, "not a library reference"),
-        ({"kind": "state", "subject": "qc", "reference": "ghz(25)"}, "not a library reference"),
+        ({"kind": "state", "subject": "qc", "reference": "ghz(19)"}, "not a library reference"),
         ({"kind": "unitary", "subject": "qc", "reference": "qft(13)"}, "not a library reference"),
         ({"kind": "state", "subject": "qc", "reference": "ghz(0)"}, "not a library reference"),
         # subject

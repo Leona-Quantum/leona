@@ -38,9 +38,11 @@ from majorana_contracts.notebooks import MAX_CHECK_VALUE_ENTRIES
 
 from leona_notebooks import hardware
 from leona_notebooks.checks import (
+    MAX_CAPTURE_DECOMPOSE_PASSES,
     MAX_CAPTURE_QASM_CHARS,
     MAX_CAPTURE_QUBITS,
     MAX_CAPTURE_TOTAL_CHARS,
+    MAX_EXPANDED_OPERATIONS,
 )
 from leona_notebooks.execution import (
     CellError,
@@ -101,6 +103,13 @@ class NotebookProgram:
     #: are cells the reader deliberately stopped short of, and the report says `not_run`
     #: for them WITHOUT that counting as the run having fallen over.
     not_run: dict[str, str] = field(default_factory=dict)
+    #: S2: what REUSED cells (not part of THIS dispatch at all) already committed
+    #: this notebook to, so `report_from_observation`'s `_HardwareReadLedger` — the
+    #: WORKER-side re-validation, which trusts nothing the sandbox itself reports —
+    #: can seed its own running total from here instead of zero, and independently
+    #: enforce the notebook-WIDE cap rather than only a per-dispatch one.
+    reused_hardware_request_count: int = 0
+    reused_hardware_qasm_chars: int = 0
 
 
 # --------------------------------------------------------------------------- source prep
@@ -266,7 +275,12 @@ def _ln_harvest_figures(cell):
 
 import re as _ln_re
 _ln_hw_cfg = {"max_shots": __HW_MAX_SHOTS__, "max_chars": __HW_MAX_CHARS__, "max_total": __HW_MAX_TOTAL__, "max_requests": __HW_MAX_REQUESTS__, "max_label": __HW_MAX_LABEL__}
-_ln_hw_state = {"count": 0, "chars": 0}
+#: Starts from what REUSED cells (dependency-graph replay) already committed this
+#: notebook to, not always zero — S2: without this, a replay dispatch's own count
+#: resets per-dispatch while the notebook-wide total (reused + fresh) is what the
+#: cap is actually about, so a notebook could accumulate more than
+#: `MAX_HARDWARE_REQUESTS_PER_NOTEBOOK` hardware requests one replay at a time.
+_ln_hw_state = {"count": __HW_REUSED_COUNT__, "chars": __HW_REUSED_CHARS__}
 _ln_hw_header = _ln_re.compile(__HW_RE_HEADER__, _ln_re.S)
 _ln_hw_qubit_array = _ln_re.compile(__HW_RE_QUBIT_ARRAY__)
 _ln_hw_qubit_single = _ln_re.compile(__HW_RE_QUBIT_SINGLE__)
@@ -396,7 +410,7 @@ def _ln_run_cell(cell_id, source, tags=()):
         cell["stderr"], _ = _ln_cap_text(err.getvalue(), _ln_cfg["text_cap"])
         _ln_harvest_figures(cell)
 
-_ln_ck_cfg = {"max_chars": __CK_MAX_CHARS__, "max_total": __CK_MAX_TOTAL__, "max_values": __CK_MAX_VALUES__, "max_qubits": __CK_MAX_QUBITS__}
+_ln_ck_cfg = {"max_chars": __CK_MAX_CHARS__, "max_total": __CK_MAX_TOTAL__, "max_values": __CK_MAX_VALUES__, "max_qubits": __CK_MAX_QUBITS__, "decompose_passes": __CK_DECOMPOSE_PASSES__, "max_ops": __CK_MAX_OPS__}
 _ln_ck_state = {"chars": 0}
 _ln_float = _ln_builtins.float
 
@@ -440,8 +454,19 @@ def _ln_ck_value(value):
             if number is None:
                 return _ln_ck_problem("not_a_number", "a list holding " + _ln_type(item).__name__)
             out.append(number)
-        return {"kind": "value", "value": out}
+        return _ln_ck_charge({"kind": "value", "value": out}, _ln_len(_ln_str(out)))
     return _ln_ck_problem("not_a_number", "a " + _ln_type(value).__name__)
+
+def _ln_ck_charge(record, size):
+    # Circuits and values share one budget, because they share one sidecar: thirteen
+    # 4,096-number values would otherwise overflow it and cost EVERY cell its evidence.
+    if _ln_ck_state["chars"] + size > _ln_cfg_ck_total():
+        return _ln_ck_problem("over_budget")
+    _ln_ck_state["chars"] += size
+    return record
+
+def _ln_cfg_ck_total():
+    return _ln_ck_cfg["max_total"]
 
 def _ln_ck_circuit(value):
     try:
@@ -456,17 +481,31 @@ def _ln_ck_circuit(value):
         return _ln_ck_problem("too_wide", qubits)
     if value.parameters:
         return _ln_ck_problem("unbound_parameters", ", ".join(_ln_builtins.sorted(p.name for p in value.parameters)[:5]))
-    try:
-        qasm = qiskit.qasm3.dumps(value)
-    except _ln_exception as exc:
-        return _ln_ck_problem("not_exportable", _ln_type(exc).__name__ + ": " + _ln_str(exc))
+    # `qc.append(sub_circuit, ...)` puts an instruction in the circuit that OpenQASM 3 has
+    # no way to write, and the export fails. Decomposing replaces such an instruction with
+    # its definition, one level per pass; a few passes, and never a circuit that has grown
+    # past what a check could judge anyway.
+    attempt = value
+    failure = None
+    for _ in _ln_builtins.range(_ln_ck_cfg["decompose_passes"] + 1):
+        try:
+            qasm = qiskit.qasm3.dumps(attempt)
+            failure = None
+            break
+        except _ln_exception as exc:
+            failure = exc
+            if _ln_len(attempt.data) > _ln_ck_cfg["max_ops"]:
+                break
+            try:
+                attempt = attempt.decompose()
+            except _ln_exception:
+                break
+    if failure is not None:
+        return _ln_ck_problem("not_exportable", _ln_type(failure).__name__ + ": " + _ln_str(failure))
     qasm = "".join([qasm])
     if _ln_len(qasm) > _ln_ck_cfg["max_chars"]:
         return _ln_ck_problem("too_large", _ln_len(qasm))
-    if _ln_ck_state["chars"] + _ln_len(qasm) > _ln_ck_cfg["max_total"]:
-        return _ln_ck_problem("over_budget")
-    _ln_ck_state["chars"] += _ln_len(qasm)
-    return {"kind": "circuit", "qasm": qasm, "num_qubits": qubits}
+    return _ln_ck_charge({"kind": "circuit", "qasm": qasm, "num_qubits": qubits}, _ln_len(qasm))
 
 def _ln_capture_check(cell_id, subject, kind):
     # Where a role=check cell sits: record the subject as plain data and run nothing the
@@ -546,6 +585,8 @@ def _check_setup_values() -> dict[str, str]:
         "__CK_MAX_TOTAL__": repr(int(MAX_CAPTURE_TOTAL_CHARS)),
         "__CK_MAX_VALUES__": repr(int(MAX_CHECK_VALUE_ENTRIES)),
         "__CK_MAX_QUBITS__": repr(int(MAX_CAPTURE_QUBITS)),
+        "__CK_DECOMPOSE_PASSES__": repr(int(MAX_CAPTURE_DECOMPOSE_PASSES)),
+        "__CK_MAX_OPS__": repr(int(MAX_EXPANDED_OPERATIONS)),
     }
 
 
@@ -557,15 +598,22 @@ def _default_guard(source: str) -> list[str]:
 #: The reason recorded against every code cell after `run_until`.
 RUN_UNTIL_NOTE = "after the cell you ran to"
 
+#: The reason recorded against a code cell `only` left out of this dispatch —
+#: dependency-graph replay's own reused-result cells (`leona_notebooks.dependencies`).
+NOT_SELECTED_NOTE = "unchanged, reusing an earlier result"
+
 
 def compose_notebook_program(
     spec: NotebookSpec,
     *,
     guard: Callable[[str], list[str]] | None = None,
     run_until: str | None = None,
+    only: set[str] | None = None,
     image_budget_bytes: int = DEFAULT_IMAGE_BUDGET_BYTES,
     text_cap_bytes: int = DEFAULT_TEXT_CAP_BYTES,
     repr_cap_bytes: int = DEFAULT_REPR_CAP_BYTES,
+    reused_hardware_request_count: int = 0,
+    reused_hardware_qasm_chars: int = 0,
 ) -> NotebookProgram:
     """Build the sandbox program for a notebook. Raises `NotebookGuardError` if any
     executable cell fails the static guard (`majorana_sandbox.guard` by default).
@@ -579,6 +627,27 @@ def compose_notebook_program(
     `subprocess`. Those cells are guarded on the next composition that includes them,
     which is the one where their content can actually execute. An unknown `run_until`
     raises `UnknownCellError` here, before any `ExecutionSpec` exists.
+
+    `only`, when given, further restricts the program to EXACTLY that set of cell ids
+    (still document-ordered, still bounded by `run_until`'s cut) — dependency-graph
+    replay's way of dispatching a subset of an already-composed notebook
+    (`leona_notebooks.dependencies.plan_run`). A cell within the cut but left out of
+    `only` is reported `not_run` too (`NOT_SELECTED_NOTE`, not `RUN_UNTIL_NOTE`) —
+    the same "this never counts against the report's `ok`" rule `run_until`'s own cut
+    already gets, because the run still did everything it was asked to. The static
+    guard runs on every cell that WILL execute, exactly as without `only`; a left-out
+    cell is guarded on whichever future composition actually includes it, the same
+    rule the paragraph above already states for the tail past `run_until`.
+
+    `reused_hardware_request_count` / `reused_hardware_qasm_chars` (S2): what
+    REUSED cells already committed this notebook to, from a caller that resolved a
+    `RunPlan` — `leona_submit`'s own in-sandbox running total (`_ln_hw_state`)
+    starts from these instead of zero, so a replay dispatch cannot let a
+    notebook's hardware requests exceed `MAX_HARDWARE_REQUESTS_PER_NOTEBOOK` /
+    `MAX_HARDWARE_QASM_TOTAL_CHARS` one replay at a time just because each
+    dispatch, taken alone, stayed under the cap. Default zero: every caller that
+    has never heard of replay (every non-author path) gets the exact behaviour it
+    always had.
     """
     if image_budget_bytes + MAX_HARDWARE_QASM_TOTAL_CHARS + MAX_CAPTURE_TOTAL_CHARS >= (
         MAX_OUTPUT_BYTES
@@ -619,6 +688,9 @@ def compose_notebook_program(
         if reason is not None:
             skipped[cell.id] = reason
             continue
+        if only is not None and cell.id not in only:
+            not_run[cell.id] = NOT_SELECTED_NOTE
+            continue
         found = check(cell.source)
         if found:
             violations[cell.id] = found
@@ -641,6 +713,8 @@ def compose_notebook_program(
         _SETUP_TEMPLATE.replace("__IMAGE_BUDGET__", str(int(image_budget_bytes)))
         .replace("__TEXT_CAP__", str(int(text_cap_bytes)))
         .replace("__REPR_CAP__", str(int(repr_cap_bytes)))
+        .replace("__HW_REUSED_COUNT__", str(int(reused_hardware_request_count)))
+        .replace("__HW_REUSED_CHARS__", str(int(reused_hardware_qasm_chars)))
     )
     for placeholder, value in _hardware_setup_values().items():
         setup = setup.replace(placeholder, value)
@@ -670,6 +744,8 @@ def compose_notebook_program(
         cell_ids=tuple(cell.id for cell, _ in prepared),
         skipped=skipped,
         not_run=not_run,
+        reused_hardware_request_count=int(reused_hardware_request_count),
+        reused_hardware_qasm_chars=int(reused_hardware_qasm_chars),
     )
 
 
@@ -706,11 +782,19 @@ class _HardwareReadLedger:
     against the contract, and the per-notebook ceilings are applied again across the
     whole report. A request that fails is dropped and COUNTED, so the cell can say that
     something was left out rather than quietly showing fewer cards than it asked for.
+
+    `reused_count` / `reused_chars` (S2) seed the running total from what REUSED
+    cells already committed this notebook to, the SAME numbers `compose_notebook_program`
+    baked into the sandbox's own `_ln_hw_state` — but this ledger enforces the cap
+    independently of that seed, not merely on the strength of it: even a sandbox
+    whose in-process counter was tampered with (it is, after all, a plain dict in
+    the same untrusted namespace as cell code) cannot make this WORKER-side count
+    start anywhere but here, because the caller — never the sandbox — supplies it.
     """
 
-    def __init__(self) -> None:
-        self.count = 0
-        self.chars = 0
+    def __init__(self, *, reused_count: int = 0, reused_chars: int = 0) -> None:
+        self.count = reused_count
+        self.chars = reused_chars
 
     def read(self, raw: Any) -> tuple[list[HardwareRequest], int]:
         if not isinstance(raw, list):
@@ -772,7 +856,10 @@ def report_from_observation(
 
     results: list[CellResult] = []
     reached_end = True
-    hardware_ledger = _HardwareReadLedger()
+    hardware_ledger = _HardwareReadLedger(
+        reused_count=program.reused_hardware_request_count,
+        reused_chars=program.reused_hardware_qasm_chars,
+    )
     for cell in spec.cells:
         if not cell.is_code:
             continue

@@ -333,6 +333,11 @@ export interface components {
              */
             message: string;
             /**
+             * Reuse Results
+             * @default true
+             */
+            reuse_results: boolean;
+            /**
              * Run Until
              * @default null
              */
@@ -741,6 +746,16 @@ export interface components {
         };
         /** CellResult */
         CellResult: {
+            /**
+             * Cache Key
+             * @default null
+             */
+            cache_key: string | null;
+            /**
+             * Cached From Seq
+             * @default null
+             */
+            cached_from_seq: number | null;
             /** @default null */
             check: components["schemas"]["CheckVerdict"] | null;
             /**
@@ -1010,6 +1025,11 @@ export interface components {
              * @default 0
              */
             caught: number;
+            /**
+             * Could Not Run
+             * @default 0
+             */
+            could_not_run: number;
             /**
              * Equivalent
              * @default 0
@@ -3255,6 +3275,11 @@ export interface components {
          *     resolves.
          */
         NotebookLiveCellResult: {
+            /**
+             * Cached From Seq
+             * @default null
+             */
+            cached_from_seq: number | null;
             /**
              * Check
              * @default null

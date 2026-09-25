@@ -97,6 +97,56 @@ def test_execute_false_cells_are_not_guarded_and_not_run() -> None:
     assert program.skipped == {"c01": "execute=false"}
 
 
+def test_only_restricts_the_program_to_exactly_that_set_in_document_order() -> None:
+    spec = parse_source(
+        "# ---\n# title: T\n# ---\n# %% id=c01\nx = 1\n# %% id=c02\ny = 2\n# %% id=c03\nz = 3\n"
+    )
+    program = compose_notebook_program(spec, only={"c01", "c03"})
+    assert program.cell_ids == ("c01", "c03")
+    assert program.not_run == {"c02": "unchanged, reusing an earlier result"}
+    assert program.skipped == {}
+
+
+def test_only_does_not_override_a_structural_skip_reason() -> None:
+    spec = parse_source(
+        "# ---\n# title: T\n# ---\n# %% id=c01 execute=false\nimport os\n# %% id=c02\nx = 1\n"
+    )
+    # c01 would never run regardless of `only` — the skip reason stays the real one.
+    program = compose_notebook_program(spec, only={"c01", "c02"})
+    assert program.skipped == {"c01": "execute=false"}
+    assert program.cell_ids == ("c02",)
+
+
+def test_only_never_widens_what_run_until_would_have_included() -> None:
+    spec = parse_source(
+        "# ---\n# title: T\n# ---\n# %% id=c01\nx = 1\n# %% id=c02\ny = 2\n# %% id=c03\nz = 3\n"
+    )
+    # c03 is past the run_until cut, so it is `not_run` with the RUN_UNTIL reason
+    # even though it is also named in `only`.
+    program = compose_notebook_program(spec, run_until="c02", only={"c01", "c03"})
+    assert program.cell_ids == ("c01",)
+    assert program.not_run == {
+        "c02": "unchanged, reusing an earlier result",
+        "c03": "after the cell you ran to",
+    }
+
+
+def test_only_still_guards_every_cell_it_composes() -> None:
+    spec = parse_source(
+        "# ---\n# title: T\n# ---\n# %% id=c01\nimport subprocess\n# %% id=c02\nx = 1\n"
+    )
+    with pytest.raises(NotebookGuardError) as info:
+        compose_notebook_program(spec, only={"c01", "c02"})
+    assert set(info.value.violations) == {"c01"}
+
+
+def test_omitting_only_keeps_run_until_behaviour_identical() -> None:
+    spec = parse_source("# ---\n# title: T\n# ---\n# %% id=c01\nx = 1\n# %% id=c02\ny = 2\n")
+    with_default = compose_notebook_program(spec)
+    explicit_none = compose_notebook_program(spec, only=None)
+    assert with_default == explicit_none
+
+
 def test_composed_code_never_contains_a_denied_call_of_its_own() -> None:
     from majorana_sandbox.guard import check_python_code
 
@@ -134,6 +184,98 @@ def test_a_notebook_runs_and_every_cell_is_accounted_for() -> None:
     assert report.first_error().id == "err"
     assert report.environment["python"]
     assert [c.execution_count for c in report.cells] == [1, 2, 3, 4, None]
+
+
+_QASM_ONE_QUBIT_MEASURED = "OPENQASM 3;\nqubit[1] q;\nbit[1] c;\nc[0] = measure q[0];\n"
+
+#: Five `leona_submit` calls, each guarded so a refusal (the sandbox's own
+#: `_ln_hw_state` cap, seeded from `reused_hardware_request_count`) is observed as
+#: a caught exception rather than stopping the cell — lets a single cell attempt
+#: all 5 and show exactly how many the notebook-wide cap actually let through.
+_FIVE_GUARDED_SUBMITS = "\n".join(
+    f"try:\n    leona_submit({_QASM_ONE_QUBIT_MEASURED!r})\nexcept ValueError as _e:\n    print('refused:', _e)"
+    for _ in range(5)
+)
+
+
+def test_reused_hardware_requests_count_toward_the_notebook_wide_cap() -> None:
+    """S2 regression, end to end through the real sandbox: `MAX_HARDWARE_REQUESTS_PER_NOTEBOOK`
+    (8) is a notebook-wide ceiling, not a per-dispatch one — a replay dispatch that
+    only sees ITS OWN fresh cells must still be told what cells REUSED from the
+    parent already spent. 5 reused + 5 attempted fresh in one cell: only 3 of the
+    5 fresh calls fit under the cap (5 + 3 = 8); the sandbox's own `leona_submit`
+    refuses the other 2 (a `ValueError`, the same one an ordinary over-cap
+    notebook already raises). Without `reused_hardware_request_count` reaching
+    `_ln_hw_state`, all 5 would be accepted (5 + 5 = 10, over the cap) — the exact
+    bug S2 closes."""
+    spec = parse_source(f"# ---\n# title: T\n# ---\n# %% id=c1\n{_FIVE_GUARDED_SUBMITS}\n")
+    program, result, report = _run(spec, reused_hardware_request_count=5)
+    assert result.ok, result.stderr
+    assert program.reused_hardware_request_count == 5
+    c1 = report.by_id()["c1"]
+    assert c1.status == "ok"
+    assert len(c1.hardware_requests) == 3
+    assert c1.stdout.count("refused:") == 2
+
+
+def test_no_reused_hardware_carryover_by_default_matches_existing_behaviour() -> None:
+    """A control for the S2 change: an ordinary (non-replay) dispatch — the
+    default `reused_hardware_request_count=0` every non-author caller gets —
+    still fits all 5 requests under the cap of 8, same as before this field
+    existed."""
+    spec = parse_source(f"# ---\n# title: T\n# ---\n# %% id=c1\n{_FIVE_GUARDED_SUBMITS}\n")
+    _, result, report = _run(spec)
+    assert result.ok, result.stderr
+    c1 = report.by_id()["c1"]
+    assert len(c1.hardware_requests) == 5
+    assert "refused:" not in c1.stdout
+
+
+def test_worker_side_ledger_independently_enforces_the_seeded_cap() -> None:
+    """The WORKER-side re-validation (`_HardwareReadLedger`, via
+    `report_from_observation`) must apply the SAME notebook-wide cap on its own —
+    "nothing recorded there is taken on faith" — not merely inherit correctness
+    from the sandbox's own (in-process, therefore tamperable) counter. Built
+    directly from a crafted observation carrying MORE raw hardware-request dicts
+    than the seeded cap allows, bypassing `leona_submit` entirely, so this is
+    independent of whether the sandbox's own gate worked."""
+    from leona_notebooks.execution import HardwareRequest
+    from leona_notebooks.sandbox_program import compose_notebook_program, report_from_observation
+
+    spec = parse_source("# ---\n# title: T\n# ---\n# %% id=c1\nx = 1\n")
+    program = compose_notebook_program(spec, reused_hardware_request_count=6)
+    raw_request = HardwareRequest(qasm=_QASM_ONE_QUBIT_MEASURED, shots=1, num_qubits=1).model_dump(
+        mode="json"
+    )
+    observation = {
+        "notebook": {
+            "cells": [
+                {
+                    "id": "c1",
+                    "status": "ok",
+                    "stdout": "",
+                    "stderr": "",
+                    "outputs": [],
+                    "error": None,
+                    "duration_ms": 1,
+                    "execution_count": 1,
+                    "note": "",
+                    # 4 raw requests reported, seeded at 6 already spent: only 2
+                    # fit (6 + 2 = 8), regardless of what the sandbox itself did
+                    # or did not enforce.
+                    "hardware_requests": [raw_request] * 4,
+                }
+            ],
+            "environment": {},
+            "image_bytes": 0,
+            "dropped_bytes": 0,
+            "stopped": False,
+        }
+    }
+    report = report_from_observation(observation, spec, program)
+    c1 = report.by_id()["c1"]
+    assert len(c1.hardware_requests) == 2
+    assert "2 hardware request(s)" in c1.note and "left out" in c1.note
 
 
 def test_raises_exception_tag_continues_past_the_error() -> None:

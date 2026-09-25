@@ -456,6 +456,32 @@ export function runOutcomeFromEvents(
   }
 
   if (summary.decision === "inconclusive") {
+    const neverCalled = summary.reason_code === "function_written_not_called";
+    if (neverCalled) {
+      return {
+        tone: "warn",
+        eyebrow: locale === "ja" ? "関数を作成" : "Function written",
+        // ai-ops 372, review round 3 (nit): "did not run it" is wrong for a
+        // demo_only candidate that DOES call its function at module scope but
+        // never binds RESULT from it — result_never_executed cannot tell that
+        // case apart from a function that was truly never invoked. This wording
+        // is true either way.
+        title: locale === "ja"
+          ? "Nalaは関数を作成しましたが、動作は確認されていません"
+          : "Nala wrote the function, but nothing checked that it works",
+        description,
+        badges: badgesFor("warn", locale === "ja" ? "未実行" : "Not run", saved, locale),
+        facts,
+        callout: {
+          title: locale === "ja" ? "呼び出されていません" : "Never called",
+          body: locale === "ja"
+            ? "呼び出すための入力がなかったため、動作は確認されていません。自分で実行するか、Nalaにテストの追加を頼んでください。"
+            : "There was nothing to call it with, so nothing checked that it works. Run it yourself, or ask Nala to add a test.",
+        },
+        checks: checks.length ? checks : undefined,
+        code,
+      };
+    }
     const advisory = summary.reason_code === "ai_review_aligned";
     const claims = summary.unverified_claims ?? [];
     return {

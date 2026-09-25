@@ -176,3 +176,49 @@ def test_the_composed_program_still_passes_the_guard_itself() -> None:
 
     program = compose_notebook_program(parse_source(NOTEBOOK))
     assert check_python_code(program.code).ok, program.code
+
+
+def test_values_and_circuits_share_one_capture_budget() -> None:
+    """Review of PR 1011 (S1): thirteen checks of 4,096 numbers each used to overflow the
+    1 MiB sidecar and cost EVERY cell its evidence. Values now draw on the same budget as
+    circuits, so the later ones are refused and everything else survives."""
+    checks_text = "".join(
+        f'# %% id=k{i:02d} role=check property={{"kind":"value","subject":"big",'
+        f'"value":[{",".join(["0.123456789"] * 4096)}]}}\n'
+        for i in range(13)
+    )
+    spec = parse_source(
+        "# ---\n# title: T\n# ---\n"
+        "# %% id=c01\nbig = [0.1234567890123 + k for k in range(4096)]\nprint('made')\n"
+        + checks_text
+        + "# %% id=c02\nprint('still here')\n"
+    )
+    program, result = _run(spec)
+    assert result.ok, result.stderr
+    report = report_from_sandbox_result(result, spec, program)
+    assert report.by_id()["c01"].stdout == "made\n"
+    assert report.by_id()["c02"].stdout == "still here\n"
+    captures = captures_from_sandbox_result(result, spec)
+    kinds = [captures[f"k{i:02d}"].kind for i in range(13)]
+    assert kinds[0] == "value"
+    assert "problem" in kinds
+    assert all(
+        captures[f"k{i:02d}"].problem == "over_budget" for i in range(13) if kinds[i] == "problem"
+    )
+
+
+def test_a_sub_circuit_appended_as_an_instruction_is_still_captured() -> None:
+    """Review of PR 1011 (S4): `qc.append(sub, ...)` puts an instruction OpenQASM 3 cannot
+    write; the capture decomposes it and tries again rather than giving up."""
+    spec = parse_source(
+        "# ---\n# title: T\n# ---\n"
+        "# %% id=c01\nfrom qiskit import QuantumCircuit\n"
+        "sub = QuantumCircuit(2)\nsub.h(0)\nsub.cx(0, 1)\n"
+        "qc = QuantumCircuit(2)\nqc.append(sub.to_instruction(), [0, 1])\n"
+        '# %% id=k01 role=check property={"kind":"state","subject":"qc","reference":"bell"}\n'
+    )
+    program, result = _run(spec)
+    captures = captures_from_sandbox_result(result, spec)
+    assert captures["k01"].kind == "circuit", captures["k01"]
+    report = apply_check_verdicts(spec, report_from_sandbox_result(result, spec, program), captures)
+    assert report.by_id()["k01"].check.status == "pass"

@@ -64,6 +64,55 @@ def test_qiskit_human_eval_loader_rejects_a_corrupted_file(tmp_path):
         load_qiskit_human_eval_tasks(bad)
 
 
+def test_every_canonical_solution_binds_no_result_or_final_circuit():
+    """ai-ops 372 — a NECESSARY, NOT SUFFICIENT, structural property.
+
+    Corrected after an initial version of this test wrongly implied causation.
+    That version checked this property only for the 36 qiskitHumanEval
+    task_ids whose 2026-09-23 live run had `run_status != "succeeded"`
+    (README.md, ai-ops/desk/leona/plans/strategy-20260921/benchmark-runs-20260923)
+    and presented the match as if it explained the rejection. It does not:
+    checking all 151 tasks (not just the 36) shows the SAME
+    `ProgramRole.UNKNOWN` classification for every canonical solution,
+    including the 68 that PASSED and the 47 that were delivered but wrong.
+    `build_nala_prompt` wraps every task identically ("do not include example
+    usage"), so of course the canonical solution never binds `RESULT` or
+    `FINAL_CIRCUIT` — that is true of the whole benchmark, and by itself
+    predicts nothing about which tasks got delivered.
+
+    So this test asserts only the TRUE, non-causal fact: `classify_source`
+    reads every one of the 151 canonical solutions as `ProgramRole.UNKNOWN`.
+    What actually happened for the 36 undelivered tasks — what the LIVE
+    model's plan and candidate actually looked like, and which pipeline stage
+    actually rejected each one — is unknown without the run's own database,
+    which no longer exists (confirmed by an exhaustive local search of every
+    docker container/volume touched around the run window). This PR's
+    `check_contract`/`_success_criteria_check` fix is a real, independently
+    confirmed defect (see `test_basic_contract_rejects_a_function_that_never_needed_to_run`
+    and `test_a_delivered_function_candidate_is_never_labelled_verified_pass`
+    in `services/worker/tests/test_simple_ports.py`, both driven directly
+    against the real pipeline functions with controlled inputs, not against
+    this dataset-wide correlation) — but whether it explains the 36 specific
+    rejections is UNPROVEN pending a diagnostic live run that records what the
+    real candidates' plans actually declared.
+    """
+    from majorana_frameworks import FrameworkProgram
+    from majorana_frameworks.roles import ProgramRole
+    from majorana_contracts.enums import Framework
+
+    non_unknown = {}
+    for task in load_qiskit_human_eval_tasks():
+        source = task.scaffold + task.canonical_solution
+        role = FrameworkProgram(Framework.QISKIT, source).role
+        if role is not ProgramRole.UNKNOWN:
+            non_unknown[task.task_id] = role
+
+    assert not non_unknown, (
+        "expected every qiskitHumanEval canonical solution to bind neither "
+        f"RESULT nor FINAL_CIRCUIT (ProgramRole.UNKNOWN); these did not: {non_unknown}"
+    )
+
+
 def test_qcircuiteval_loads_70_tasks_across_core_and_qec():
     tasks = load_qcircuiteval_tasks()
     assert len(tasks) == 70
@@ -368,6 +417,15 @@ async def test_dry_run_canonical_control_passes_on_gradable_qiskit_human_eval_ta
     ]
     assert report.total_recorded_llm_calls > 0
     assert report.by_stage  # real per-stage usage was recorded, not just a total
+    # ai-ops 372: the per-candidate evidence that used to live ONLY in the run's own
+    # Postgres — the run's database is what stopped surviving, not this report, so a
+    # report must carry enough to diagnose a rejection on its own.
+    for result in report.results:
+        assert result.candidate_attempts, result.task_id
+        assert result.candidate_attempts[0].revision == 1
+        assert result.last_candidate_source, result.task_id
+        assert "def " in result.last_candidate_source
+        assert result.last_candidate_source_truncated is False
 
 
 @requires_db

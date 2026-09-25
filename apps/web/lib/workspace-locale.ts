@@ -1152,6 +1152,15 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     cellStderr: string;
     cellTruncated: string;
     cellErrorLabel: string;
+    /** A cell whose result came from an earlier version's cache, not from re-running
+     * it this time (dependency-graph replay, plan platform-vision-20260924/phase-a
+     * §3) — "Unchanged since version {seq}, not re-run". */
+    cellCachedFromSeq: (seq: number) => string;
+    /** Tooltip on the label above: names the ONE thing dependency-graph replay's
+     * detection cannot see — state a cell changes through a library call this
+     * heuristic does not recognise (adversarial review, ai-ops 382) — in plain
+     * words, and points at the escape hatch. */
+    cellCachedFromSeqTooltip: string;
 
     actionExplain: string;
     actionSimplify: string;
@@ -1208,6 +1217,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     saveAndRun: string;
     saveWithoutRunning: string;
     runToHere: string;
+    /** "Run everything fresh" — the `reuse_results: false` escape hatch,
+     * dependency-graph replay's own bypass for its known limit. */
+    runEverythingFresh: string;
+    runEverythingFreshHint: string;
     discard: string;
     discardConfirm: string;
     saving: string;
@@ -2376,6 +2389,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     cellStatus: { ok: "Passed", error: "Error", skipped: "Skipped", not_run: "Not run yet" },
     cellStdout: "Output",
     cellStderr: "Error output",
+    cellCachedFromSeq: (seq) => `Unchanged since version ${seq}, not re-run`,
+    cellCachedFromSeqTooltip:
+      "We catch most changes automatically. What we can miss: a cell that changes state through a library call we don't recognize, like a random seed set inside a helper function. If a result looks stale, use \"Run everything fresh.\"",
     cellTruncated: "Some output was cut to fit the evidence budget.",
     cellErrorLabel: "Error",
 
@@ -2436,6 +2452,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     editEmpty: "This notebook has no cells yet. Add one below.",
     saveAndRun: "Save & run",
     saveWithoutRunning: "Save without running",
+    runEverythingFresh: "Run everything fresh",
+    runEverythingFreshHint:
+      "Skip the cache and re-run every cell, even ones that look unchanged.",
     runToHere: "Run to here",
     discard: "Discard changes",
     discardConfirm: "Discard your changes to this notebook?",
@@ -3591,6 +3610,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     cellStatus: { ok: "成功", error: "エラー", skipped: "スキップ", not_run: "未実行" },
     cellStdout: "出力",
     cellStderr: "エラー出力",
+    cellCachedFromSeq: (seq) => `バージョン ${seq} から変更なし、再実行していません`,
+    cellCachedFromSeqTooltip:
+      "変更のほとんどは自動的に検出します。検出できないのは、認識していないライブラリ呼び出し(たとえばヘルパー関数の中で設定される乱数シード)を通じてセルが状態を変える場合です。結果が古く見えるときは「すべて再実行」をお使いください。",
     cellTruncated: "一部の出力は容量の上限により省略されています。",
     cellErrorLabel: "エラー",
 
@@ -3647,6 +3669,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     editEmpty: "このノートブックにはまだセルがありません。下から追加してください。",
     saveAndRun: "保存して実行",
     saveWithoutRunning: "実行せずに保存",
+    runEverythingFresh: "すべて再実行",
+    runEverythingFreshHint: "キャッシュを使わず、変更がないセルも含めてすべて再実行します。",
     runToHere: "ここまで実行",
     discard: "変更を破棄",
     discardConfirm: "このノートブックの変更を破棄しますか？",
