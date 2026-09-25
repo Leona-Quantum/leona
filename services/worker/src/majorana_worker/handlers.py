@@ -38,6 +38,7 @@ from majorana_agent import (
     SimplePipelineStatus,
 )
 from majorana_contracts.events import run_event_adapter
+from majorana_contracts.plan import artifact_promises_no_executed_result
 from majorana_llm import (
     CHAT_SYSTEM_PROMPT,
     RUN_EXPLANATION_SYSTEM_PROMPT,
@@ -2198,6 +2199,18 @@ async def _finish_simple_pipeline(
             "\n".join(str(item)[:1000] for item in risks[:20]) if isinstance(risks, list) else None
         )
         reference_methods = passed_reference_methods(review)
+        # ai-ops 372, review round 3 (nit): an empty, non-derived result is only
+        # "the function was written and never called" when the Plan's own
+        # artifact_contract actually says execution was never required. Without
+        # this, a genuine candidate defect (S4-style: real code, real bug, the
+        # sandbox legitimately came back with nothing) on an ordinary Plan would
+        # be mislabelled as an unexercised function rather than a failure to
+        # explain. `outcome.plan` absent is treated as "cannot claim the
+        # exemption" — the safe direction, same as everywhere else this guard is
+        # read.
+        plan_promises_no_result = outcome.plan is not None and artifact_promises_no_executed_result(
+            outcome.plan.plan.artifact_contract
+        )
         # The run's summary and the artifact's are two writers of one claim. A
         # flag passed to one and not the other is how a run says the program
         # returned its result while the artifact saved from that same execution
@@ -2207,7 +2220,9 @@ async def _finish_simple_pipeline(
             review.decision,
             result_derived=result_was_derived(execution.observation),
             result_never_executed=(
-                not execution.result and not result_was_derived(execution.observation)
+                not execution.result
+                and not result_was_derived(execution.observation)
+                and plan_promises_no_result
             ),
             recorded_checks=recorded_basic_checks(review),
             review_severity=review.severity,
