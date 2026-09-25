@@ -91,6 +91,13 @@ class NotebookProgram:
     #: are cells the reader deliberately stopped short of, and the report says `not_run`
     #: for them WITHOUT that counting as the run having fallen over.
     not_run: dict[str, str] = field(default_factory=dict)
+    #: S2: what REUSED cells (not part of THIS dispatch at all) already committed
+    #: this notebook to, so `report_from_observation`'s `_HardwareReadLedger` — the
+    #: WORKER-side re-validation, which trusts nothing the sandbox itself reports —
+    #: can seed its own running total from here instead of zero, and independently
+    #: enforce the notebook-WIDE cap rather than only a per-dispatch one.
+    reused_hardware_request_count: int = 0
+    reused_hardware_qasm_chars: int = 0
 
 
 # --------------------------------------------------------------------------- source prep
@@ -256,7 +263,12 @@ def _ln_harvest_figures(cell):
 
 import re as _ln_re
 _ln_hw_cfg = {"max_shots": __HW_MAX_SHOTS__, "max_chars": __HW_MAX_CHARS__, "max_total": __HW_MAX_TOTAL__, "max_requests": __HW_MAX_REQUESTS__, "max_label": __HW_MAX_LABEL__}
-_ln_hw_state = {"count": 0, "chars": 0}
+#: Starts from what REUSED cells (dependency-graph replay) already committed this
+#: notebook to, not always zero — S2: without this, a replay dispatch's own count
+#: resets per-dispatch while the notebook-wide total (reused + fresh) is what the
+#: cap is actually about, so a notebook could accumulate more than
+#: `MAX_HARDWARE_REQUESTS_PER_NOTEBOOK` hardware requests one replay at a time.
+_ln_hw_state = {"count": __HW_REUSED_COUNT__, "chars": __HW_REUSED_CHARS__}
 _ln_hw_header = _ln_re.compile(__HW_RE_HEADER__, _ln_re.S)
 _ln_hw_qubit_array = _ln_re.compile(__HW_RE_QUBIT_ARRAY__)
 _ln_hw_qubit_single = _ln_re.compile(__HW_RE_QUBIT_SINGLE__)
@@ -447,6 +459,8 @@ def compose_notebook_program(
     image_budget_bytes: int = DEFAULT_IMAGE_BUDGET_BYTES,
     text_cap_bytes: int = DEFAULT_TEXT_CAP_BYTES,
     repr_cap_bytes: int = DEFAULT_REPR_CAP_BYTES,
+    reused_hardware_request_count: int = 0,
+    reused_hardware_qasm_chars: int = 0,
 ) -> NotebookProgram:
     """Build the sandbox program for a notebook. Raises `NotebookGuardError` if any
     executable cell fails the static guard (`majorana_sandbox.guard` by default).
@@ -471,6 +485,16 @@ def compose_notebook_program(
     guard runs on every cell that WILL execute, exactly as without `only`; a left-out
     cell is guarded on whichever future composition actually includes it, the same
     rule the paragraph above already states for the tail past `run_until`.
+
+    `reused_hardware_request_count` / `reused_hardware_qasm_chars` (S2): what
+    REUSED cells already committed this notebook to, from a caller that resolved a
+    `RunPlan` — `leona_submit`'s own in-sandbox running total (`_ln_hw_state`)
+    starts from these instead of zero, so a replay dispatch cannot let a
+    notebook's hardware requests exceed `MAX_HARDWARE_REQUESTS_PER_NOTEBOOK` /
+    `MAX_HARDWARE_QASM_TOTAL_CHARS` one replay at a time just because each
+    dispatch, taken alone, stayed under the cap. Default zero: every caller that
+    has never heard of replay (every non-author path) gets the exact behaviour it
+    always had.
     """
     if image_budget_bytes + MAX_HARDWARE_QASM_TOTAL_CHARS >= MAX_OUTPUT_BYTES:
         # The hardware requests' OpenQASM shares the same sidecar (hardware.py says
@@ -515,6 +539,8 @@ def compose_notebook_program(
         _SETUP_TEMPLATE.replace("__IMAGE_BUDGET__", str(int(image_budget_bytes)))
         .replace("__TEXT_CAP__", str(int(text_cap_bytes)))
         .replace("__REPR_CAP__", str(int(repr_cap_bytes)))
+        .replace("__HW_REUSED_COUNT__", str(int(reused_hardware_request_count)))
+        .replace("__HW_REUSED_CHARS__", str(int(reused_hardware_qasm_chars)))
     )
     for placeholder, value in _hardware_setup_values().items():
         setup = setup.replace(placeholder, value)
@@ -540,6 +566,8 @@ def compose_notebook_program(
         cell_ids=tuple(cell.id for cell, _ in prepared),
         skipped=skipped,
         not_run=not_run,
+        reused_hardware_request_count=int(reused_hardware_request_count),
+        reused_hardware_qasm_chars=int(reused_hardware_qasm_chars),
     )
 
 
@@ -576,11 +604,19 @@ class _HardwareReadLedger:
     against the contract, and the per-notebook ceilings are applied again across the
     whole report. A request that fails is dropped and COUNTED, so the cell can say that
     something was left out rather than quietly showing fewer cards than it asked for.
+
+    `reused_count` / `reused_chars` (S2) seed the running total from what REUSED
+    cells already committed this notebook to, the SAME numbers `compose_notebook_program`
+    baked into the sandbox's own `_ln_hw_state` — but this ledger enforces the cap
+    independently of that seed, not merely on the strength of it: even a sandbox
+    whose in-process counter was tampered with (it is, after all, a plain dict in
+    the same untrusted namespace as cell code) cannot make this WORKER-side count
+    start anywhere but here, because the caller — never the sandbox — supplies it.
     """
 
-    def __init__(self) -> None:
-        self.count = 0
-        self.chars = 0
+    def __init__(self, *, reused_count: int = 0, reused_chars: int = 0) -> None:
+        self.count = reused_count
+        self.chars = reused_chars
 
     def read(self, raw: Any) -> tuple[list[HardwareRequest], int]:
         if not isinstance(raw, list):
@@ -642,7 +678,10 @@ def report_from_observation(
 
     results: list[CellResult] = []
     reached_end = True
-    hardware_ledger = _HardwareReadLedger()
+    hardware_ledger = _HardwareReadLedger(
+        reused_count=program.reused_hardware_request_count,
+        reused_chars=program.reused_hardware_qasm_chars,
+    )
     for cell in spec.cells:
         if not cell.is_code:
             continue
